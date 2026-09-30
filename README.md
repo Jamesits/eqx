@@ -3,7 +3,7 @@
 ![Works - On My Machine](https://img.shields.io/badge/Works-On_My_Machine-2ea44f)
 ![100% Written by AI](https://img.shields.io/badge/Written_by_AI-100%25-blue)
 
-Inspect and convert euqalizer and audio correction files.
+Inspect and convert equalizer and audio correction files.
 
 Supported file formats:
 
