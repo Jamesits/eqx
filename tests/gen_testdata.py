@@ -9,7 +9,7 @@ test files are written by running that converter (``CONVERSIONS``).
 Writers for formats that ``eqx`` only reads live here, not in the library:
 REW ``.mdat``, encrypted PEQb, PEQb 3.0.0.0, ``.swmicpkg``,
 Custom Target Presets, a REW ``.cal`` with a sensitivity line and the
-SoundID device exports.
+SoundID device exports, IK Multimedia paks and ARC X files.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from pathlib import Path
 
 from eqx import convert, dsp, formats
 from eqx.convert.mdat_swproj import standard_grid
+from eqx.ik import arcx
 from eqx.soundid import crypto, peqb, swmicpkg, swproj
 from eqx.soundid import export_lvnd, export_partners
 
@@ -640,6 +641,122 @@ def write_tmreq() -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
+# ---------------------------------------------------------------------------
+# IK Multimedia ARC X
+# ---------------------------------------------------------------------------
+ARCX_DIR = "ik/arcx"
+# ARC X writes and processes 32768 samples.
+ARCX_IR_LENGTH = 32768
+ARCX_GUID = "00000000-0000-0000-0000-000000000000"
+# Speaker device: IK product | serial | two a.b.c versions | 0 or 1.  ARC X
+# loads no session whose speakers lack a product and a serial.  183: ARC Studio.
+ARCX_DEVICE = "183|000000000|1.0.0|1.0.0|0"
+# Level offset dB of each measurement point.
+ARCX_POINT_GAINS = (0.0, -1.0, 2.0)
+# Time of flight, samples, per speaker.
+ARCX_DELAY = {"Left": 150, "Right": 160, "Subwoofer": 170}
+# name: (layout id, layout name, speakers, points, sample rate, with session)
+ARCX = {
+    "Arc.arcXs": (1, "Stereo", ("Left", "Right"), 3, 48000, True),
+    "Arc.arcXa": (1, "Stereo", ("Left", "Right"), 3, 48000, False),
+    "Arc Sub.arcXs": (2, "Stereo + Sub", ("Left", "Right", "Subwoofer"), 1, 44100, True),
+}
+ARCX_SETTINGS = (
+    [("HpfFrequency", "20.0"), ("DelayMs", "0.0"), ("GainDb", "0.0"), ("DelayEnable", "1"),
+     ("GainEnable", "1"), ("CalEnable", "1"), ("PhaseInvert", "0"), ("PhaseInvertEnable", "1"),
+     ("FilterLowType", "0"), ("FilterHighType", "0"), ("VoiceIndex", "0"), ("FilterEnable", "0"),
+     ("VoiceEnable", "0"), ("DimAttenuationDb", "0.0"), ("ActivePreset", "0"),
+     ("FilterLowFrequency", "100.0"), ("FilterLowGainDb", "0.0"), ("FilterLowQ", "0.7")]
+    + [(f"PeakFilters{n}{k}", v) for n in range(4)
+       for k, v in (("Frequency", "1000.0"), ("GainDb", "0.0"), ("Q", "1.0"))]
+    + [("FilterHighFrequency", "10000.0"), ("FilterHighGainDb", "0.0"), ("FilterHighQ", "0.7")]
+)
+
+
+def arcx_filters(speaker: str, rate: float) -> list:
+    if speaker == "Subwoofer":
+        return [dsp.pass_filter(False, 100, 0.7071, rate)]
+    return bells(speaker, rate)
+
+
+def arcx_ir(speaker: str, gain_db: float, rate: float) -> list[float]:
+    """Unit impulse at the time of flight, through the speaker's biquads."""
+    x = [0.0] * ARCX_IR_LENGTH
+    x[ARCX_DELAY[speaker]] = 10 ** (gain_db / 20)
+    for bq in arcx_filters(speaker, rate):
+        y, x1, x2, y1, y2 = [], 0.0, 0.0, 0.0, 0.0
+        for v in x:
+            out = (bq.b0 * v + bq.b1 * x1 + bq.b2 * x2 - bq.a1 * y1 - bq.a2 * y2) / bq.a0
+            y.append(out)
+            x1, x2, y1, y2 = v, x1, out, y1
+        x = y
+    return x
+
+
+def write_float_wav(samples: list[float], rate: int) -> bytes:
+    data = struct.pack(f"<{len(samples)}f", *samples)
+    fmt = struct.pack("<HHIIHH", 3, 1, rate, rate * 4, 4, 32)
+    return (b"RIFF" + struct.pack("<I", 4 + 8 + len(fmt) + 8 + len(data)) + b"WAVE"
+            + b"fmt " + struct.pack("<I", len(fmt)) + fmt
+            + b"data" + struct.pack("<I", len(data)) + data)
+
+
+def write_pak(entries: dict[str, bytes]) -> bytes:
+    """Version 3, entries sorted by name, as ARC X writes them."""
+    names = sorted(entries)
+    table_size = sum(len(n.encode()) + 17 for n in names)
+    offset = 26 + table_size
+    table, body = b"", b""
+    for name in names:
+        table += name.encode() + b"\0" + struct.pack("<QQ", offset + len(body), len(entries[name]))
+        body += entries[name]
+    return b"IKMPAK" + struct.pack("<IQQ", 3, len(names), table_size) + table + body
+
+
+def _value_tree(tag: str, attributes, children=(), indent: str = "") -> list[str]:
+    attrs = "".join(f' {k}="{v}"' for k, v in attributes)
+    if not children:
+        return [f"{indent}<{tag}{attrs}/>"]
+    lines = [f"{indent}<{tag}{attrs}>"]
+    for child in children:
+        lines += _value_tree(*child, indent=indent + "  ")
+    return lines + [f"{indent}</{tag}>"]
+
+
+def _juce_xml(lines: list[str]) -> bytes:
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n\n' + "\n".join(lines) + "\n").encode()
+
+
+def write_arcx(layout: int, layout_name: str, speakers, points: int, rate: int,
+               session: bool) -> bytes:
+    entries = {"info.xml": _juce_xml(_value_tree("SerializedMeasure", [
+        ("Version", "5.0.0"), ("SampleRate", f"{rate:.1f}"), ("SelectedMicType", "MEMS"),
+        ("CorrectionSpeaker", ARCX_GUID), ("NumMeasurementPoints", points),
+        ("Layout", layout_name), ("ListeningArea", "Project Studio"), ("FastMode", "0"),
+        ("Countdown", "5")]))}
+    positions = {name: n for n, name in arcx.POSITIONS.items()}
+    for c, speaker in enumerate(speakers):
+        cc = [0.0] * ARCX_IR_LENGTH
+        cc[ARCX_DELAY[speaker]] = 1.0
+        for p in range(points):
+            ir = arcx_ir(speaker, ARCX_POINT_GAINS[p], rate)
+            entries[f"ch{c}/ch{c}p{p}_ir.wav"] = write_float_wav(ir, rate)
+            entries[f"ch{c}/ch{c}p{p}_cc.wav"] = write_float_wav(cc, rate)
+    if session:
+        entries["session.xml"] = _juce_xml(_value_tree("Session", [
+            ("Version", 1), ("AppVersion", "2.0.2 (26D30)"), ("GUID", ARCX_GUID),
+            ("Layout", layout), ("CorrectionType", 1), ("CorrectionPhase", 1),
+            ("MasterRemoteSpeakerIndex", -1), ("BassManaged", 0), ("TargetRequest", 0),
+            ("Notes", ""), ("AudioDeviceName", ""), ("AudioDeviceSampleRate", rate),
+            ("AudioDeviceBufferSize", 512)], [
+            (f"Speaker_{positions[s]}", [
+                ("Device", ARCX_DEVICE), ("CalRangeLow", 20), ("CalRangeHigh", 20000),
+                ("CorrectionAssetGUID", ARCX_GUID), ("OutputChannelIndex", c)],
+             [("Settings", ARCX_SETTINGS)])
+            for c, s in enumerate(speakers)]))
+    return write_pak(entries)
+
+
 def export_files() -> dict[str, bytes]:
     return {
         f"{BIQUAD_JSON_DIR}/Tilt Fluid.bin": write_biquad_json((96000, 192000),
@@ -697,6 +814,10 @@ CONVERSIONS = [
     (f"{BIQUAD_JSON_DIR}/Tilt Fluid.bin", f"{CSV_DIR}/Tilt Fluid Left.csv", {}),
     (f"{EXPORT_TXT_DIR}/Tilt - Flat.txt", f"{CSV_DIR}/Tilt - Flat Right.csv", {"channel": "right"}),
     (f"{LVND_DIR}/Tilt_192000_Left.bin", f"{CSV_DIR}/Tilt_192000_Left.csv", {}),
+    (f"{ARCX_DIR}/Arc.arcXs", f"{CSV_DIR}/Arc Left.csv", {}),
+    (f"{ARCX_DIR}/Arc Sub.arcXs", f"{CSV_DIR}/Arc Sub Subwoofer.csv", {"speaker": "Subwoofer"}),
+    (f"{ARCX_DIR}/Arc.arcXs", f"{PROJ_DIR}/Arc.swproj",
+     {"mic_profile": f"{MIC_DIR}/FLAT01.swmicpkg"}),
 ]
 PATH_OPTIONS = ("mic_profile", "right", "target_curve")
 
@@ -726,6 +847,8 @@ def generate(root: Path = ROOT) -> list[Path]:
         files[f"{PRESET_DIR}/{preset['name']}.json"] = json.dumps(
             preset, sort_keys=True, separators=(",", ":")).encode()
     files.update(export_files())
+    for name, spec in ARCX.items():
+        files[f"{ARCX_DIR}/{name}"] = write_arcx(*spec)
 
     written = []
     for rel, data in files.items():

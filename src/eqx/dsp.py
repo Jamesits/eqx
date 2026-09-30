@@ -1,4 +1,4 @@
-"""Biquad filters: Audio EQ Cookbook design and magnitude response."""
+"""Biquad filters (Audio EQ Cookbook design and magnitude response); FFT."""
 
 from __future__ import annotations
 
@@ -87,3 +87,26 @@ def pass_filter(high: bool, frequency: float, q: float,
     alpha = math.sin(w0) / (2 * q)
     b1 = -(1 + cos) if high else 1 - cos
     return Biquad(abs(b1) / 2, b1, abs(b1) / 2, 1 + alpha, -2 * cos, 1 - alpha)
+
+
+_TWIDDLES: dict[int, list[complex]] = {}
+
+
+def fft(x) -> list[complex]:
+    """Discrete Fourier transform, radix 2; ``len(x)`` must be a power of two."""
+    n = len(x)
+    if n & (n - 1) or n == 0:
+        raise ValueError(f"FFT length {n} is not a power of two")
+    return _fft(list(x))
+
+
+def _fft(x: list) -> list:
+    n = len(x)
+    if n == 1:
+        return x
+    even, odd = _fft(x[0::2]), _fft(x[1::2])
+    tw = _TWIDDLES.get(n)
+    if tw is None:
+        tw = _TWIDDLES[n] = [cmath.exp(-2j * math.pi * k / n) for k in range(n // 2)]
+    odd = [w * o for w, o in zip(tw, odd)]
+    return [e + o for e, o in zip(even, odd)] + [e - o for e, o in zip(even, odd)]

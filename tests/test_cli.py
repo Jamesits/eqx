@@ -27,6 +27,7 @@ SAMPLES = {
     "soundid-export-lvnd": TESTDATA / "soundid/soundid-export-lvnd/Tilt_192000_Left.bin",
     "soundid-export-txt": TESTDATA / "soundid/soundid-export-txt/Tilt - Flat.txt",
     "tmreq": TESTDATA / "rme/tmreq/Tilt - Flat.tmreq",
+    "arcx": TESTDATA / "ik/arcx/Arc.arcXs",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -55,7 +56,8 @@ class FormatTests(unittest.TestCase):
     def test_detect(self):
         for name, want in (("a.swproj", "swproj"), ("A.SWHP", "peqb"), ("a.eqb", "peqb"),
                            ("a.mdat", "mdat"), ("a.cal", "rewcal"), ("a.CSV", "autoeq"),
-                           ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq")):
+                           ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq"),
+                           ("a.arcXs", "arcx"), ("a.arcXa", "arcx")):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
             formats.detect(Path("a.dat"))
@@ -205,6 +207,25 @@ class ConvertTests(unittest.TestCase):
                                   Path(tmp) / "x.csv",
                                   "--sample-rate", "48000")
             self.assertIn("--sample-rate does not apply to soundid-export-peq-json -> autoeq", err)
+
+    def test_arcx(self):
+        code, err = run_error("convert", SAMPLES["arcx"])
+        self.assertIn("2 converters from arcx", err)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = run("convert", SAMPLES["arcx"], "-o", Path(tmp) / "x.csv",
+                             "--speaker", "right", "--point", "1")
+            self.assertEqual(code, 0)
+            self.assertIn("Right response, point 1", text)
+            code, err = run_error("convert", SAMPLES["arcx"], "-o", Path(tmp) / "x.csv",
+                                  "--speaker", "Center")
+            self.assertIn("no Center speaker; available: Left, Right", err)
+            code, err = run_error("convert", SAMPLES["arcx"], "-o", Path(tmp) / "x.csv",
+                                  "--point", "3")
+            self.assertIn("point 3 does not exist; points: 0-2", err)
+            code, text = run("convert", SAMPLES["arcx"], "-o", Path(tmp) / "x.swproj",
+                             "--mic-profile", PACKAGE, "--point", "0")
+            self.assertEqual(code, 0)
+            self.assertIn("measurements: 2", text)
 
     def test_required_option(self):
         code, err = run_error("convert", MDAT, "--to", "swproj")

@@ -9,6 +9,9 @@ Supported file formats:
 
 - AutoEq
     - `.csv`
+- IK Multimedia ARC X 2.x
+    - Session `.arcXs`
+    - Analysis `.arcXa`
 - RME TotalMix FX
     - Room EQ preset `.tmreq`
 - REW
@@ -73,3 +76,8 @@ uv run pytest
 
 Device exports
 - MERGING exports are encrypted with the device serial number; without `--serial-number` every number is tried (a few seconds)
+
+### IK Multimedia ARC X
+
+- Only the measured speaker responses are converted; ARC X computes its correction when it loads the file
+- Response levels are relative (dB re full scale), not SPL
