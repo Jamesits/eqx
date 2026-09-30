@@ -1,4 +1,6 @@
+import base64
 import gzip
+import json
 import math
 import unittest
 import xml.etree.ElementTree as ET
@@ -210,6 +212,11 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual([e.text for e in room.findall(".//s:RoomPoint/s:Channel", NS)],
                          ["Left", "Right", "Other", "Other", "Other", "Other"])
         self.assertEqual(list(swproj.measurement_curves(proj)), [n for n, _ in channels])
+        point = room.find("s:Measurements/s:RoomMeasurement", NS)
+        config = {kv.findtext("a:Key", namespaces=NS): kv.findtext("a:Value", namespaces=NS)
+                  for kv in point.findall("s:Parameters/a:KeyValueOfstringstring", NS)}
+        signal = json.loads(base64.b64decode(config["TestSignalConfig"]))
+        self.assertEqual(signal["lfeChannelMap"], [False, False, False, True, False, False])
         # The mic table is the only Correction curve without a channel.
         self.assertEqual([p.angle for p in swproj.mic_profiles(proj)], ["degrees_0"])
 

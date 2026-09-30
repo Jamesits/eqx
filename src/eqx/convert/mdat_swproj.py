@@ -6,7 +6,9 @@ Audio samples are omitted.  Curves are resampled to SoundID's standard
 
 from __future__ import annotations
 
+import base64
 import bisect
+import json
 import math
 import statistics
 import xml.etree.ElementTree as ET
@@ -220,6 +222,20 @@ def _channel_side(measurement: Measurement) -> str:
     return {0: "Left", 1: "Right"}.get(measurement.index, "Other")
 
 
+def test_signal_config(layout: sid_layout.Layout, sample_rate: int) -> str:
+    """Base64 JSON ``TestSignalConfig``: SoundID finds the LFE channels by its
+    ``lfeChannelMap`` only.  The other values are those of SoundID's own projects."""
+    config = {
+        "endFrequency": 22000.0, "fadeIn": 1440.0, "fadeOut": 240.0, "inputFadeIn": 480.0,
+        "inputFadeOut": 480.0, "interSignalSilence": 31200.0,
+        "lfeChannelMap": [c.is_lfe for c in layout.channels], "lfeEndFrequency": 22000.0,
+        "name": "FFTResponseTestSignal", "roomReverb": 1440.5, "safeSilence": 720.0,
+        "sampleRate": float(sample_rate), "startFrequency": 10.0, "sweepDuration": 48000.0,
+        "version": "v1.0.0",
+    }
+    return base64.b64encode(json.dumps(config, separators=(",", ":")).encode()).decode()
+
+
 def check_layout(measurements: list[Measurement], layout: sid_layout.Layout) -> None:
     """Each measurement must be a distinct channel of ``layout``, by index and name."""
     seen = set()
@@ -380,6 +396,9 @@ def build_project_xml(
             ("SessionId", "0"),
             ("Size_H", "0.35"),
             ("Size_W", "0.35"),
+            # Written only with an LFE, so stereo projects stay as they were.
+            *((("TestSignalConfig", test_signal_config(layout, measurements[0].sample_rate)),)
+              if any(c.is_lfe for c in layout.channels) else ()),
         ),
     )
     room_points = _element(rm, "Points")
