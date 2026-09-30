@@ -226,6 +226,19 @@ class ConvertTests(unittest.TestCase):
                              "--mic-profile", PACKAGE, "--point", "0")
             self.assertEqual(code, 0)
             self.assertIn("measurements: 2", text)
+            surround = TESTDATA / "ik/arcx/Arc 5.1.arcXs"
+            code, text = run("convert", surround, "-o", Path(tmp) / "x.swproj",
+                             "--mic-profile", PACKAGE, "--lfe-high-cutoff-hz", "100")
+            self.assertEqual(code, 0)
+            self.assertIn("layout: 5.1; measurements: 6", text)
+            self.assertIn("LFE correction band: 60-100 Hz", text)
+            code, text = run("convert", Path(tmp) / "x.swproj", "-o", Path(tmp) / "x.csv",
+                             "--speaker", "left surround")
+            self.assertEqual(code, 0)
+            self.assertIn("Left Surround measurement", text)
+            code, err = run_error("convert", Path(tmp) / "x.swproj", "-o", Path(tmp) / "x.csv",
+                                  "--speaker", "Left Wide")
+            self.assertIn("no Left Wide channel; available: Left, Right, Center", err)
 
     def test_required_option(self):
         code, err = run_error("convert", MDAT, "--to", "swproj")

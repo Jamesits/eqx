@@ -653,13 +653,16 @@ ARCX_GUID = "00000000-0000-0000-0000-000000000000"
 ARCX_DEVICE = "183|000000000|1.0.0|1.0.0|0"
 # Level offset dB of each measurement point.
 ARCX_POINT_GAINS = (0.0, -1.0, 2.0)
-# Time of flight, samples, per speaker.
+# Time of flight, samples, per speaker; other speakers: ARCX_OTHER_DELAY.
 ARCX_DELAY = {"Left": 150, "Right": 160, "Subwoofer": 170}
+ARCX_OTHER_DELAY = 180
 # name: (layout id, layout name, speakers, points, sample rate, with session)
 ARCX = {
     "Arc.arcXs": (1, "Stereo", ("Left", "Right"), 3, 48000, True),
     "Arc.arcXa": (1, "Stereo", ("Left", "Right"), 3, 48000, False),
     "Arc Sub.arcXs": (2, "Stereo + Sub", ("Left", "Right", "Subwoofer"), 1, 44100, True),
+    "Arc 5.1.arcXs": (4, "5.1", tuple(arcx.POSITIONS[p] for p in arcx.LAYOUTS[4][1]), 1, 48000,
+                      True),
 }
 ARCX_SETTINGS = (
     [("HpfFrequency", "20.0"), ("DelayMs", "0.0"), ("GainDb", "0.0"), ("DelayEnable", "1"),
@@ -674,15 +677,19 @@ ARCX_SETTINGS = (
 
 
 def arcx_filters(speaker: str, rate: float) -> list:
+    """Left, Right: the device export bells; Subwoofer: a low pass; others: one bell."""
     if speaker == "Subwoofer":
         return [dsp.pass_filter(False, 100, 0.7071, rate)]
-    return bells(speaker, rate)
+    if speaker in SPEAKER:
+        return bells(speaker, rate)
+    position = next(n for n, name in arcx.POSITIONS.items() if name == speaker)
+    return [dsp.bell(200.0 * position, 4.0, 1.0, rate)]
 
 
 def arcx_ir(speaker: str, gain_db: float, rate: float) -> list[float]:
     """Unit impulse at the time of flight, through the speaker's biquads."""
     x = [0.0] * ARCX_IR_LENGTH
-    x[ARCX_DELAY[speaker]] = 10 ** (gain_db / 20)
+    x[ARCX_DELAY.get(speaker, ARCX_OTHER_DELAY)] = 10 ** (gain_db / 20)
     for bq in arcx_filters(speaker, rate):
         y, x1, x2, y1, y2 = [], 0.0, 0.0, 0.0, 0.0
         for v in x:
@@ -737,7 +744,7 @@ def write_arcx(layout: int, layout_name: str, speakers, points: int, rate: int,
     positions = {name: n for n, name in arcx.POSITIONS.items()}
     for c, speaker in enumerate(speakers):
         cc = [0.0] * ARCX_IR_LENGTH
-        cc[ARCX_DELAY[speaker]] = 1.0
+        cc[ARCX_DELAY.get(speaker, ARCX_OTHER_DELAY)] = 1.0
         for p in range(points):
             ir = arcx_ir(speaker, ARCX_POINT_GAINS[p], rate)
             entries[f"ch{c}/ch{c}p{p}_ir.wav"] = write_float_wav(ir, rate)
@@ -817,6 +824,8 @@ CONVERSIONS = [
     (f"{ARCX_DIR}/Arc.arcXs", f"{CSV_DIR}/Arc Left.csv", {}),
     (f"{ARCX_DIR}/Arc Sub.arcXs", f"{CSV_DIR}/Arc Sub Subwoofer.csv", {"speaker": "Subwoofer"}),
     (f"{ARCX_DIR}/Arc.arcXs", f"{PROJ_DIR}/Arc.swproj",
+     {"mic_profile": f"{MIC_DIR}/FLAT01.swmicpkg"}),
+    (f"{ARCX_DIR}/Arc 5.1.arcXs", f"{PROJ_DIR}/Arc 5.1.swproj",
      {"mic_profile": f"{MIC_DIR}/FLAT01.swmicpkg"}),
 ]
 PATH_OPTIONS = ("mic_profile", "right", "target_curve")

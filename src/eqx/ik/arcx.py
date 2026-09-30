@@ -53,9 +53,6 @@ SESSION, INFO = "session.xml", "info.xml"
 # Response grid: 1/48 octave from 20 Hz; bands of +-1/96 octave.
 GRID_LOW_HZ, GRID_HIGH_HZ, GRID_STEPS_PER_OCTAVE = 20.0, 20000.0, 48
 
-SPEAKER_OPTION = Option("--speaker",
-                        help="speaker, a position name such as Left, Right, Subwoofer, Center "
-                             "(default: Left)")
 POINT_OPTION = Option("--point", type=int,
                       help="measurement point, from 0 as in the file names "
                            "(default: the power average of all points)")
@@ -76,6 +73,7 @@ class ArcX:
     sample_rate: float
     channels: list[list[Point]]             # [channel][point]
     speakers: list[str]                     # name of each channel
+    layout: int | None                      # layout id; None if not known
     info_text: str
     session_text: str = ""
 
@@ -115,26 +113,41 @@ def read(data: bytes) -> ArcX:
                          for p in range(points)])
     if not channels:
         raise ValueError("ARC X analysis has no channels (no ch0/ch0p0_ir.wav)")
+    layout = layout_id(session, info, len(channels))
     return ArcX(version, {k: len(v) for k, v in entries.items()}, info, session, sample_rate,
-                channels, speaker_names(session, info, len(channels)), info_text, session_text)
+                channels, speaker_names(session, info, len(channels)), layout, info_text,
+                session_text)
 
 
 def load(path) -> ArcX:
     return read(Path(path).read_bytes())
 
 
-def speaker_names(session: ET.Element | None, info: ET.Element, count: int) -> list[str]:
-    """Channel names: the session layout, else the analysis layout name, else by count."""
-    positions = None
+def layout_id(session: ET.Element | None, info: ET.Element, count: int) -> int | None:
+    """The session layout, else the analysis layout name, else Stereo for 2 channels.
+
+    None if not known or its speaker count is not ``count``.
+    """
+    layout = None
     if session is not None and session.get("Layout", "").strip().lstrip("-").isdigit():
-        positions = LAYOUTS.get(int(session.get("Layout")), (None, None))[1]
-    if positions is None:
-        positions = next((p for name, p in LAYOUTS.values() if name == info.get("Layout")), None)
-    if positions is None and count == 2:
-        positions = LAYOUTS[1][1]
-    if positions is None or len(positions) != count:
+        layout = int(session.get("Layout"))
+        layout = layout if layout in LAYOUTS else None
+    if layout is None:
+        layout = next((i for i, (name, _) in LAYOUTS.items() if name == info.get("Layout")),
+                      None)
+    if layout is None and count == 2:
+        layout = 1
+    if layout is None or len(LAYOUTS[layout][1]) != count:
+        return None
+    return layout
+
+
+def speaker_names(session: ET.Element | None, info: ET.Element, count: int) -> list[str]:
+    """Channel names by ``layout_id``; ``Channel <c>`` if the layout is not known."""
+    layout = layout_id(session, info, count)
+    if layout is None:
         return [f"Channel {c}" for c in range(count)]
-    return [POSITIONS[p] for p in positions]
+    return [POSITIONS[p] for p in LAYOUTS[layout][1]]
 
 
 def _wav_name(channel: int, point: int, kind: str) -> str:

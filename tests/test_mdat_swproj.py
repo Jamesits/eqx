@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from eqx.convert import mdat_swproj as convert
 from eqx.model import Measurement
 from eqx.rew import mdat
-from eqx.soundid import swmicpkg, swproj
+from eqx.soundid import layout, swmicpkg, swproj
 
 TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
 NS = swproj.NS
@@ -17,10 +17,10 @@ GRID = [20.0, 50.0, 61.0, 100.0, 1000.0, 10000.0, 19900.0, 21000.0, 22000.0]
 FLAT_MIC = [(20.0, 0.0), (22000.0, 0.0)]
 
 
-def measurement(level, channel="Left"):
+def measurement(level, channel="Left", index=None):
     return Measurement(
         channel=channel,
-        index=int(channel == "Right"),
+        index=int(channel == "Right") if index is None else index,
         frequencies=GRID,
         response=[level] * len(GRID),
         group_delay=[0.002] * len(GRID),
@@ -105,6 +105,18 @@ class ProcessingTests(unittest.TestCase):
         self.assertEqual(curve.correction[3], 0.0)  # 100 Hz is below the new cutoff.
         self.assertEqual(curve.correction[5], 6.0)
 
+    def test_lfe(self):
+        lfe = "Low freq. effects"
+        curves, reference = convert.prepare_speaker_curves(
+            [measurement(80.0), measurement(60.0, lfe, 3)], GRID, FLAT_MIC,
+            lfe=[lfe], lfe_high_cutoff_hz=1000.0)
+        # The LFE level is left out of the reference estimate.
+        self.assertEqual(reference, 80.0)
+        # 100 Hz is corrected; the LFE band ends at 1 kHz.
+        self.assertEqual(curves[lfe].correction[3], 12.0)
+        self.assertEqual(curves[lfe].correction[4:], [0.0] * 5)
+        self.assertEqual(curves["Left"].correction, [0.0] * len(GRID))
+
     def test_invalid_processing_options(self):
         cases = (
             {"reference_spl": math.nan}, {"reference_spl": math.inf},
@@ -112,6 +124,8 @@ class ProcessingTests(unittest.TestCase):
             {"high_cutoff_hz": math.inf}, {"max_boost_db": -1}, {"max_boost_db": 12.1},
             {"max_boost_db": math.nan}, {"low_cutoff_hz": 500, "high_cutoff_hz": 1001},
             {"clip_fraction": -0.1}, {"clip_fraction": 1.1}, {"clip_fraction": math.nan},
+            {"lfe_high_cutoff_hz": 0}, {"lfe_high_cutoff_hz": math.nan},
+            {"lfe": ["Left"], "lfe_high_cutoff_hz": 61},
         )
         for settings in cases:
             with self.subTest(settings=settings), self.assertRaises(ValueError):
@@ -176,6 +190,37 @@ class ProjectTests(unittest.TestCase):
             [(float(p.findtext("s:Frequency", namespaces=NS)), float(p.findtext("s:Response", namespaces=NS))) for p in mic_points],
             profile.points,
         )
+
+    def test_multichannel(self):
+        target = layout.LAYOUTS[11]
+        channels = [(c.name, i) for i, c in enumerate(target.channels)]
+        measurements = [measurement(80.0, name, i) for name, i in channels]
+        result = convert.convert(measurements, swmicpkg.load(
+            TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg"), "5.1", layout=target)
+        proj = swproj.SwProj(result.data)
+        self.assertEqual([c.curve_type for c in proj.eqb.curves],
+                         [9, 1, 9, 2, 9, 10, 9, 10, 9, 10, 9, 10])
+        self.assertEqual([c.parameters["ChannelGroup"] for c in proj.eqb.curves[::2]],
+                         ["Front", "Front", "Center", "Sub", "Surround", "Surround"])
+        root = proj.tree()
+        room = root.find("s:RoomMeasurementCollections/s:RoomMeasurementCollection", NS)
+        params = {kv.findtext("a:Key", namespaces=NS): kv.findtext("a:Value", namespaces=NS)
+                  for kv in room.findall("s:Parameters/a:KeyValueOfstringstring", NS)}
+        self.assertEqual(params["ChannelLayout"], "11")
+        self.assertEqual([e.text for e in room.findall(".//s:RoomPoint/s:Channel", NS)],
+                         ["Left", "Right", "Other", "Other", "Other", "Other"])
+        self.assertEqual(list(swproj.measurement_curves(proj)), [n for n, _ in channels])
+        # The mic table is the only Correction curve without a channel.
+        self.assertEqual([p.angle for p in swproj.mic_profiles(proj)], ["degrees_0"])
+
+    def test_layout_checked(self):
+        profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg")
+        for measurements, message in (
+                ([measurement(80.0, "Center", 2)], r"layout 2.0 \(Stereo\) has no channel 2"),
+                ([measurement(80.0, "Center", 1)], "channel 1 of layout .* is Right"),
+                ([measurement(80.0), measurement(80.0)], "channel 0 measured twice")):
+            with self.subTest(message), self.assertRaisesRegex(ValueError, message):
+                convert.convert(measurements, profile, "x")
 
 
 if __name__ == "__main__":

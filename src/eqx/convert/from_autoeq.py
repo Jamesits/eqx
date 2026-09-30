@@ -8,7 +8,7 @@ from ..autoeq import response
 from ..model import Measurement, MicProfile
 from ..options import Option
 from ..rew import cal
-from ..soundid import peqb
+from ..soundid import layout, peqb
 from .base import Converter, Result
 from .mdat_swproj import SpeakerProjectConverter, interp, resample, standard_grid
 
@@ -63,8 +63,8 @@ class AutoeqToSwproj(SpeakerProjectConverter):
         self.column = column
         self.right = Path(right) if right is not None else None
 
-    def measurements(self, path: Path) -> list[Measurement]:
-        return [
+    def measurements(self, path: Path) -> tuple[layout.Layout, list[Measurement]]:
+        return layout.STEREO, [
             Measurement(channel, index, [f for f, _ in points], [v for _, v in points],
                         [0.0] * len(points), name=f"{channel} {path.stem}")
             for index, (channel, points) in enumerate(_curves(path, self.right, self.column))

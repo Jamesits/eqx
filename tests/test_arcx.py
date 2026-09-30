@@ -1,17 +1,23 @@
 import cmath
 import math
 import struct
+import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import gen_testdata
 from eqx import dsp
+from eqx.convert import arcx_swproj
 from eqx.ik import arcx, pak
+from eqx.soundid import layout
 
 ARCX_DIR = gen_testdata.ROOT / gen_testdata.ARCX_DIR
 SESSION = ARCX_DIR / "Arc.arcXs"
 ANALYSIS = ARCX_DIR / "Arc.arcXa"
 SUB = ARCX_DIR / "Arc Sub.arcXs"
+SURROUND = ARCX_DIR / "Arc 5.1.arcXs"
+MIC = gen_testdata.ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
 
 
 def _pak(version: int, entries: dict[str, bytes]) -> bytes:
@@ -138,6 +144,10 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual(analysis.channels[1][2].ir, session.channels[1][2].ir)
         self.assertEqual(sub.speakers, ["Left", "Right", "Subwoofer"])
         self.assertEqual(sub.channel("subwoofer"), 2)
+        self.assertEqual((session.layout, analysis.layout, sub.layout), (1, 1, 2))
+        self.assertEqual(arcx.load(SURROUND).speakers,
+                         ["Left", "Right", "Center", "Subwoofer", "LeftRearSurround",
+                          "RightRearSurround"])
 
     def test_speaker_names(self):
         info = ET.fromstring('<SerializedMeasure Layout="5.1"/>')
@@ -150,6 +160,9 @@ class ReaderTests(unittest.TestCase):
                          ["Left", "Right"])
         self.assertEqual(arcx.speaker_names(session, info, 3),
                          ["Channel 0", "Channel 1", "Channel 2"])
+        self.assertEqual(arcx.layout_id(session, info, 6), 4)
+        self.assertEqual(arcx.layout_id(ET.fromstring('<Session Layout="99"/>'), info, 6), 4)
+        self.assertIsNone(arcx.layout_id(session, info, 3))
 
     def test_rejected(self):
         entries = _entries(SESSION)
@@ -170,6 +183,46 @@ class ReaderTests(unittest.TestCase):
                                                           b'SampleRate="44100.0"')
         with self.assertRaisesRegex(ValueError, "48000 Hz, the analysis is 44100 Hz"):
             arcx.read(gen_testdata.write_pak(entries))
+
+
+class SwprojTests(unittest.TestCase):
+    def test_layouts(self):
+        # Every ARC X layout maps to a SoundID layout with the same speakers.
+        for arc_id, (target_id, shorts) in arcx_swproj.LAYOUTS.items():
+            with self.subTest(arcx.LAYOUTS[arc_id][0]):
+                target = layout.LAYOUTS[target_id]
+                self.assertEqual(len(shorts), len(arcx.LAYOUTS[arc_id][1]))
+                self.assertEqual(sorted(shorts), sorted(c.short for c in target.channels))
+
+    def test_surround(self):
+        target, measurements = arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(SURROUND)
+        self.assertEqual(target.name, "5.1")
+        self.assertEqual([(m.index, m.channel) for m in measurements],
+                         list(enumerate(["Left", "Right", "Center", "Low freq. effects",
+                                         "Left Surround", "Right Surround"])))
+        self.assertEqual(measurements[3].name, "Subwoofer Arc 5.1")
+
+    def test_reordered(self):
+        # ARC X records the 9.1.6 wides after the rear surrounds; SoundID before
+        # the surrounds.
+        speakers = [arcx.POSITIONS[p] for p in arcx.LAYOUTS[8][1]]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "Arc 9.1.6.arcXs"
+            path.write_bytes(gen_testdata.write_arcx(8, "9.1.6", speakers, 1, 48000, True))
+            target, measurements = arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
+        self.assertEqual(target.name, "9.1.6 Overhead")
+        self.assertEqual([m.channel for m in measurements], [c.name for c in target.channels])
+        self.assertEqual(measurements[4].name, "LeftWide Arc 9.1.6")
+
+    def test_unknown_layout(self):
+        entries = _entries(SUB)
+        del entries["session.xml"]
+        entries["info.xml"] = entries["info.xml"].replace(b'Layout="Stereo + Sub"', b'Layout=""')
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.arcXa"
+            path.write_bytes(gen_testdata.write_pak(entries))
+            with self.assertRaisesRegex(ValueError, "unknown ARC X layout of 3 channels"):
+                arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
 
 
 if __name__ == "__main__":

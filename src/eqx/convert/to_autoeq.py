@@ -24,6 +24,9 @@ from .mdat_swproj import standard_grid
 
 CHANNELS = ("left", "right")
 CHANNEL_OPTION = Option("--channel", choices=CHANNELS, help="channel to convert (default: left)")
+SPEAKER_OPTION = Option("--speaker",
+                        help="speaker, case-insensitive, as named by inspect, e.g. Left, "
+                             "Subwoofer, Center (default: Left)")
 
 
 def _channel_name(channel: str) -> str:
@@ -64,7 +67,7 @@ class ArcxToAutoeq(Converter):
     source = "arcx"
     target = "autoeq"
     description = "the measured response of one speaker of an ARC X session or analysis"
-    options = (arcx.SPEAKER_OPTION, arcx.POINT_OPTION)
+    options = (SPEAKER_OPTION, arcx.POINT_OPTION)
 
     def __init__(self, speaker: str = "Left", point: int | None = None):
         self.speaker = speaker
@@ -81,27 +84,35 @@ class ArcxToAutoeq(Converter):
 
 
 class SwprojToAutoeq(Converter):
+    """``--speaker`` selects any channel by its SoundID name; ``--channel`` left or right."""
+
     source = "swproj"
     target = "autoeq"
     description = "the measurement curve of one channel of a SoundID project"
     options = (
         CHANNEL_OPTION,
+        SPEAKER_OPTION,
         Option("--password", help="project password (or SWPROJ_PASSWORD)"),
     )
 
-    def __init__(self, channel: str = "left", password: str | None = None):
-        self.channel = _channel_name(channel)
+    def __init__(self, channel: str | None = None, speaker: str | None = None,
+                 password: str | None = None):
+        if channel is not None and speaker is not None:
+            raise ValueError("give --channel or --speaker, not both")
+        self.speaker = speaker if speaker is not None else _channel_name(channel or "left")
         password = password or os.environ.get("SWPROJ_PASSWORD")
         self.password = password.encode() if password else None
 
     def convert(self, path: Path) -> Result:
         path = Path(path)
         curves = swproj.measurement_curves(swproj.SwProj.open(path, self.password))
-        if self.channel not in curves:
-            raise _missing(self.channel, curves)
-        points = [(f, r) for f, r, _ in curves[self.channel]]
-        return _result(points, f"{path.stem} {self.channel}.csv",
-                       f"{self.channel} measurement, dB relative to the project reference")
+        names = {name.lower(): name for name in curves}
+        if self.speaker.lower() not in names:
+            raise _missing(self.speaker, curves)
+        name = names[self.speaker.lower()]
+        points = [(f, r) for f, r, _ in curves[name]]
+        return _result(points, f"{path.stem} {name}.csv",
+                       f"{name} measurement, dB relative to the project reference")
 
 
 class PeqbToAutoeq(Converter):

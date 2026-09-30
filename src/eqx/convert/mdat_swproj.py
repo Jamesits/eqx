@@ -18,11 +18,14 @@ from .. import formats
 from ..model import EPOCH, Measurement, MicProfile
 from ..options import Option
 from ..rew import mdat
+from ..soundid import layout as sid_layout
 from ..soundid import peqb, swmicpkg, swproj
 from .base import Converter, Result
 
 DEFAULT_LOW_CUTOFF_HZ = 60.0
 DEFAULT_HIGH_CUTOFF_HZ = 20000.0
+# The LFE channel carries 120 Hz and below.
+DEFAULT_LFE_HIGH_CUTOFF_HZ = 120.0
 # SoundID hard-caps speaker correction boost at this value.
 SOUNDID_MAX_BOOST_DB = 12.0
 DEFAULT_MAX_BOOST_DB = SOUNDID_MAX_BOOST_DB
@@ -88,7 +91,7 @@ def estimate_reference_spl(
 ) -> float:
     """SPL mapped to 0 dB: ``min(median, quantile(clip_fraction) + max_boost_db)``.
 
-    Pools the calibrated dB values of all channels in 200 Hz--10 kHz, limited
+    Pools the calibrated dB values of all given channels in 200 Hz--10 kHz, limited
     to the correction band.  Unsmoothed measurements swing tens of dB across
     narrow notches; the median ignores them, while a mean or power average is
     pulled around.  The second term lowers the level so that at most
@@ -114,10 +117,14 @@ def prepare_speaker_curves(
     high_cutoff_hz: float = DEFAULT_HIGH_CUTOFF_HZ,
     max_boost_db: float = DEFAULT_MAX_BOOST_DB,
     clip_fraction: float = DEFAULT_CLIP_FRACTION,
+    lfe: Iterable[str] = (),
+    lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
 ) -> tuple[dict[str, SpeakerCurves], float]:
     """Calibrate and normalize first, then constrain the inverse speaker EQ.
 
     ``reference_spl=None`` estimates the reference from the measurements.
+    ``lfe`` names the LFE channels: their band ends at ``lfe_high_cutoff_hz``
+    and they are left out of the reference estimate.
     Returns the curves and the reference SPL used.
     """
     if reference_spl is not None and not math.isfinite(reference_spl):
@@ -128,18 +135,17 @@ def prepare_speaker_curves(
         and 0 < low_cutoff_hz < high_cutoff_hz
     ):
         raise ValueError("cutoffs must be finite and satisfy 0 < low < high")
+    if not (math.isfinite(lfe_high_cutoff_hz) and lfe_high_cutoff_hz > 0):
+        raise ValueError("LFE cutoff must be finite and positive")
     if not (math.isfinite(max_boost_db) and 0 <= max_boost_db <= SOUNDID_MAX_BOOST_DB):
         raise ValueError(f"maximum boost must be between 0 and {SOUNDID_MAX_BOOST_DB:g} dB")
     if not 0 <= clip_fraction <= 1:
         raise ValueError("clip fraction must be between 0 and 1")
 
-    band = [i for i, f in enumerate(grid) if low_cutoff_hz <= f <= high_cutoff_hz]
-    if len(band) < 3:
-        raise ValueError("correction band must contain at least three frequency points")
-    # The standard grid rarely lands exactly on the cutoffs. Keep the nearest
-    # in-band samples flat, too, so interpolation from the outer zero samples
-    # cannot extend correction below the low cutoff or above the high cutoff.
-    first, last = band[0], band[-1]
+    lfe = set(lfe)
+    bands = {False: _band(grid, low_cutoff_hz, high_cutoff_hz)}
+    if any(m.channel in lfe for m in measurements):
+        bands[True] = _band(grid, low_cutoff_hz, min(high_cutoff_hz, lfe_high_cutoff_hz))
     mic_freq = [p[0] for p in profile_points]
     mic_gain = [p[1] for p in profile_points]
     calibration = [interp(mic_freq, mic_gain, f) for f in grid]
@@ -153,19 +159,22 @@ def prepare_speaker_curves(
     if not all(math.isfinite(value) for spl in calibrated for value in spl):
         raise ValueError("measurement contains non-finite values")
     if reference_spl is None:
+        # An LFE channel is far below the others in the level band.
+        pooled = [spl for m, spl in zip(measurements, calibrated) if m.channel not in lfe]
         reference_spl = estimate_reference_spl(
-            calibrated, grid,
+            pooled or calibrated, grid,
             low_cutoff_hz=low_cutoff_hz, high_cutoff_hz=high_cutoff_hz,
             max_boost_db=max_boost_db, clip_fraction=clip_fraction,
         )
     curves: dict[str, SpeakerCurves] = {}
     for measurement, spl in zip(measurements, calibrated):
         gd = resample(measurement.frequencies, measurement.group_delay, grid)
-        # The same SPL reference is used for both channels, preserving their
+        # The same SPL reference is used for all channels, preserving their
         # level balance.
         response = [value - reference_spl for value in spl]
         if not all(math.isfinite(value) for value in response + gd):
             raise ValueError(f"{measurement.channel} curve contains non-finite values")
+        first, last = bands[measurement.channel in lfe]
         correction = [
             min(-value, max_boost_db) if first < i < last else 0.0
             for i, value in enumerate(response)
@@ -175,12 +184,24 @@ def prepare_speaker_curves(
     return curves, reference_spl
 
 
-def _channel_params(measurement: Measurement, correction: bool) -> dict[str, Any]:
+def _band(grid: list[float], low_hz: float, high_hz: float) -> tuple[int, int]:
+    """First and last grid index of the correction band."""
+    band = [i for i, f in enumerate(grid) if low_hz <= f <= high_hz]
+    if len(band) < 3:
+        raise ValueError("correction band must contain at least three frequency points")
+    # The standard grid rarely lands exactly on the cutoffs. Keep the nearest
+    # in-band samples flat, too, so interpolation from the outer zero samples
+    # cannot extend correction below the low cutoff or above the high cutoff.
+    return band[0], band[-1]
+
+
+def _channel_params(measurement: Measurement, layout: sid_layout.Layout,
+                    correction: bool) -> dict[str, Any]:
     # SoundID writes negated zero on correction curves.
     zero = "-0" if correction else "0"
     return {
         "ChannelDelayMs": zero,
-        "ChannelGroup": "Front",
+        "ChannelGroup": layout.channels[measurement.index].group,
         "ChannelIndex": measurement.index,
         "ChannelName": measurement.channel,
         "Delay": zero,
@@ -190,7 +211,27 @@ def _channel_params(measurement: Measurement, correction: bool) -> dict[str, Any
 
 
 def _correction_type(measurement: Measurement) -> str:
-    return "CorrectionLeft" if measurement.index == 0 else "CorrectionRight"
+    """SoundID names the correction of channels 0 and 1 only."""
+    return {0: "CorrectionLeft", 1: "CorrectionRight"}.get(measurement.index, "Correction")
+
+
+def _channel_side(measurement: Measurement) -> str:
+    """The ``Channel`` element: SoundID's enum has Left, Right and Other."""
+    return {0: "Left", 1: "Right"}.get(measurement.index, "Other")
+
+
+def check_layout(measurements: list[Measurement], layout: sid_layout.Layout) -> None:
+    """Each measurement must be a distinct channel of ``layout``, by index and name."""
+    seen = set()
+    for m in measurements:
+        if not 0 <= m.index < len(layout.channels):
+            raise ValueError(f"{m.channel}: layout {layout.name} has no channel {m.index}")
+        if m.channel != layout.channels[m.index].name:
+            raise ValueError(f"{m.channel}: channel {m.index} of layout {layout.name} is "
+                             f"{layout.channels[m.index].name}")
+        if m.index in seen:
+            raise ValueError(f"{m.channel}: channel {m.index} measured twice")
+        seen.add(m.index)
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +304,7 @@ def build_project_xml(
     profile: MicProfile,
     corrected: dict[str, SpeakerCurves],
     name: str,
+    layout: sid_layout.Layout = sid_layout.STEREO,
 ) -> bytes:
     root = ET.Element(f"{{{NS_SW}}}Project")
     _db_stamp(root)
@@ -274,10 +316,10 @@ def build_project_xml(
         index = measurement.index
         _curve(curves, "Measurement", f"Balanced Measurement CH {index}", grid,
                speaker.response, speaker.group_delay,
-               _channel_params(measurement, False).items())
+               _channel_params(measurement, layout, False).items())
         _curve(curves, _correction_type(measurement), f"Correction CH {index}", grid,
                speaker.correction, speaker.correction_group_delay,
-               _channel_params(measurement, True).items())
+               _channel_params(measurement, layout, True).items())
 
     mic_freq = [p[0] for p in profile.points]
     mic_response = [p[1] for p in profile.points]
@@ -314,7 +356,7 @@ def build_project_xml(
     _params(
         room_collection,
         (
-            ("ChannelLayout", "0"),
+            ("ChannelLayout", layout.id),
             ("DistanceBetweenSpeakers", "0"),
             ("IsLfeLouder", "false"),
             ("MeasuredDistanceBetweenSpeakers", "0"),
@@ -344,7 +386,7 @@ def build_project_xml(
     for measurement in measurements:
         point = _element(room_points, "RoomPoint")
         _db_stamp(point)
-        _element(point, "Channel", measurement.channel)
+        _element(point, "Channel", _channel_side(measurement))
         _element(point, "Distance", "0")
         _element(point, "DistanceInSamples", "0")
         _element(point, "InputLevel", "0")
@@ -354,7 +396,7 @@ def build_project_xml(
     for measurement in measurements:
         speaker = corrected[measurement.channel]
         m = _element(rms, "Measurement")
-        _element(m, "Channel", measurement.channel)
+        _element(m, "Channel", _channel_side(measurement))
         _element(m, "Delay", "0")
         _params(m, (("ChannelIndex", measurement.index),))
         _point_list(m, grid, speaker.response, speaker.group_delay)
@@ -381,10 +423,11 @@ def build_project_xml(
 # PEQb part
 # ---------------------------------------------------------------------------
 def build_eqb(
-    measurements: list[Measurement], grid: list[float], corrected: dict[str, SpeakerCurves]
+    measurements: list[Measurement], grid: list[float], corrected: dict[str, SpeakerCurves],
+    layout: sid_layout.Layout = sid_layout.STEREO,
 ) -> bytes:
     # PEQb v3.0.0.2 stores each speaker's Measurement together with its
-    # CorrectionLeft/CorrectionRight curve. Use the same constrained correction
+    # correction curve. Use the same constrained correction
     # as the XML; do not invert the measurement again here, bypassing the limits.
     # Both curves must be present for the app to switch presets successfully.
     curves = []
@@ -393,13 +436,13 @@ def build_eqb(
         curves.append(peqb.Curve(
             peqb.CURVE_TYPE_ID["Measurement"],
             list(zip(grid, speaker.response, speaker.group_delay)),
-            _channel_params(measurement, False),
+            _channel_params(measurement, layout, False),
             flags=peqb.F_FREQUENCY | peqb.F_RESPONSE | peqb.F_PARAMETERS,
         ))
         curves.append(peqb.Curve(
             peqb.CURVE_TYPE_ID[_correction_type(measurement)],
             list(zip(grid, speaker.correction, speaker.correction_group_delay)),
-            _channel_params(measurement, True),
+            _channel_params(measurement, layout, True),
             flags=peqb.F_FREQUENCY | peqb.F_RESPONSE | peqb.F_GROUP_DELAY | peqb.F_PARAMETERS,
         ))
     return peqb.write(curves)
@@ -426,7 +469,11 @@ def convert(
     high_cutoff_hz: float = DEFAULT_HIGH_CUTOFF_HZ,
     max_boost_db: float = DEFAULT_MAX_BOOST_DB,
     clip_fraction: float = DEFAULT_CLIP_FRACTION,
+    lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
+    layout: sid_layout.Layout = sid_layout.STEREO,
 ) -> Conversion:
+    """``measurements`` are channels of ``layout``: ``index`` and ``channel`` as in the layout."""
+    check_layout(measurements, layout)
     grid = standard_grid()
     corrected, reference_spl = prepare_speaker_curves(
         measurements,
@@ -437,9 +484,11 @@ def convert(
         high_cutoff_hz=high_cutoff_hz,
         max_boost_db=max_boost_db,
         clip_fraction=clip_fraction,
+        lfe=[c.name for c in layout.channels if c.is_lfe],
+        lfe_high_cutoff_hz=lfe_high_cutoff_hz,
     )
-    xml = build_project_xml(measurements, grid, profile, corrected, name)
-    eqb = build_eqb(measurements, grid, corrected)
+    xml = build_project_xml(measurements, grid, profile, corrected, name, layout)
+    eqb = build_eqb(measurements, grid, corrected, layout)
     return Conversion(swproj.write(xml, eqb), grid, corrected, reference_spl)
 
 
@@ -474,12 +523,15 @@ class SpeakerProjectConverter(Converter):
                help="angle between mic axis and speaker: degrees_0, degrees_30 or "
                     f"degrees_90 (default: {swmicpkg.PLAIN_ANGLE})"),
         Option("--reference-spl", type=float,
-               help="calibrated SPL mapped to 0 dB for both channels "
+               help="calibrated SPL mapped to 0 dB for all channels "
                     "(default: estimated from the 200 Hz-10 kHz level)"),
         Option("--low-cutoff-hz", type=float,
                help=f"no speaker EQ below this frequency (default: {DEFAULT_LOW_CUTOFF_HZ:g} Hz)"),
         Option("--high-cutoff-hz", type=float,
                help=f"no speaker EQ above this frequency (default: {DEFAULT_HIGH_CUTOFF_HZ:g} Hz)"),
+        Option("--lfe-high-cutoff-hz", type=float,
+               help="no LFE channel EQ above this frequency "
+                    f"(default: {DEFAULT_LFE_HIGH_CUTOFF_HZ:g} Hz)"),
         Option("--max-boost-db", type=float,
                help=f"maximum positive speaker EQ gain, at most +{SOUNDID_MAX_BOOST_DB:g} "
                     f"(default: +{DEFAULT_MAX_BOOST_DB:g} dB)"),
@@ -496,6 +548,7 @@ class SpeakerProjectConverter(Converter):
         reference_spl: float | None = None,
         low_cutoff_hz: float = DEFAULT_LOW_CUTOFF_HZ,
         high_cutoff_hz: float = DEFAULT_HIGH_CUTOFF_HZ,
+        lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
         max_boost_db: float = DEFAULT_MAX_BOOST_DB,
         clip_percent: float = DEFAULT_CLIP_FRACTION * 100,
     ):
@@ -508,29 +561,33 @@ class SpeakerProjectConverter(Converter):
             reference_spl=reference_spl,
             low_cutoff_hz=low_cutoff_hz,
             high_cutoff_hz=high_cutoff_hz,
+            lfe_high_cutoff_hz=lfe_high_cutoff_hz,
             max_boost_db=max_boost_db,
             clip_fraction=clip_percent / 100,
         )
 
-    def measurements(self, path: Path) -> list[Measurement]:
-        """The measurements in ``path``, left channel first."""
+    def measurements(self, path: Path) -> tuple[sid_layout.Layout, list[Measurement]]:
+        """The SoundID layout and the measurements in ``path``, in channel order."""
         raise NotImplementedError
 
     def convert(self, path: Path) -> Result:
         path = Path(path)
-        measurements = self.measurements(path)
+        layout, measurements = self.measurements(path)
         profile = load_mic_profile(self.mic_profile, self.mic_angle,
                                    self.mic_profile_format)
-        result = convert(measurements, profile, path.stem, **self.settings)
+        result = convert(measurements, profile, path.stem, layout=layout, **self.settings)
         s = self.settings
         source = "estimated" if s["reference_spl"] is None else "given"
         notes = [
-            f"measurements: {len(measurements)}; frequency points: {len(result.grid)}; "
-            f"mic table: {profile.name} {profile.angle}",
+            f"layout: {layout.name}; measurements: {len(measurements)}; "
+            f"frequency points: {len(result.grid)}; mic table: {profile.name} {profile.angle}",
             f"reference: {result.reference_spl:.1f} dB SPL = 0 dB ({source}); correction band: "
             f"{s['low_cutoff_hz']:g}-{s['high_cutoff_hz']:g} Hz; "
             f"maximum boost: {s['max_boost_db']:g} dB",
         ]
+        if any(layout.channels[m.index].is_lfe for m in measurements):
+            notes.append(f"LFE correction band: {s['low_cutoff_hz']:g}-"
+                         f"{min(s['high_cutoff_hz'], s['lfe_high_cutoff_hz']):g} Hz")
         notes += [f"{channel} correction: {min(c.correction):+.2f} to {max(c.correction):+.2f} dB"
                   for channel, c in result.curves.items()]
         return Result(result.data, path.stem + ".swproj", notes)
@@ -540,5 +597,5 @@ class MdatToSwproj(SpeakerProjectConverter):
     source = "mdat"
     description = "REW speaker measurements as a SoundID speaker project (no audio samples)"
 
-    def measurements(self, path: Path) -> list[Measurement]:
-        return mdat.load(path)
+    def measurements(self, path: Path) -> tuple[sid_layout.Layout, list[Measurement]]:
+        return sid_layout.STEREO, mdat.load(path)

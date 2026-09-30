@@ -15,8 +15,8 @@ EPOCH = "1970-01-01T00:00:00.000000Z"
 class Measurement:
     """One speaker frequency response."""
 
-    channel: str                 # "Left" or "Right"
-    index: int                   # channel index: 0 left, 1 right
+    channel: str                 # channel name, e.g. "Left"
+    index: int                   # channel index in the layout: 0 left, 1 right
     frequencies: list[float]
     response: list[float]        # dB SPL
     group_delay: list[float]     # seconds
