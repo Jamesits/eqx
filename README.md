@@ -5,7 +5,14 @@
 
 Inspect and convert equalizer and audio correction files.
 
-Supported file formats:
+## WARNINGS
+
+**!!! Use at your own risk !!!**
+
+Loading audio correction / calibration curves might fry your soundcards, speakers / headphones and ears.
+DO check the output levels on all frequencies before playing any audio.
+
+## Supported File Formats
 
 - AutoEq
     - `.csv`
@@ -32,20 +39,13 @@ Supported file formats:
         - SPQ DSP (AVID MTRX, DAD) `.txt`
         - Wayne Jones AUDIO `.bin`
 
-## WARNINGS
-
-**!!! Use at your own risk !!!**
-
-Loading audio correction / calibration curves might fry your soundcards, speakers / headphones and ears.
-DO check the output levels on all frequencies before playing any audio.
-
 ## Usage
 
-Options are per-format; use `--help` to list them.
+Options are per-format; use `--help` to list them. Ask your AI friends for help if you don't know how to use it.
 
 Inspect a file:
 ```shell
-uv run eqx inspect <file> [--format <format>] [--full]
+uv run eqx inspect <file> [--format <format>] [--full] [...options]
 ```
 
 Convert a file:
@@ -65,17 +65,15 @@ uv run pytest
 ### SoundID Reference 5.x
 
 `.swproj`
-- Calibrations of speakers with distance <50cm are supported
-- Calibrations of complicated sound environment are supported
+- Calibrations of speakers with distance <50cm are supported via REW
+- Calibrations of hidden speakers (thus unable to pass the per-speaker initial calibration in SoundID Reference Measure) are supported via REW
+- Calibrations of complicated sound environment (with points unable to pass the grid triangulation check) are supported via REW
 
 `.swhp`
 - An active license is required, and the file must be read on the computer with the license
 
 `.swmicpkg`
 - 0/30/90 degree curves supported
-
-Device exports
-- MERGING exports are encrypted with the device serial number; without `--serial-number` every number is tried (a few seconds)
 
 ### IK Multimedia ARC X
 
