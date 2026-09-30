@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar
+from typing import Callable, ClassVar
 
 from .options import Option
 from .report import Section
@@ -29,6 +29,8 @@ class Format:
     extensions: tuple[str, ...]             # lower case
     description: str
     inspector: type[Inspector]
+    # Content check; picks the format when several share an extension.
+    sniff: Callable[[bytes], bool] | None = None
 
 
 def file_section(path: Path, data: bytes, *fields) -> Section:

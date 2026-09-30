@@ -1,4 +1,4 @@
-"""Registry of the file formats; detection by file extension."""
+"""Registry of the file formats; detection by file extension and content."""
 
 from __future__ import annotations
 
@@ -8,29 +8,49 @@ from typing import Iterable
 from .autoeq import response
 from .fileformat import Format
 from .rew import cal, mdat
-from .soundid import peqb, swmicpkg, swproj, targetpreset
+from .rme import tmreq
+from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
+                      export_txt, peqb, swmicpkg, swproj, targetpreset)
 
 FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
     swproj, peqb, swmicpkg, targetpreset, mdat, cal, response,
+    # Content checks run in this order: the cheap LVND magic before the
+    # MERGING key search of an encrypted export.
+    export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt, tmreq,
 )}
 
 
-def detect(path: Path, allowed: Iterable[str] = ()) -> str:
+def detect(path: Path, allowed: Iterable[str] | None = None) -> str:
     """The format of ``path`` by extension.
 
     Several formats may share an extension (e.g. ``.txt``); ``allowed``, the
-    formats valid in this place, then picks one.
+    formats valid in this place, then picks one, else the first format whose
+    content check accepts the existing file.
     """
     suffix = Path(path).suffix.lower()
     matches = [f.id for f in FORMATS.values() if suffix in f.extensions]
     if len(matches) > 1:
-        allowed = set(allowed)
-        narrowed = [m for m in matches if m in allowed]
+        narrowed = matches
+        if allowed is not None:
+            allowed = set(allowed)
+            narrowed = [m for m in matches if m in allowed]
         if len(narrowed) == 1:
             return narrowed[0]
+        sniffed = _sniff(Path(path), narrowed)
+        if sniffed is not None:
+            return sniffed
         raise ValueError(f"the extension of {Path(path).name!r} is ambiguous; "
                          f"specify its format (one of: {', '.join(matches)})")
     if matches:
         return matches[0]
     raise ValueError(f"cannot detect the format of {Path(path).name!r} from its extension; "
                      f"specify it (one of: {', '.join(FORMATS)})")
+
+
+def _sniff(path: Path, candidates: list[str]) -> str | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return next((c for c in candidates if FORMATS[c].sniff is not None and FORMATS[c].sniff(data)),
+                None)

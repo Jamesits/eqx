@@ -18,7 +18,7 @@ class GeneratedTestdataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             written = gen_testdata.generate(tmp)
-            stored = {p.relative_to(ROOT) for d in ("autoeq", "rew", "soundid")
+            stored = {p.relative_to(ROOT) for d in ("autoeq", "rew", "rme", "soundid")
                       for p in (ROOT / d).rglob("*") if p.is_file()}
             self.assertEqual({p.relative_to(tmp) for p in written}, stored)
             for path in written:

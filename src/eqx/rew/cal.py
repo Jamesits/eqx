@@ -63,4 +63,16 @@ class RewcalInspector(Inspector):
         ]
 
 
-FORMAT = Format("rewcal", (".txt", ".cal"), "REW microphone calibration file", RewcalInspector)
+def sniff(data: bytes) -> bool:
+    """A numeric row among the first lines."""
+    for line in data[:4096].decode("utf-8", errors="replace").splitlines():
+        try:
+            float(line.replace(",", " ").split()[0])
+            return True
+        except (IndexError, ValueError):
+            pass
+    return False
+
+
+FORMAT = Format("rewcal", (".txt", ".cal"), "REW microphone calibration file", RewcalInspector,
+                sniff)

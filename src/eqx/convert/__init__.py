@@ -6,13 +6,19 @@ from .base import Converter, Result
 from .from_autoeq import AutoeqToPeqb, AutoeqToRewcal, AutoeqToSwproj
 from .mdat_swproj import MdatToSwproj
 from .swmicpkg_rewcal import SwmicpkgToRewcal
-from .to_autoeq import MdatToAutoeq, PeqbToAutoeq, SwprojToAutoeq, TargetpresetToAutoeq
+from .to_autoeq import (MdatToAutoeq, PeqbToAutoeq, SoundidExportBiquadJsonToAutoeq,
+                        SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq,
+                        SoundidExportPeqJsonToAutoeq, SoundidExportTxtToAutoeq, SwprojToAutoeq,
+                        TargetpresetToAutoeq, TmreqToAutoeq)
 
 CONVERTERS: dict[tuple[str, str], type[Converter]] = {
     (c.source, c.target): c for c in (
         MdatToSwproj, SwmicpkgToRewcal,
         MdatToAutoeq, SwprojToAutoeq, PeqbToAutoeq, TargetpresetToAutoeq,
         AutoeqToRewcal, AutoeqToSwproj, AutoeqToPeqb,
+        SoundidExportBiquadJsonToAutoeq, SoundidExportPeqJsonToAutoeq,
+        SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq, SoundidExportTxtToAutoeq,
+        TmreqToAutoeq,
     )
 }
 

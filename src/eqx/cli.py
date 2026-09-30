@@ -143,8 +143,9 @@ def cmd_computer_id(args) -> int:
 # parser
 # --------------------------------------------------------------------------
 def _format_list() -> str:
-    return "formats (detected by extension):\n" + "\n".join(
-        f"  {f.id:<13} {' '.join(f.extensions):<14} {f.description}"
+    width = max(len(f) for f in formats.FORMATS)
+    return "formats (detected by extension, then by content):\n" + "\n".join(
+        f"  {f.id:<{width}} {' '.join(f.extensions):<14} {f.description}"
         for f in formats.FORMATS.values())
 
 

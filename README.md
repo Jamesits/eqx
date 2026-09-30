@@ -9,6 +9,8 @@ Supported file formats:
 
 - AutoEq
     - `.csv`
+- RME TotalMix FX
+    - Room EQ preset `.tmreq`
 - REW
     - `.mdat`
     - `.cal`/`.txt`
@@ -17,6 +19,15 @@ Supported file formats:
     - `.swproj`
     - `.swmicpkg`
     - Target preset `.json`
+    - Device exports
+        - ADAM Audio A Series `.adam`
+        - Dolby Atmos Renderer `.txt`
+        - Fluid Audio `.bin`
+        - Grace Design m908 `.bin`
+        - Lynx Aurora `.bin`
+        - MERGING+ANUBIS `.bin`
+        - SPQ DSP (AVID MTRX, DAD) `.txt`
+        - Wayne Jones AUDIO `.bin`
 
 ## WARNINGS
 
@@ -59,3 +70,6 @@ uv run pytest
 
 `.swmicpkg`
 - 0/30/90 degree curves supported
+
+Device exports
+- MERGING exports are encrypted with the device serial number; without `--serial-number` every number is tried (a few seconds)

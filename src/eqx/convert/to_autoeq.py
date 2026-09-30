@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Callable
 
+from .. import correction
 from ..autoeq import response
 from ..fileformat import frequency_range
+from ..model import Correction
 from ..options import Option
 from ..rew import mdat
-from ..soundid import peqb, swproj, targetpreset
+from ..rme import tmreq
+from ..soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
+                       export_txt, peqb, swproj, targetpreset)
 from .base import Converter, Result
 from .mdat_swproj import standard_grid
 
@@ -129,3 +134,90 @@ class TargetpresetToAutoeq(Converter):
         filters = sum(f.enabled for g in preset.filter_groups for f in g.filters)
         return _result(points, f"{path.stem}.csv",
                        f"{filters} enabled filters; the correction band is not part of the curve")
+
+
+SAMPLE_RATE_OPTION = Option(
+    "--sample-rate", type=float,
+    help="biquad set of this sample rate, Hz (default: 48000 if present, else the lowest)")
+
+
+class ExportToAutoeq(Converter):
+    """The correction of one channel of a device export.
+
+    Filters are evaluated on the standard grid; graphic EQ points are written as they are.
+    """
+
+    target = "autoeq"
+    description = "the correction of one channel of a SoundID device export"
+    options = (CHANNEL_OPTION,)
+    loader: Callable[..., correction.Export]    # the format module's load(path, **options)
+
+    def __init__(self, channel: str = "left", sample_rate: float | None = None):
+        self.channel = _channel_name(channel)
+        self.sample_rate = sample_rate
+        self.load_options: dict = {}
+
+    def correction(self, export: correction.Export) -> Correction:
+        return export.select(self.channel, self.sample_rate)
+
+    def convert(self, path: Path) -> Result:
+        path = Path(path)
+        c = self.correction(type(self).loader(path, **self.load_options))
+        if c.biquads or c.peqs:
+            grid = standard_grid()
+            points = list(zip(grid, c.response(grid)))
+        else:
+            points = [(f, g + c.gain_db) for f, g in c.points]
+        side = correction.channel_name(c.channel)
+        rate = f" at {c.sample_rate:g} Hz" if c.sample_rate else ""
+        return _result(points, self.output_name(path, side), f"{side} correction{rate}, dB")
+
+    def output_name(self, path: Path, side: str) -> str:
+        return f"{path.stem} {side}.csv"
+
+
+class SoundidExportBiquadJsonToAutoeq(ExportToAutoeq):
+    source = "soundid-export-biquad-json"
+    options = (CHANNEL_OPTION, SAMPLE_RATE_OPTION, export_biquad_json.SERIAL_OPTION)
+    loader = export_biquad_json.load
+
+    def __init__(self, channel: str = "left", sample_rate: float | None = None,
+                 serial_number: str | None = None):
+        super().__init__(channel, sample_rate)
+        self.load_options = {"serial_number": serial_number}
+
+
+class SoundidExportBiquadXmlToAutoeq(ExportToAutoeq):
+    source = "soundid-export-biquad-xml"
+    options = (CHANNEL_OPTION, SAMPLE_RATE_OPTION)
+    loader = export_biquad_xml.load
+
+
+class SoundidExportPeqJsonToAutoeq(ExportToAutoeq):
+    source = "soundid-export-peq-json"
+    loader = export_peq_json.load
+
+
+class SoundidExportTxtToAutoeq(ExportToAutoeq):
+    source = "soundid-export-txt"
+    loader = export_txt.load
+
+
+class TmreqToAutoeq(ExportToAutoeq):
+    source = "tmreq"
+    description = "the Room EQ of one channel of a TotalMix preset"
+    loader = tmreq.load
+
+
+class SoundidExportLvndToAutoeq(ExportToAutoeq):
+    """One file holds one channel and names it, so there is no channel option."""
+
+    source = "soundid-export-lvnd"
+    options = ()
+    loader = export_lvnd.load
+
+    def correction(self, export: correction.Export) -> Correction:
+        return export.corrections[0]
+
+    def output_name(self, path: Path, side: str) -> str:
+        return f"{path.stem}.csv"

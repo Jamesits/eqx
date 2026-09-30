@@ -6,12 +6,12 @@ cutoff band and a list of parametric EQ filters that shape the target curve.
 
 from __future__ import annotations
 
-import cmath
 import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import dsp
 from ..fileformat import Format, Inspector, file_section
 from ..report import Section, Table
 
@@ -116,37 +116,21 @@ def load(path) -> TargetPreset:
 # --------------------------------------------------------------------------
 # target curve
 # --------------------------------------------------------------------------
-# SoundID evaluates the filters as Audio EQ Cookbook biquads at this rate.
-SAMPLE_RATE = 48000.0
+def _biquad(f: Filter) -> dsp.Biquad:
+    """SoundID evaluates the filters as Audio EQ Cookbook biquads at 48 kHz.
 
-
-def _coefficients(f: Filter) -> tuple[list[float], list[float]]:
-    a = 10 ** (f.gain / 40)
-    w0 = 2 * math.pi * f.frequency / SAMPLE_RATE
-    cos = math.cos(w0)
+    A shelf's q is the cookbook's shelf slope S, not Q.
+    """
     if f.type == "bell":
-        alpha = math.sin(w0) / (2 * f.q)
-        return [1 + alpha * a, -2 * cos, 1 - alpha * a], [1 + alpha / a, -2 * cos, 1 - alpha / a]
+        return dsp.bell(f.frequency, f.gain, f.q)
     if f.type not in ("low-shelf", "high-shelf"):
         raise ValueError(f"filter {f.id}: unknown type {f.type!r}")
-    # A shelf's q is the cookbook's shelf slope S, not Q: S = 1 is the
-    # steepest shelf without overshoot.
-    alpha = math.sin(w0) / 2 * math.sqrt((a + 1 / a) * (1 / f.q - 1) + 2)
-    s = 1 if f.type == "low-shelf" else -1          # high shelf: cos -> -cos
-    root = 2 * math.sqrt(a) * alpha
-    b = [a * ((a + 1) - s * (a - 1) * cos + root), s * 2 * a * ((a - 1) - s * (a + 1) * cos),
-         a * ((a + 1) - s * (a - 1) * cos - root)]
-    d = [(a + 1) + s * (a - 1) * cos + root, -s * 2 * ((a - 1) + s * (a + 1) * cos),
-         (a + 1) + s * (a - 1) * cos - root]
-    return b, d
+    return dsp.shelf(f.type == "high-shelf", f.frequency, f.gain, f.q)
 
 
 def filter_response(f: Filter, frequency: float) -> float:
     """Gain of one filter at ``frequency`` Hz, dB."""
-    b, a = _coefficients(f)
-    z = cmath.exp(-2j * math.pi * frequency / SAMPLE_RATE)
-    h = (b[0] + b[1] * z + b[2] * z * z) / (a[0] + a[1] * z + a[2] * z * z)
-    return 20 * math.log10(abs(h))
+    return _biquad(f).db(frequency, dsp.PEQ_SAMPLE_RATE)
 
 
 def target_response(preset: TargetPreset, frequencies) -> list[float]:

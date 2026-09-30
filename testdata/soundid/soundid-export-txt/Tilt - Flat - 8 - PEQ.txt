@@ -1,0 +1,24 @@
+Preset name: Tilt
+Profile name: Tilt
+Target mode: Flat
+Audio setup: 2.0 (Stereo)
+
+L channel calibration:
+Delay: 0 ms
+Gain: 0 dB
+
+|Type                |Freq      |Gain      |Q         |
+|:-------------------|:---------|:---------|:---------|
+|Parametric Eq 1     |60      Hz|6       dB|0.7       |
+|Parametric Eq 2     |1000    Hz|-3      dB|1.4       |
+|Parametric Eq 3     |8000    Hz|4       dB|2         |
+
+R channel calibration:
+Delay: 0 ms
+Gain: 0 dB
+
+|Type                |Freq      |Gain      |Q         |
+|:-------------------|:---------|:---------|:---------|
+|Parametric Eq 1     |80      Hz|5       dB|0.9       |
+|Parametric Eq 2     |1500    Hz|-2      dB|2         |
+|Parametric Eq 3     |9000    Hz|3       dB|1.5       |

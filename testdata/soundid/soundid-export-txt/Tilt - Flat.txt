@@ -1,0 +1,72 @@
+Preset name: Tilt
+Profile name: Tilt
+Target mode: Flat
+Audio setup: 2.0 (Stereo)
+
+L channel calibration:
+Delay: 0 ms
+Gain: 0 dB
+
+|Freq      |Gain      |
+|:---------|:---------|
+|40      Hz|4.4     dB|
+|50      Hz|5.6     dB|
+|63      Hz|6       dB|
+|80      Hz|5.1     dB|
+|100     Hz|3.8     dB|
+|125     Hz|2.6     dB|
+|160     Hz|1.7     dB|
+|200     Hz|1.1     dB|
+|250     Hz|0.6     dB|
+|315     Hz|0.3     dB|
+|400     Hz|0       dB|
+|500     Hz|-0.4    dB|
+|630     Hz|-0.9    dB|
+|800     Hz|-2.1    dB|
+|1000    Hz|-2.9    dB|
+|1250    Hz|-2.1    dB|
+|1600    Hz|-1      dB|
+|2000    Hz|-0.5    dB|
+|2500    Hz|-0.2    dB|
+|3150    Hz|0       dB|
+|4000    Hz|0.2     dB|
+|5000    Hz|0.6     dB|
+|6300    Hz|1.7     dB|
+|8000    Hz|4       dB|
+|10000   Hz|1.7     dB|
+|12500   Hz|0.5     dB|
+|16000   Hz|0.1     dB|
+
+R channel calibration:
+Delay: 0 ms
+Gain: 0 dB
+
+|Freq      |Gain      |
+|:---------|:---------|
+|40      Hz|1.8     dB|
+|50      Hz|2.8     dB|
+|63      Hz|4.2     dB|
+|80      Hz|5       dB|
+|100     Hz|4.3     dB|
+|125     Hz|2.9     dB|
+|160     Hz|1.8     dB|
+|200     Hz|1.1     dB|
+|250     Hz|0.7     dB|
+|315     Hz|0.4     dB|
+|400     Hz|0.2     dB|
+|500     Hz|0.1     dB|
+|630     Hz|0       dB|
+|800     Hz|-0.2    dB|
+|1000    Hz|-0.5    dB|
+|1250    Hz|-1.2    dB|
+|1600    Hz|-1.8    dB|
+|2000    Hz|-0.8    dB|
+|2500    Hz|-0.3    dB|
+|3150    Hz|0       dB|
+|4000    Hz|0.2     dB|
+|5000    Hz|0.5     dB|
+|6300    Hz|1.1     dB|
+|8000    Hz|2.5     dB|
+|10000   Hz|2.5     dB|
+|12500   Hz|1       dB|
+|16000   Hz|0.3     dB|

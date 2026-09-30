@@ -21,6 +21,12 @@ SAMPLES = {
     "mdat": MDAT,
     "rewcal": TESTDATA / "rew/rewcal/TILT01 sensitivity.cal",
     "autoeq": TESTDATA / "autoeq/csv/Bass and treble.csv",
+    "soundid-export-biquad-json": TESTDATA / "soundid/soundid-export-biquad-json/Tilt Fluid.bin",
+    "soundid-export-peq-json": TESTDATA / "soundid/soundid-export-peq-json/Tilt Grace.bin",
+    "soundid-export-biquad-xml": TESTDATA / "soundid/soundid-export-biquad-xml/Tilt.adam",
+    "soundid-export-lvnd": TESTDATA / "soundid/soundid-export-lvnd/Tilt_192000_Left.bin",
+    "soundid-export-txt": TESTDATA / "soundid/soundid-export-txt/Tilt - Flat.txt",
+    "tmreq": TESTDATA / "rme/tmreq/Tilt - Flat.tmreq",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -48,15 +54,16 @@ def run_error(*argv):
 class FormatTests(unittest.TestCase):
     def test_detect(self):
         for name, want in (("a.swproj", "swproj"), ("A.SWHP", "peqb"), ("a.eqb", "peqb"),
-                           ("a.mdat", "mdat"), ("a.txt", "rewcal"), ("a.cal", "rewcal"),
-                           ("a.CSV", "autoeq")):
+                           ("a.mdat", "mdat"), ("a.cal", "rewcal"), ("a.CSV", "autoeq"),
+                           ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq")):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
-            formats.detect(Path("a.bin"))
+            formats.detect(Path("a.dat"))
 
     def test_detect_shared_extension(self):
         with with_other_txt():
-            with self.assertRaisesRegex(ValueError, "ambiguous.*rewcal, othertxt"):
+            with self.assertRaisesRegex(ValueError,
+                                        "ambiguous.*rewcal, soundid-export-txt, othertxt"):
                 formats.detect(Path("a.txt"))
             self.assertEqual(formats.detect(Path("a.txt"), ("rewcal", "swproj")), "rewcal")
             self.assertEqual(formats.detect(Path("a.cal")), "rewcal")
@@ -139,7 +146,7 @@ class ConvertTests(unittest.TestCase):
 
     def test_target_from_output_extension(self):
         with tempfile.TemporaryDirectory() as tmp:
-            code, err = run_error("convert", MDAT, "-o", Path(tmp) / "x.txt")
+            code, err = run_error("convert", MDAT, "-o", Path(tmp) / "x.cal")
         self.assertIn("no converter from mdat to rewcal", err)
 
     def test_shared_output_extension(self):
@@ -156,11 +163,11 @@ class ConvertTests(unittest.TestCase):
 
     def test_mic_profile_format_override(self):
         with tempfile.TemporaryDirectory() as tmp:
-            profile = Path(tmp) / "mic.bin"
+            profile = Path(tmp) / "mic.dat"
             profile.write_bytes(PACKAGE.read_bytes())
             out = Path(tmp) / "x.swproj"
             code, err = run_error("convert", MDAT, "-o", out, "--mic-profile", profile)
-            self.assertIn("cannot detect the format of 'mic.bin'", err)
+            self.assertIn("cannot detect the format of 'mic.dat'", err)
             code, text = run("convert", MDAT, "-o", out, "--mic-profile", profile,
                              "--mic-profile-format", "swmicpkg")
             self.assertEqual(code, 0)
@@ -183,6 +190,21 @@ class ConvertTests(unittest.TestCase):
             self.assertEqual(code, 0)
             _, out = run("inspect", Path(tmp) / "y.csv")
             self.assertIn("  points  : 355", out)
+
+    def test_device_export(self):
+        merging = TESTDATA / "soundid/soundid-export-biquad-json/Tilt MERGING.bin"
+        _, out = run("inspect", merging, "--serial-number", "000042", "--full")
+        self.assertIn("MERGING+ANUBIS key, serial number A000042", out)
+        self.assertIn('"channel_config"', out)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = run("convert", merging, "-o", Path(tmp) / "x.csv", "--sample-rate",
+                             "44100", "--channel", "right")
+            self.assertEqual(code, 0)
+            self.assertIn("Right correction at 44100 Hz, dB", text)
+            code, err = run_error("convert", SAMPLES["soundid-export-peq-json"], "-o",
+                                  Path(tmp) / "x.csv",
+                                  "--sample-rate", "48000")
+            self.assertIn("--sample-rate does not apply to soundid-export-peq-json -> autoeq", err)
 
     def test_required_option(self):
         code, err = run_error("convert", MDAT, "--to", "swproj")
