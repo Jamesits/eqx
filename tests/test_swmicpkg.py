@@ -1,0 +1,94 @@
+import base64
+import json
+import unittest
+from pathlib import Path
+
+from eqx.convert.mdat_swproj import load_mic_profile
+from eqx.rew import cal
+from eqx.soundid import swmicpkg
+
+TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
+PACKAGE = TESTDATA / "soundid/swmicpkg/TILT01.swmicpkg"
+# Converted with the degrees_30 table of PACKAGE.
+PROJECT = TESTDATA / "soundid/swproj/Bandpass.swproj"
+
+
+def parse_rew(text):
+    points = []
+    for line in text.splitlines():
+        try:
+            points.append(tuple(float(v) for v in line.split()))
+        except ValueError:
+            continue
+    return points
+
+
+class PackageTests(unittest.TestCase):
+    def test_plain_table(self):
+        profile = swmicpkg.load(PACKAGE)
+        self.assertEqual((profile.name, profile.angle, len(profile.points)),
+                         ("TILT01", "degrees_0", 300))
+        self.assertEqual(profile.points[0], (20.0, -0.97))
+        self.assertEqual(profile.points[-1], (20000.0, 1.92))
+
+    def test_encrypted_table_matches_project(self):
+        # The project holds the table decrypted from this package.
+        self.assertEqual(swmicpkg.load(PACKAGE, "degrees_30").points,
+                         load_mic_profile(PROJECT, "degrees_30").points)
+
+    def test_all_tables(self):
+        for path in sorted((TESTDATA / "soundid/swmicpkg").glob("*.swmicpkg")):
+            with self.subTest(path=path.name):
+                profiles = swmicpkg.read_all(path.read_text(), path.stem)
+                self.assertEqual([(p.angle, len(p.points)) for p in profiles],
+                                 [("degrees_0", 300), ("degrees_30", 300), ("degrees_90", 300)])
+
+    def test_corrupt_table_is_rejected(self):
+        package = json.loads(PACKAGE.read_text())
+        blob = base64.b64decode(package["degrees_30"])
+        package["degrees_30"] = base64.b64encode(blob[:-1]).decode()
+        with self.assertRaisesRegex(ValueError, "degrees_30 is not a valid table"):
+            swmicpkg.read(json.dumps(package), "degrees_30")
+
+    def test_missing_table_lists_available(self):
+        with self.assertRaisesRegex(ValueError, "degrees_0, degrees_30, degrees_90"):
+            swmicpkg.load(PACKAGE, "degrees_45")
+
+
+class ProjectTests(unittest.TestCase):
+    def test_tables_from_project(self):
+        profile = load_mic_profile(PROJECT, "degrees_30")
+        self.assertEqual((profile.name, profile.angle, len(profile.points)),
+                         ("TILT01", "degrees_30", 300))
+        self.assertEqual(profile.points[-1], (20000.0, 0.96))
+
+    def test_missing_angle(self):
+        with self.assertRaisesRegex(ValueError, "available: degrees_30$"):
+            load_mic_profile(PROJECT, "degrees_0")
+
+    def test_tables_are_mic_response(self):
+        # Off axis a microphone loses treble; an inverse table would rise instead.
+        on_axis = dict(swmicpkg.load(PACKAGE).points)
+        off_axis = dict(swmicpkg.load(PACKAGE, "degrees_90").points)
+        self.assertLess(off_axis[20000.0], on_axis[20000.0] - 3)
+
+
+class RewTests(unittest.TestCase):
+    def test_points_written_unchanged(self):
+        for angle, path in (("degrees_0", PACKAGE), ("degrees_30", PROJECT),
+                            ("degrees_90", PACKAGE)):
+            with self.subTest(angle=angle):
+                profile = load_mic_profile(path, angle)
+                text = cal.write(profile, "SoundID")
+                self.assertTrue(text.startswith(f"* SoundID microphone TILT01 {angle}\n"))
+                self.assertEqual(parse_rew(text), profile.points)
+
+    def test_negative_zero(self):
+        table = base64.b64encode(b"20.0\t-0.00\n1000.0\t-1.50\n").decode()
+        profile = swmicpkg.read(json.dumps({"degrees_0": table}), name="X")
+        self.assertEqual(cal.write(profile, "SoundID"), "* SoundID microphone X degrees_0\n"
+                                                     "20\t0\n1000\t-1.5\n")
+
+
+if __name__ == "__main__":
+    unittest.main()

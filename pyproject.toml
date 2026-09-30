@@ -1,0 +1,20 @@
+[project]
+name = "eqx"
+version = "0.1.0"
+description = "Inspect and convert euqalizer and audio correction files"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["cryptography>=42"]
+
+[project.scripts]
+eqx = "eqx.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.13"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
