@@ -28,6 +28,7 @@ SAMPLES = {
     "soundid-export-txt": TESTDATA / "soundid/soundid-export-txt/Tilt - Flat.txt",
     "tmreq": TESTDATA / "rme/tmreq/Tilt - Flat.tmreq",
     "arcx": TESTDATA / "ik/arcx/Arc.arcXs",
+    "fir": TESTDATA / "fir/wav/Tilt Tilt Wired Average.wav",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -57,7 +58,7 @@ class FormatTests(unittest.TestCase):
         for name, want in (("a.swproj", "swproj"), ("A.SWHP", "peqb"), ("a.eqb", "peqb"),
                            ("a.mdat", "mdat"), ("a.cal", "rewcal"), ("a.CSV", "autoeq"),
                            ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq"),
-                           ("a.arcXs", "arcx"), ("a.arcXa", "arcx")):
+                           ("a.arcXs", "arcx"), ("a.arcXa", "arcx"), ("a.WAV", "fir")):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
             formats.detect(Path("a.dat"))
@@ -182,7 +183,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", csv)
-        self.assertIn("3 converters from autoeq", err)
+        self.assertIn("4 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run("convert", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
             self.assertEqual(code, 0)
@@ -239,6 +240,35 @@ class ConvertTests(unittest.TestCase):
             code, err = run_error("convert", Path(tmp) / "x.swproj", "-o", Path(tmp) / "x.csv",
                                   "--speaker", "Left Wide")
             self.assertIn("no Left Wide channel; available: Left, Right, Center", err)
+
+    def test_fir(self):
+        code, err = run_error("convert", SAMPLES["peqb"])
+        self.assertIn("2 converters from peqb", err)
+        _, out = run("inspect", SAMPLES["fir"])
+        self.assertIn("  taps           : 4096", out)
+        self.assertIn("== channel Right", out)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = run("convert", SAMPLES["peqb"], "-o", Path(tmp) / "x.wav",
+                             "--computer-id", "g" + "0" * 40, "--phase", "linear",
+                             "--rate", "44100", "--no-safe-headroom")
+            self.assertEqual(code, 0)
+            self.assertIn("2 channel(s), 4001 taps at 44100 Hz, linear phase, latency 2000", text)
+            self.assertIn("gain 0.00 dB", text)
+            code, text = run("convert", SAMPLES["autoeq"], "-o", Path(tmp) / "y.wav",
+                             "--taps", "1024")
+            self.assertEqual(code, 0)
+            self.assertIn("1 channel(s), 1024 taps at 48000 Hz, minimum phase", text)
+            code, text = run("convert", Path(tmp) / "y.wav", "-o", Path(tmp) / "y.csv")
+            self.assertEqual(code, 0)
+            self.assertIn("Left gain of 1024 taps at 48000 Hz, dB", text)
+            code, err = run_error("convert", SAMPLES["autoeq"], "-o", Path(tmp) / "y.wav",
+                                  "--phase", "linear", "--taps", "1024")
+            self.assertIn("odd for linear phase", err)
+            code, text = run("convert", SAMPLES["swproj"], "-o", Path(tmp) / "z.wav",
+                             "--limit-correction", "6", "--limit-low", "extended",
+                             "--no-listening-spot")
+            self.assertEqual(code, 0)
+            self.assertIn("limits: 6 dB, low extended, high neutral", text)
 
     def test_required_option(self):
         code, err = run_error("convert", MDAT, "--to", "swproj")

@@ -14,7 +14,6 @@ IK publishes no specification; the layout is taken from ARC X 2.0.2.
 from __future__ import annotations
 
 import math
-import struct
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +23,7 @@ from ..fileformat import Format, Inspector, file_section, frequency_range
 from ..model import Measurement
 from ..options import Option
 from ..report import Section, Table
+from ..wav import fir
 from . import pak
 
 # Speaker positions: the n of ``Speaker_<n>``, named as ARC X's
@@ -192,41 +192,12 @@ def _number(element: ET.Element, key: str, where: str) -> float:
 # --------------------------------------------------------------------------
 # WAV
 # --------------------------------------------------------------------------
-PCM, IEEE_FLOAT, EXTENSIBLE = 1, 3, 0xFFFE
-
-
 def read_wav(data: bytes, name: str = "WAV") -> tuple[float, list[float]]:
     """Sample rate and samples of a mono PCM or float WAV; PCM is scaled to +-1."""
-    if data[:4] != b"RIFF" or data[8:12] != b"WAVE":
-        raise ValueError(f"{name} is not a WAV file")
-    fmt = samples = None
-    pos = 12
-    while pos + 8 <= len(data):
-        tag, size = data[pos:pos + 4], struct.unpack_from("<I", data, pos + 4)[0]
-        body = data[pos + 8:pos + 8 + size]
-        if tag == b"fmt ":
-            fmt = body
-        elif tag == b"data":
-            samples = body
-        pos += 8 + size + (size & 1)        # chunks are word aligned
-    if fmt is None or samples is None or len(fmt) < 16:
-        raise ValueError(f"{name}: no fmt or data chunk")
-    code, channels, rate, _, _, bits = struct.unpack_from("<HHIIHH", fmt)
-    if code == EXTENSIBLE and len(fmt) >= 26:
-        code = struct.unpack_from("<H", fmt, 24)[0]     # first bytes of the subformat GUID
-    if channels != 1:
-        raise ValueError(f"{name}: {channels} channels, expected mono")
-    if code == IEEE_FLOAT and bits in (32, 64):
-        kind = "f" if bits == 32 else "d"
-        count = len(samples) // (bits // 8)
-        return float(rate), list(struct.unpack_from(f"<{count}{kind}", samples))
-    if code == PCM and bits in (16, 24, 32):
-        width = bits // 8
-        count = len(samples) // width
-        scale = 2.0 ** (bits - 1)
-        return float(rate), [int.from_bytes(samples[i:i + width], "little", signed=True) / scale
-                             for i in range(0, count * width, width)]
-    raise ValueError(f"{name}: unsupported WAV encoding {code}, {bits} bits")
+    wav = fir.read(data, name)
+    if len(wav.channels) != 1:
+        raise ValueError(f"{name}: {len(wav.channels)} channels, expected mono")
+    return wav.sample_rate, wav.channels[0]
 
 
 # --------------------------------------------------------------------------

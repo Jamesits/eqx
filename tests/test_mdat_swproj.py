@@ -220,6 +220,38 @@ class ProjectTests(unittest.TestCase):
         # The mic table is the only Correction curve without a channel.
         self.assertEqual([p.angle for p in swproj.mic_profiles(proj)], ["degrees_0"])
 
+    def test_listening_spot(self):
+        profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg")
+        measurements = [measurement(80.0), measurement(80.0, "Right")]
+        result = convert.convert(measurements, profile, "x", spot={"Right": (0.15, -0.5)})
+        proj = swproj.SwProj(result.data)
+        xml = {c.findtext("s:Name", namespaces=NS): swproj._curve_params(c)
+               for c in proj.tree().findall("s:Curves/s:Curve", NS)}
+        # The correction holds the adjustment, the measurement its negation.
+        for params in (xml["Correction CH 1"], proj.eqb.curves[3].parameters):
+            self.assertEqual((params["ChannelDelayMs"], params["Transfer"]), ("0.15", "-0.5"))
+        for params in (xml["Balanced Measurement CH 1"], proj.eqb.curves[2].parameters):
+            self.assertEqual((params["ChannelDelayMs"], params["Transfer"]), ("-0.15", "0.5"))
+        for params in (xml["Correction CH 0"], proj.eqb.curves[1].parameters):
+            self.assertEqual((params["ChannelDelayMs"], params["Transfer"]), ("-0", "-0"))
+        with self.assertRaisesRegex(ValueError, "unmeasured channel.*Center"):
+            convert.convert(measurements, profile, "x", spot={"Center": (1.0, 0.0)})
+
+    def test_listening_spot_options(self):
+        mic = TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg"
+        c = convert.MdatToSwproj(mic_profile=mic, spot_delay_ms=["right=0.15", "Left=0"],
+                                 spot_gain_db=["Right=-0.5"])
+        measurements = [measurement(80.0), measurement(80.0, "Right")]
+        self.assertEqual(c.spot(measurements), {"Right": (0.15, -0.5), "Left": (0.0, 0.0)})
+        with self.assertRaisesRegex(ValueError, "--spot-gain-db: no Center channel"):
+            convert.MdatToSwproj(mic_profile=mic, spot_gain_db=["Center=1"]).spot(measurements)
+        for items, message in ((["Right"], "expected CHANNEL=NUMBER"),
+                               (["Right=x"], "expected CHANNEL=NUMBER"),
+                               (["=1"], "expected CHANNEL=NUMBER"),
+                               (["Right=1", "right=2"], "given twice")):
+            with self.subTest(items), self.assertRaisesRegex(ValueError, message):
+                convert.MdatToSwproj(mic_profile=mic, spot_delay_ms=items)
+
     def test_layout_checked(self):
         profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg")
         for measurements, message in (

@@ -27,6 +27,7 @@ from eqx.convert.mdat_swproj import standard_grid
 from eqx.ik import arcx
 from eqx.soundid import crypto, peqb, swmicpkg, swproj
 from eqx.soundid import export_lvnd, export_partners
+from eqx.wav import fir
 
 ROOT = Path(__file__).resolve().parent.parent / "testdata"
 
@@ -700,14 +701,6 @@ def arcx_ir(speaker: str, gain_db: float, rate: float) -> list[float]:
     return x
 
 
-def write_float_wav(samples: list[float], rate: int) -> bytes:
-    data = struct.pack(f"<{len(samples)}f", *samples)
-    fmt = struct.pack("<HHIIHH", 3, 1, rate, rate * 4, 4, 32)
-    return (b"RIFF" + struct.pack("<I", 4 + 8 + len(fmt) + 8 + len(data)) + b"WAVE"
-            + b"fmt " + struct.pack("<I", len(fmt)) + fmt
-            + b"data" + struct.pack("<I", len(data)) + data)
-
-
 def write_pak(entries: dict[str, bytes]) -> bytes:
     """Version 3, entries sorted by name, as ARC X writes them."""
     names = sorted(entries)
@@ -747,8 +740,8 @@ def write_arcx(layout: int, layout_name: str, speakers, points: int, rate: int,
         cc[ARCX_DELAY.get(speaker, ARCX_OTHER_DELAY)] = 1.0
         for p in range(points):
             ir = arcx_ir(speaker, ARCX_POINT_GAINS[p], rate)
-            entries[f"ch{c}/ch{c}p{p}_ir.wav"] = write_float_wav(ir, rate)
-            entries[f"ch{c}/ch{c}p{p}_cc.wav"] = write_float_wav(cc, rate)
+            entries[f"ch{c}/ch{c}p{p}_ir.wav"] = fir.write(fir.Fir(rate, [ir]))
+            entries[f"ch{c}/ch{c}p{p}_cc.wav"] = fir.write(fir.Fir(rate, [cc]))
     if session:
         entries["session.xml"] = _juce_xml(_value_tree("Session", [
             ("Version", 1), ("AppVersion", "2.0.2 (26D30)"), ("GUID", ARCX_GUID),
@@ -792,6 +785,7 @@ BIQUAD_XML_DIR = "soundid/soundid-export-biquad-xml"
 LVND_DIR = "soundid/soundid-export-lvnd"
 EXPORT_TXT_DIR = "soundid/soundid-export-txt"
 TMREQ_DIR = "rme/tmreq"
+FIR_DIR = "fir/wav"
 
 # (input, output, converter options); paths relative to the root.  In
 # dependency order: a later input may be an earlier output.
@@ -827,6 +821,13 @@ CONVERSIONS = [
      {"mic_profile": f"{MIC_DIR}/FLAT01.swmicpkg"}),
     (f"{ARCX_DIR}/Arc 5.1.arcXs", f"{PROJ_DIR}/Arc 5.1.swproj",
      {"mic_profile": f"{MIC_DIR}/FLAT01.swmicpkg"}),
+    (f"{PEQB_DIR}/Tilt Tilt Wired Average.swhp", f"{FIR_DIR}/Tilt Tilt Wired Average.wav",
+     {"computer_id": COMPUTER_ID}),
+    (f"{FIR_DIR}/Tilt Tilt Wired Average.wav", f"{CSV_DIR}/Tilt Tilt Wired Average Right.csv",
+     {"channel": "right"}),
+    (f"{CSV_DIR}/Room Left.csv", f"{FIR_DIR}/Room Left.wav",
+     {"right": f"{CSV_DIR}/Room Right.csv", "phase": "linear"}),
+    (f"{PROJ_DIR}/Room.swproj", f"{FIR_DIR}/Room.wav", {}),
 ]
 PATH_OPTIONS = ("mic_profile", "right", "target_curve")
 

@@ -12,13 +12,14 @@ from .rew import cal, mdat
 from .rme import tmreq
 from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                       export_txt, peqb, swmicpkg, swproj, targetpreset)
+from .wav import fir
 
 FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
     swproj, peqb, swmicpkg, targetpreset, mdat, cal, response,
     # Content checks run in this order: the cheap LVND magic before the
     # MERGING key search of an encrypted export.
     export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt, tmreq,
-    arcx,
+    arcx, fir,
 )}
 
 

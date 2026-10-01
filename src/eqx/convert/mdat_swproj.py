@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .. import formats
-from ..model import EPOCH, Measurement, MicProfile
+from ..model import EPOCH, Measurement, MicProfile, standard_grid
 from ..options import Option
 from ..rew import mdat
 from ..soundid import layout as sid_layout
@@ -38,9 +38,6 @@ DEFAULT_CLIP_FRACTION = 0.05
 GRID_NAME = "LOG_355_20_22000"
 NULL_ID = "00000000-0000-0000-0000-000000000000"
 
-
-def standard_grid() -> list[float]:
-    return [20.0 * (22000.0 / 20.0) ** (i / 354.0) for i in range(355)]
 
 
 def interp(xs: list[float], ys: list[float], x: float) -> float:
@@ -197,18 +194,29 @@ def _band(grid: list[float], low_hz: float, high_hz: float) -> tuple[int, int]:
     return band[0], band[-1]
 
 
+def _signed(value: float, correction: bool) -> str:
+    """A correction curve holds ``value``, a measurement curve its negation.
+
+    SoundID writes negated zero on correction curves.
+    """
+    value = value if correction else -value
+    if value == 0:
+        return "-0" if correction else "0"
+    return repr(float(value))
+
+
 def _channel_params(measurement: Measurement, layout: sid_layout.Layout,
-                    correction: bool) -> dict[str, Any]:
-    # SoundID writes negated zero on correction curves.
-    zero = "-0" if correction else "0"
+                    correction: bool, spot: dict | None = None) -> dict[str, Any]:
+    """``spot``: {channel: (delay ms, gain dB)}, SoundID's listening spot adjustment."""
+    delay_ms, gain_db = (spot or {}).get(measurement.channel, (0.0, 0.0))
     return {
-        "ChannelDelayMs": zero,
+        "ChannelDelayMs": _signed(delay_ms, correction),
         "ChannelGroup": layout.channels[measurement.index].group,
         "ChannelIndex": measurement.index,
         "ChannelName": measurement.channel,
-        "Delay": zero,
+        "Delay": "-0" if correction else "0",
         "Frequency": GRID_NAME,
-        "Transfer": zero,
+        "Transfer": _signed(gain_db, correction),
     }
 
 
@@ -321,6 +329,7 @@ def build_project_xml(
     corrected: dict[str, SpeakerCurves],
     name: str,
     layout: sid_layout.Layout = sid_layout.STEREO,
+    spot: dict | None = None,
 ) -> bytes:
     root = ET.Element(f"{{{NS_SW}}}Project")
     _db_stamp(root)
@@ -332,10 +341,10 @@ def build_project_xml(
         index = measurement.index
         _curve(curves, "Measurement", f"Balanced Measurement CH {index}", grid,
                speaker.response, speaker.group_delay,
-               _channel_params(measurement, layout, False).items())
+               _channel_params(measurement, layout, False, spot).items())
         _curve(curves, _correction_type(measurement), f"Correction CH {index}", grid,
                speaker.correction, speaker.correction_group_delay,
-               _channel_params(measurement, layout, True).items())
+               _channel_params(measurement, layout, True, spot).items())
 
     mic_freq = [p[0] for p in profile.points]
     mic_response = [p[1] for p in profile.points]
@@ -443,7 +452,7 @@ def build_project_xml(
 # ---------------------------------------------------------------------------
 def build_eqb(
     measurements: list[Measurement], grid: list[float], corrected: dict[str, SpeakerCurves],
-    layout: sid_layout.Layout = sid_layout.STEREO,
+    layout: sid_layout.Layout = sid_layout.STEREO, spot: dict | None = None,
 ) -> bytes:
     # PEQb v3.0.0.2 stores each speaker's Measurement together with its
     # correction curve. Use the same constrained correction
@@ -455,13 +464,13 @@ def build_eqb(
         curves.append(peqb.Curve(
             peqb.CURVE_TYPE_ID["Measurement"],
             list(zip(grid, speaker.response, speaker.group_delay)),
-            _channel_params(measurement, layout, False),
+            _channel_params(measurement, layout, False, spot),
             flags=peqb.F_FREQUENCY | peqb.F_RESPONSE | peqb.F_PARAMETERS,
         ))
         curves.append(peqb.Curve(
             peqb.CURVE_TYPE_ID[_correction_type(measurement)],
             list(zip(grid, speaker.correction, speaker.correction_group_delay)),
-            _channel_params(measurement, layout, True),
+            _channel_params(measurement, layout, True, spot),
             flags=peqb.F_FREQUENCY | peqb.F_RESPONSE | peqb.F_GROUP_DELAY | peqb.F_PARAMETERS,
         ))
     return peqb.write(curves)
@@ -490,9 +499,16 @@ def convert(
     clip_fraction: float = DEFAULT_CLIP_FRACTION,
     lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
     layout: sid_layout.Layout = sid_layout.STEREO,
+    spot: dict | None = None,
 ) -> Conversion:
-    """``measurements`` are channels of ``layout``: ``index`` and ``channel`` as in the layout."""
+    """``measurements`` are channels of ``layout``: ``index`` and ``channel`` as in the layout.
+
+    ``spot``: {channel: (delay ms, gain dB)}, the listening spot adjustment.
+    """
     check_layout(measurements, layout)
+    unknown = set(spot or {}) - {m.channel for m in measurements}
+    if unknown:
+        raise ValueError(f"listening spot of unmeasured channel(s): {', '.join(sorted(unknown))}")
     grid = standard_grid()
     corrected, reference_spl = prepare_speaker_curves(
         measurements,
@@ -506,8 +522,8 @@ def convert(
         lfe=[c.name for c in layout.channels if c.is_lfe],
         lfe_high_cutoff_hz=lfe_high_cutoff_hz,
     )
-    xml = build_project_xml(measurements, grid, profile, corrected, name, layout)
-    eqb = build_eqb(measurements, grid, corrected, layout)
+    xml = build_project_xml(measurements, grid, profile, corrected, name, layout, spot)
+    eqb = build_eqb(measurements, grid, corrected, layout, spot)
     return Conversion(swproj.write(xml, eqb), grid, corrected, reference_spl)
 
 
@@ -526,6 +542,24 @@ def load_mic_profile(path: Path, angle: str = swmicpkg.PLAIN_ANGLE,
     if kind == "swproj":
         return swproj.mic_profile(swproj.SwProj.open(path), angle)
     raise ValueError(f"{Path(path).name}: a microphone profile must be .swmicpkg or .swproj")
+
+
+def _channel_values(items: list[str], flag: str) -> dict[str, float]:
+    """``CHANNEL=NUMBER`` items -> {channel: number}."""
+    out: dict[str, float] = {}
+    for item in items:
+        name, sep, text = item.partition("=")
+        name = name.strip()
+        try:
+            value = float(text)
+        except ValueError:
+            value = math.nan
+        if not sep or not name or not math.isfinite(value):
+            raise ValueError(f"{flag} {item!r}: expected CHANNEL=NUMBER")
+        if name.lower() in (n.lower() for n in out):
+            raise ValueError(f"{flag}: {name} given twice")
+        out[name] = value
+    return out
 
 
 class SpeakerProjectConverter(Converter):
@@ -557,6 +591,12 @@ class SpeakerProjectConverter(Converter):
         Option("--clip-percent", type=float,
                help="estimated reference only: percent of 200 Hz-10 kHz points allowed to "
                     f"need more than the maximum boost (default: {DEFAULT_CLIP_FRACTION * 100:g})"),
+        Option("--spot-delay-ms", action="append", metavar="CHANNEL=MS",
+               help="listening spot delay of a channel, e.g. Right=0.15; repeatable "
+                    "(default: 0)"),
+        Option("--spot-gain-db", action="append", metavar="CHANNEL=DB",
+               help="listening spot gain of a channel, e.g. Left=-0.5; repeatable "
+                    "(default: 0)"),
     )
 
     def __init__(
@@ -570,6 +610,8 @@ class SpeakerProjectConverter(Converter):
         lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
         max_boost_db: float = DEFAULT_MAX_BOOST_DB,
         clip_percent: float = DEFAULT_CLIP_FRACTION * 100,
+        spot_delay_ms: list[str] | None = None,
+        spot_gain_db: list[str] | None = None,
     ):
         if mic_profile is None:
             raise ValueError(f"{self.source} -> {self.target} needs --mic-profile")
@@ -584,6 +626,22 @@ class SpeakerProjectConverter(Converter):
             max_boost_db=max_boost_db,
             clip_fraction=clip_percent / 100,
         )
+        self.spot_values = ((_channel_values(spot_delay_ms or [], "--spot-delay-ms"), 0,
+                             "--spot-delay-ms"),
+                            (_channel_values(spot_gain_db or [], "--spot-gain-db"), 1,
+                             "--spot-gain-db"))
+
+    def spot(self, measurements: list[Measurement]) -> dict[str, tuple[float, float]]:
+        """{channel: (delay ms, gain dB)}; option channel names are case-insensitive."""
+        names = {m.channel.lower(): m.channel for m in measurements}
+        spot: dict[str, list[float]] = {}
+        for values, slot, flag in self.spot_values:
+            for name, value in values.items():
+                if name.lower() not in names:
+                    raise ValueError(f"{flag}: no {name} channel; channels: "
+                                     f"{', '.join(names.values())}")
+                spot.setdefault(names[name.lower()], [0.0, 0.0])[slot] = value
+        return {channel: (delay, gain) for channel, (delay, gain) in spot.items()}
 
     def measurements(self, path: Path) -> tuple[sid_layout.Layout, list[Measurement]]:
         """The SoundID layout and the measurements in ``path``, in channel order."""
@@ -594,7 +652,9 @@ class SpeakerProjectConverter(Converter):
         layout, measurements = self.measurements(path)
         profile = load_mic_profile(self.mic_profile, self.mic_angle,
                                    self.mic_profile_format)
-        result = convert(measurements, profile, path.stem, layout=layout, **self.settings)
+        spot = self.spot(measurements)
+        result = convert(measurements, profile, path.stem, layout=layout, spot=spot,
+                         **self.settings)
         s = self.settings
         source = "estimated" if s["reference_spl"] is None else "given"
         notes = [
@@ -609,6 +669,8 @@ class SpeakerProjectConverter(Converter):
                          f"{min(s['high_cutoff_hz'], s['lfe_high_cutoff_hz']):g} Hz")
         notes += [f"{channel} correction: {min(c.correction):+.2f} to {max(c.correction):+.2f} dB"
                   for channel, c in result.curves.items()]
+        notes += [f"{channel} listening spot: delay {delay:g} ms, gain {gain:+g} dB"
+                  for channel, (delay, gain) in spot.items()]
         return Result(result.data, path.stem + ".swproj", notes)
 
 

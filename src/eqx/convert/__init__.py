@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .arcx_swproj import ArcxToSwproj
 from .base import Converter, Result
+from .fir import AutoeqToFir, FirToAutoeq, PeqbToFir, SwprojToFir
 from .from_autoeq import AutoeqToPeqb, AutoeqToRewcal, AutoeqToSwproj
 from .mdat_swproj import MdatToSwproj
 from .swmicpkg_rewcal import SwmicpkgToRewcal
@@ -22,6 +23,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq, SoundidExportTxtToAutoeq,
         TmreqToAutoeq,
         ArcxToAutoeq, ArcxToSwproj,
+        PeqbToFir, SwprojToFir, AutoeqToFir, FirToAutoeq,
     )
 }
 

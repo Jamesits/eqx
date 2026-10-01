@@ -11,6 +11,11 @@ from .dsp import PEQ_SAMPLE_RATE, Biquad, bell, cascade_db, pass_filter, shelf_q
 EPOCH = "1970-01-01T00:00:00.000000Z"
 
 
+def standard_grid() -> list[float]:
+    """SoundID's frequency grid: 355 log-spaced points, 20 Hz-22 kHz."""
+    return [20.0 * (22000.0 / 20.0) ** (i / 354.0) for i in range(355)]
+
+
 @dataclass
 class Measurement:
     """One speaker frequency response."""

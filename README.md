@@ -16,6 +16,8 @@ DO check the output levels on all frequencies before playing any audio.
 
 - AutoEq
     - `.csv`
+- FIR filter (Equalizer APO, CamillaDSP, Roon, ...)
+    - `.wav`
 - IK Multimedia ARC X 2.x
     - Session `.arcXs`
     - Analysis `.arcXa`
@@ -57,7 +59,7 @@ uv run eqx convert <in-file> -o <out-file> [--from <format>] [--to <format>] [..
 
 Testing:
 ```shell
-uv run pytest
+uv run python -m pytest
 ```
 
 ## Caveats
@@ -74,6 +76,10 @@ uv run pytest
 
 `.swmicpkg`
 - 0/30/90 degree curves supported
+
+`.swhp`, `.swproj` to FIR `.wav`
+- The filter SoundID Reference plays for the profile (flat target), minimum or linear phase, with Limit Controls, Listening Spot and Safe Headroom
+- Projects converted from unsmoothed REW measurements may differ from SoundID above 15 kHz
 
 ### IK Multimedia ARC X
 

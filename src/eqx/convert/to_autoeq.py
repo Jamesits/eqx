@@ -27,6 +27,12 @@ CHANNEL_OPTION = Option("--channel", choices=CHANNELS, help="channel to convert 
 SPEAKER_OPTION = Option("--speaker",
                         help="speaker, case-insensitive, as named by inspect, e.g. Left, "
                              "Subwoofer, Center (default: Left)")
+COMPUTER_ID_OPTION = Option(
+    "--computer-id",
+    help="computer ID the profile was downloaded for (or SWHP_COMPUTER_ID; "
+         "default: this machine's ID)")
+KEY_OPTION = Option("--key", help="raw AES body key, hex")
+PASSWORD_OPTION = Option("--password", help="project password (or SWPROJ_PASSWORD)")
 
 
 def _channel_name(channel: str) -> str:
@@ -92,7 +98,7 @@ class SwprojToAutoeq(Converter):
     options = (
         CHANNEL_OPTION,
         SPEAKER_OPTION,
-        Option("--password", help="project password (or SWPROJ_PASSWORD)"),
+        PASSWORD_OPTION,
     )
 
     def __init__(self, channel: str | None = None, speaker: str | None = None,
@@ -119,13 +125,7 @@ class PeqbToAutoeq(Converter):
     source = "peqb"
     target = "autoeq"
     description = "the response of one side of a SoundID profile (headphone: -correction)"
-    options = (
-        CHANNEL_OPTION,
-        Option("--computer-id",
-               help="computer ID the profile was downloaded for (or SWHP_COMPUTER_ID; "
-                    "default: this machine's ID)"),
-        Option("--key", help="raw AES body key, hex"),
-    )
+    options = (CHANNEL_OPTION, COMPUTER_ID_OPTION, KEY_OPTION)
 
     def __init__(self, channel: str = "left", computer_id: str | None = None,
                  key: str | None = None):
