@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 
 from eqx import convert, dsp, formats
+from eqx.audyssey import mqx
 from eqx.convert.mdat_swproj import standard_grid
 from eqx.dirac import filterslot, targetcurve
 from eqx.ik import arcx, pak
@@ -713,6 +714,69 @@ def write_arc4(version: str = "4.0.0", sha: str = ARC4_ID) -> bytes:
     return pak.write(entries)
 
 
+# ---------------------------------------------------------------------------
+# Audyssey MultEQ-X
+# ---------------------------------------------------------------------------
+MQX_DIR = "audyssey/mqx"
+# Level offset dB of each position.
+MQX_POSITION_GAINS = (0.0, -1.0, 2.0)
+# Time of flight, samples, per channel.
+MQX_FLIGHT = {"FL": 420, "FR": 430, "C": 410, "SLA": 300, "SRA": 310, "SW1": 450}
+# (channel, position) excluded from the aggregate.
+MQX_DISABLED = ("C", 2)
+
+
+def mqx_filters(designation: str) -> list:
+    """FL, FR: the device export bells; SW1: a low pass; others: one bell."""
+    if designation == "SW1":
+        return [dsp.pass_filter(False, 100, 0.7071, mqx.SAMPLE_RATE)]
+    if designation in ("FL", "FR"):
+        return bells("Left" if designation == "FL" else "Right", mqx.SAMPLE_RATE)
+    return [dsp.bell(200.0 * (list(MQX_FLIGHT).index(designation) + 1), 4.0, 1.0,
+                     mqx.SAMPLE_RATE)]
+
+
+def mqx_ir(designation: str, gain_db: float) -> list[float]:
+    x = [0.0] * mqx.IR_LENGTH
+    x[mqx.SYSTEM_DELAY + MQX_FLIGHT[designation]] = 10 ** (gain_db / 20)
+    for bq in mqx_filters(designation):
+        y, x1, x2, y1, y2 = [], 0.0, 0.0, 0.0, 0.0
+        for v in x:
+            out = (bq.b0 * v + bq.b1 * x1 + bq.b2 * x2 - bq.a1 * y1 - bq.a2 * y2) / bq.a0
+            y.append(out)
+            x1, x2, y1, y2 = v, x1, out, y1
+        x = y
+    return x
+
+
+MQX_TARGETS = (
+    *mqx.DEFAULT_TARGETS,
+    mqx.TargetItem("biquad", "Bass", {"MinGain": -25.0, "MaxGain": 25.0, "MinQ": 0.1,
+                                       "MaxQ": 20.0, "MinFreq": 10.0, "MaxFreq": 22000.0,
+                                       "Frequency": 60.0, "Gain": 3.0, "Q": 0.7, "Type": 3},
+                   flat=False, all=False,
+                   channels=[mqx.channel_guid("FL"), mqx.channel_guid("FR")]),
+    mqx.TargetItem("tilt", "Tilt", {"DecibelsPerOctave": -0.5, "PivotFrequency": 1000.0,
+                                     "Frequency": 1000.0}, excluded=[mqx.channel_guid("SW1")]),
+    mqx.TargetItem("custom", "Treble", {"Points": [
+        {"X": 0.0, "Y": 1.0}, {"X": 1000.0, "Y": 1.0}, {"X": 10000.0, "Y": 0.5},
+        {"X": 24000.0, "Y": 0.5}], "DisplayName": "Treble"},
+        reference=False, all=False, channels=[mqx.channel_guid("C")]),
+)
+
+
+def write_mqx() -> bytes:
+    """5.1, every position; one measurement excluded from the aggregate."""
+    channels = [(d, [mqx_ir(d, g) for g in MQX_POSITION_GAINS]) for d in MQX_FLIGHT]
+    data = json.loads(mqx.write(channels, MQX_TARGETS))
+    designation, position = MQX_DISABLED
+    for m in data["_measurements"]:
+        if (m["ChannelGuid"] == mqx.channel_guid(designation)
+                and m["PositionGuid"] == mqx.guid("position", str(position))):
+            m["Enabled"] = False
+    return mqx.dumps(data)
+
+
 def export_files() -> dict[str, bytes]:
     return {
         f"{BIQUAD_JSON_DIR}/Tilt Fluid.bin": write_biquad_json((96000, 192000),
@@ -814,8 +878,14 @@ CONVERSIONS = [
      {"to": "dirac-filter"}),
     (f"{DIRAC_FILTER_DIR}/Bass and treble.bin", f"{CSV_DIR}/Bass and treble Left.csv", {}),
     (f"{DIRAC_FILTER_DIR}/FIIR.bin", f"{FIR_DIR}/FIIR.wav", {}),
+    (f"{MQX_DIR}/Mqx 5.1.mqx", f"{CSV_DIR}/Mqx 5.1 FL.csv", {}),
+    (f"{MQX_DIR}/Mqx 5.1.mqx", f"{CSV_DIR}/Mqx 5.1 SW1.csv", {"speaker": "SW1", "position": 1}),
+    (f"{MQX_DIR}/Mqx 5.1.mqx", f"{PROJ_DIR}/Mqx 5.1.swproj",
+     {"mic_profile": f"{MIC_DIR}/FLAT01.swmicpkg"}),
+    ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{MQX_DIR}/Room Left.mqx",
+     {"mic_response": f"{CAL_DIR}/TILT01 degrees_0.txt"}),
 ]
-PATH_OPTIONS = ("mic_profile", "target_curve")
+PATH_OPTIONS = ("mic_profile", "target_curve", "mic_response")
 
 
 def run_conversion(root: Path, source: str | tuple[str, ...], target: str,
@@ -850,6 +920,7 @@ def generate(root: Path = ROOT) -> list[Path]:
     for name, spec in ARCX.items():
         files[f"{ARCX_DIR}/{name}"] = write_arcx(*spec)
     files[f"{ARC4_DIR}/Arc4.arc4a"] = write_arc4()
+    files[f"{MQX_DIR}/Mqx 5.1.mqx"] = write_mqx()
 
     written = []
     for rel, data in files.items():

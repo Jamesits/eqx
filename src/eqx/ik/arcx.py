@@ -344,7 +344,13 @@ def response(arcx: ArcX, channel: int, point: int | None = None,
         points = [points[point]]
     if frequencies is None:
         frequencies = log_grid(arcx.sample_rate)
-    bands = [point_bands(p.ir, arcx.sample_rate, frequencies) for p in points]
+    return (frequencies, *average([p.ir for p in points], arcx.sample_rate, frequencies))
+
+
+def average(irs: list[list[float]], sample_rate: float,
+            frequencies: list[float]) -> tuple[list[float], list[float]]:
+    """(dB, group delay s): power average of the impulse responses' bands."""
+    bands = [point_bands(ir, sample_rate, frequencies) for ir in irs]
     db, gd = [], []
     for i in range(len(frequencies)):
         powers = [b[i][0] for b in bands]
@@ -352,7 +358,7 @@ def response(arcx: ArcX, channel: int, point: int | None = None,
         db.append(10 * math.log10(max(total / len(bands), 1e-30)))
         gd.append(sum(p * b[i][1] for p, b in zip(powers, bands)) / total if total
                   else sum(b[i][1] for b in bands) / len(bands))
-    return frequencies, db, gd
+    return db, gd
 
 
 def measurement(arcx: ArcX, speaker: str, point: int | None = None,

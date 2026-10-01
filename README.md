@@ -16,6 +16,7 @@ DO check the output levels on all frequencies before playing any audio.
 
 | Software | Format | Extension | `--format` | Read | Write | Notes |
 |:---|:---|:---|:---|:-:|:-:|:---|
+| [Audyssey MultEQ-X](https://audyssey.com/) | Project | `.mqx` | `mqx` | ✓ | ✓ | Untested: no hardware |
 | [AutoEq](https://autoeq.app/) | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
 | [Dirac Live 3.x](https://www.dirac.com/live/) | Target curve | `.targetcurve` | `targetcurve` | ✓ | ✓ | Untested: no license |
 | [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license |
@@ -75,22 +76,13 @@ uv run python -m pytest
 
 ## Caveats
 
-### SoundID Reference 5.x
+### Audyssey MultEQ-X
 
-`.swproj`
-- Calibrations of speakers with distance <50cm are supported via REW
-- Calibrations of hidden speakers (thus unable to pass the per-speaker initial calibration in SoundID Reference Measure) are supported via REW
-- Calibrations of complicated sound environment (with points unable to pass the grid triangulation check) are supported via REW
-
-`.swhp`
-- An active license is required, and the file must be read on the computer with the license
-
-`.swmicpkg`
-- 0/30/90 degree curves supported
-
-`.swhp`, `.swproj` to FIR `.wav`
-- The filter SoundID Reference plays for the profile (flat target), minimum or linear phase, with Limit Controls, Listening Spot and Safe Headroom
-- Projects converted from unsmoothed REW measurements may differ from SoundID above 15 kHz
+- Only the measured speaker responses are converted; `inspect` lists the target curve components. MultEQ-X computes its filters when it transfers them to the AVR
+- Response levels are relative (dB re full scale), not SPL
+- Measurements include the microphone; MultEQ-X compensates them for its ACM1H. `--mic-response` takes the microphone's REW calibration file (e.g. the generic ACM1HB one) and subtracts it (`.mqx` to `.csv`) or adds it (`.csv` to `.mqx`); `.swproj` uses `--mic-profile`
+- MultEQ-X saves over a project without truncating the file; the leftover text after the project is ignored
+- Written projects hold one position of the front left and right speakers; deselect the AVR's other channels in MultEQ-X
 
 ### Dirac Live
 
@@ -114,3 +106,20 @@ uv run python -m pytest
 - Only the measured left and right responses are converted; the ARC 4 plug-in computes its correction when it loads the file
 - Response levels are relative (dB re the 40 Hz-10 kHz mean), not SPL; the response is already compensated for the microphone, so use a flat `--mic-profile` for `.swproj`
 - Analyses older than version 4.0.0 are not supported
+
+### SoundID Reference 5.x
+
+`.swproj`
+- Calibrations of speakers with distance <50cm are supported via REW
+- Calibrations of hidden speakers (thus unable to pass the per-speaker initial calibration in SoundID Reference Measure) are supported via REW
+- Calibrations of complicated sound environment (with points unable to pass the grid triangulation check) are supported via REW
+
+`.swhp`
+- An active license is required, and the file must be read on the computer with the license
+
+`.swmicpkg`
+- 0/30/90 degree curves supported
+
+`.swhp`, `.swproj` to FIR `.wav`
+- The filter SoundID Reference plays for the profile (flat target), minimum or linear phase, with Limit Controls, Listening Spot and Safe Headroom
+- Projects converted from unsmoothed REW measurements may differ from SoundID above 15 kHz

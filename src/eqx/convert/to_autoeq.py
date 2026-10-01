@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import correction
+from ..audyssey import mqx
 from ..autoeq import response
 from ..dirac import targetcurve
 from ..fileformat import frequency_range
@@ -22,7 +23,7 @@ from ..rogueamoeba import soundsource
 from ..soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                        export_txt, peqb, swproj, targetpreset)
 from .base import Converter, Result
-from .mdat_swproj import standard_grid
+from .mdat_swproj import mic_response_db, standard_grid
 
 CHANNELS = ("left", "right")
 CHANNEL_OPTION = Option("--channel", choices=CHANNELS, help="channel to convert (default: left)")
@@ -87,6 +88,33 @@ class ArcxToAutoeq(Converter):
         points = "all points" if self.point is None else f"point {self.point}"
         return _result(list(zip(frequencies, db)), f"{path.stem} {a.speakers[c]}.csv",
                        f"{a.speakers[c]} response, {points}, dB re full scale")
+
+
+class MqxToAutoeq(Converter):
+    source = "mqx"
+    target = "autoeq"
+    description = "the measured response of one speaker of a MultEQ-X project"
+    options = (SPEAKER_OPTION, mqx.POSITION_OPTION, mqx.MIC_RESPONSE_OPTION)
+
+    def __init__(self, speaker: str = "Left", position: int | None = None,
+                 mic_response: Path | None = None):
+        self.speaker = speaker
+        self.position = position
+        self.mic_response = mic_response
+
+    def _convert(self, path: Path) -> Result:
+        m = mqx.load(path)
+        c = m.channel(self.speaker)
+        frequencies, db, _ = mqx.response(m, c, self.position)
+        mic = "not compensated for the microphone"
+        if self.mic_response is not None:
+            db = [v - g for v, g in zip(db, mic_response_db(self.mic_response, frequencies))]
+            mic = f"minus {Path(self.mic_response).name}"
+        designation = m.channels[c].designation
+        positions = ("enabled measurements" if self.position is None
+                     else f"position {self.position}")
+        return _result(list(zip(frequencies, db)), f"{path.stem} {designation}.csv",
+                       f"{designation} response, {positions}, dB re full scale, {mic}")
 
 
 class Arc4ToAutoeq(Converter):

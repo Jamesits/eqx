@@ -19,7 +19,7 @@ from typing import Any, Iterable
 from .. import formats
 from ..model import EPOCH, Measurement, MicProfile, standard_grid
 from ..options import Option
-from ..rew import mdat
+from ..rew import cal, mdat
 from ..soundid import layout as sid_layout
 from ..soundid import peqb, swmicpkg, swproj
 from .base import Converter, Result
@@ -612,6 +612,17 @@ def load_mic_profile(path: Path, angle: str = swmicpkg.PLAIN_ANGLE,
     if kind == "swproj":
         return swproj.mic_profile(swproj.SwProj.open(path), angle)
     raise ValueError(f"{Path(path).name}: a microphone profile must be .swmicpkg or .swproj")
+
+
+def mic_response_db(path: Path, frequencies: list[float]) -> list[float]:
+    """The table of a REW calibration file at ``frequencies``: linear in log frequency,
+    clamped to the end values."""
+    profile, _ = cal.load(path)
+    points = [(math.log(f), g) for f, g in profile.points if f > 0]
+    if len(points) < 2:
+        raise ValueError(f"{Path(path).name}: too few calibration points above 0 Hz")
+    return resample([x for x, _ in points], [g for _, g in points],
+                    [math.log(f) for f in frequencies])
 
 
 def _channel_values(items: list[str], flag: str) -> dict[str, float]:

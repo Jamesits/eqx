@@ -32,6 +32,7 @@ SAMPLES = {
     "fir": TESTDATA / "fir/wav/Tilt Tilt Wired Average.wav",
     "targetcurve": TESTDATA / "dirac/targetcurve/Tilt.targetcurve",
     "dirac-filter": TESTDATA / "dirac/dirac-filter/FIIR signed.bin",
+    "mqx": TESTDATA / "audyssey/mqx/Mqx 5.1.mqx",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -61,7 +62,8 @@ class FormatTests(unittest.TestCase):
         for name, want in (("a.swproj", "swproj"), ("A.SWHP", "peqb"), ("a.eqb", "peqb"),
                            ("a.mdat", "mdat"), ("a.cal", "rewcal"), ("a.CSV", "autoeq"),
                            ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq"),
-                           ("a.arcXs", "arcx"), ("a.arcXa", "arcx"), ("a.WAV", "fir")):
+                           ("a.arcXs", "arcx"), ("a.arcXa", "arcx"), ("a.WAV", "fir"),
+                           ("a.MQX", "mqx")):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
             formats.detect(Path("a.dat"))
@@ -186,7 +188,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", "-i", csv)
-        self.assertIn("10 converters from autoeq", err)
+        self.assertIn("11 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
             self.assertEqual(code, 0)
@@ -267,6 +269,26 @@ class ConvertTests(unittest.TestCase):
             code, err = run_error("convert", "-i", Path(tmp) / "x.swproj", "-o", Path(tmp) / "x.csv",
                                   "--speaker", "Left Wide")
             self.assertIn("no Left Wide channel; available: Left, Right, Center", err)
+
+    def test_mqx(self):
+        code, err = run_error("convert", "-i", SAMPLES["mqx"])
+        self.assertIn("2 converters from mqx", err)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = run("convert", "-i", SAMPLES["mqx"], "-o", Path(tmp) / "x.csv",
+                             "--speaker", "center", "--position", "2")
+            self.assertEqual(code, 0)
+            self.assertIn("C response, position 2, dB re full scale, not compensated", text)
+            code, err = run_error("convert", "-i", SAMPLES["mqx"], "-o", Path(tmp) / "x.csv",
+                                  "--point", "1")
+            self.assertIn("--point does not apply to mqx -> autoeq", err)
+            code, text = run("convert", "-i", SAMPLES["mqx"], "-o", Path(tmp) / "x.swproj",
+                             "--mic-profile", PACKAGE)
+            self.assertEqual(code, 0)
+            self.assertIn("layout: 5.1; measurements: 6", text)
+            code, text = run("convert", "-i", TESTDATA / "autoeq/csv/Room Left.csv",
+                             "-o", Path(tmp) / "x.mqx")
+            self.assertEqual(code, 0)
+            self.assertIn("FL, FR, 1 position", text)
 
     def test_fir(self):
         code, err = run_error("convert", "-i", SAMPLES["peqb"])

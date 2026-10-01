@@ -7,13 +7,14 @@ from .arcx_swproj import ArcxToSwproj
 from .base import Converter, Result
 from .dirac import AutoeqToDiracFilter, DiracFilterToAutoeq, DiracFilterToFir, FirToDiracFilter
 from .fir import AutoeqToFir, FirToAutoeq, PeqbToFir, SwprojToFir
-from .from_autoeq import (AutoeqToArcx, AutoeqToMdat, AutoeqToPeqb, AutoeqToRewcal,
-                          AutoeqToSoundsource, AutoeqToSwproj, AutoeqToTargetcurve,
+from .from_autoeq import (AutoeqToArcx, AutoeqToMdat, AutoeqToMqx, AutoeqToPeqb,
+                          AutoeqToRewcal, AutoeqToSoundsource, AutoeqToSwproj, AutoeqToTargetcurve,
                           AutoeqToTmreq)
 from .mdat_swproj import MdatToSwproj
+from .mqx_swproj import MqxToSwproj
 from .rewcal_swmicpkg import RewcalToSwmicpkg
 from .swmicpkg_rewcal import SwmicpkgToRewcal
-from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, MdatToAutoeq, PeqbToAutoeq,
+from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, MdatToAutoeq, MqxToAutoeq, PeqbToAutoeq,
                         SoundidExportBiquadJsonToAutoeq, SoundidExportBiquadXmlToAutoeq,
                         SoundidExportLvndToAutoeq,
                         SoundidExportPeqJsonToAutoeq, SoundidExportTxtToAutoeq,
@@ -34,6 +35,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         PeqbToFir, SwprojToFir, AutoeqToFir, FirToAutoeq,
         TargetcurveToAutoeq, AutoeqToTargetcurve,
         DiracFilterToAutoeq, DiracFilterToFir, AutoeqToDiracFilter, FirToDiracFilter,
+        MqxToAutoeq, MqxToSwproj, AutoeqToMqx,
     )
 }
 

@@ -1,6 +1,6 @@
 """AutoEq frequency response CSV -> REW calibration and measurement, SoundID project and
 headphone profile, TotalMix Room EQ, ARC X session, SoundSource Headphone EQ profile,
-Dirac Live target curve."""
+Dirac Live target curve, MultEQ-X project."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import statistics
 from pathlib import Path
 
 from .. import dsp
+from ..audyssey import mqx
 from ..autoeq import response
 from ..dirac import targetcurve
 from ..ik import arcx
@@ -20,8 +21,8 @@ from ..rme import tmreq
 from ..rogueamoeba import soundsource
 from ..soundid import layout, peqb
 from .base import Converter, Result
-from .mdat_swproj import (LEVEL_HIGH_HZ, LEVEL_LOW_HZ, SpeakerProjectConverter, interp, resample,
-                          standard_grid)
+from .mdat_swproj import (LEVEL_HIGH_HZ, LEVEL_LOW_HZ, SpeakerProjectConverter, interp,
+                          mic_response_db, resample, standard_grid)
 
 COLUMN_OPTION = Option("--column", help=f"AutoEq CSV column to read (default: {response.RAW})")
 DEFAULT_RATE = 48000.0
@@ -314,6 +315,48 @@ class AutoeqToArcx(Converter):
         return Result(arcx.write(self.rate, channels, 1, self.session),
                       f"{paths[0].stem}{suffix}",
                       [f"Stereo {kind}, 1 point, {self.rate:g} Hz; "
+                       f"{level:.2f} dB = 0 dB re full scale"])
+
+
+# Time of flight of the written measurements: 3 m.
+MQX_FLIGHT = 420
+
+
+class AutoeqToMqx(Converter):
+    """One position per speaker: the minimum-phase impulse response of the curve.
+
+    Both channels are shifted by one level: the median dB of 200 Hz-10 kHz
+    becomes 0 dB re a full-scale impulse.  The microphone response is added,
+    since MultEQ-X subtracts it.
+    """
+
+    source = "autoeq"
+    target = "mqx"
+    description = ("speaker measurements (inputs: both speakers, or left then right) as a "
+                   "MultEQ-X project")
+    options = (COLUMN_OPTION, mqx.MIC_RESPONSE_OPTION)
+    inputs = 2
+
+    def __init__(self, column: str = response.RAW, mic_response: Path | None = None):
+        self.column = column
+        self.mic_response = mic_response
+
+    def _convert(self, *paths: Path) -> Result:
+        curves = _stereo(paths, self.column)
+        if self.mic_response is not None:
+            curves = [(name, [(f, v + g) for (f, v), g in zip(
+                points, mic_response_db(self.mic_response, [f for f, _ in points]))])
+                for name, points in curves]
+        band = [f for f in standard_grid() if LEVEL_LOW_HZ <= f <= LEVEL_HIGH_HZ]
+        level = statistics.median(v for _, points in curves for v in _log_resample(points, band))
+        lead = mqx.SYSTEM_DELAY + MQX_FLIGHT
+        channels = []
+        for designation, (_, points) in zip(("FL", "FR"), curves):
+            ir = dsp.design_fir([f for f, _ in points], [v - level for _, v in points],
+                                mqx.SAMPLE_RATE, "minimum", mqx.IR_LENGTH - lead)
+            channels.append((designation, [[0.0] * lead + ir]))
+        return Result(mqx.write(channels), f"{paths[0].stem}.mqx",
+                      [f"FL, FR, 1 position, {mqx.SAMPLE_RATE:g} Hz; "
                        f"{level:.2f} dB = 0 dB re full scale"])
 
 

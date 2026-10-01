@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
+from .audyssey import mqx
 from .autoeq import response
 from .dirac import filterslot, targetcurve
 from .fileformat import Format
@@ -23,7 +24,7 @@ FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
     filterslot, export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt,
     soundsource,
     tmreq,
-    arcx, arc4, fir, targetcurve,
+    arcx, arc4, fir, targetcurve, mqx,
 )}
 
 
