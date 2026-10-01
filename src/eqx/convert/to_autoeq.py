@@ -6,6 +6,7 @@ One file holds one curve, so stereo sources are converted one channel at a time.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Callable
 
@@ -19,6 +20,7 @@ from ..model import Correction
 from ..options import Option
 from ..rew import mdat
 from ..rme import tmreq
+from ..rode import fuzzmeasure
 from ..rogueamoeba import soundsource
 from ..soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                        export_txt, peqb, swproj, targetpreset)
@@ -115,6 +117,36 @@ class MqxToAutoeq(Converter):
                      else f"position {self.position}")
         return _result(list(zip(frequencies, db)), f"{path.stem} {designation}.csv",
                        f"{designation} response, {positions}, dB re full scale, {mic}")
+
+
+class FuzzmeasureToAutoeq(Converter):
+    source = "fuzzmeasure"
+    target = "autoeq"
+    description = "the frequency response of one measurement of a FuzzMeasure document"
+    options = (fuzzmeasure.MEASUREMENT_OPTION, fuzzmeasure.MIC_CALIBRATION_OPTION,
+               fuzzmeasure.SPL_OPTION)
+
+    def __init__(self, measurement: str | None = None, mic_calibration: bool = True,
+                 spl: bool = False):
+        self.measurement = measurement
+        self.mic_calibration = mic_calibration
+        self.spl = spl
+
+    def _convert(self, path: Path) -> Result:
+        d = fuzzmeasure.load(path)
+        i = d.record(self.measurement)
+        r = d.records[i]
+        frequencies, db, _ = fuzzmeasure.response(r, calibration=self.mic_calibration,
+                                                  spl=self.spl)
+        level = "dB SPL" if self.spl else "dB re full scale"
+        mic = "no microphone calibration"
+        if r.calibration is not None and r.use_calibration:
+            mic = (f"minus microphone calibration {r.calibration.name!r}" if self.mic_calibration
+                   else f"microphone calibration {r.calibration.name!r} not applied")
+        # Titles are free text; keep the file name valid.
+        name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", r.title).strip() or f"measurement {i}"
+        return _result(list(zip(frequencies, db)), f"{path.stem} {name}.csv",
+                       f"measurement {r.title!r}, {level}, {mic}")
 
 
 class Arc4ToAutoeq(Converter):

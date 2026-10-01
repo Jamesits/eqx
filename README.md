@@ -20,6 +20,9 @@ DO check the output levels on all frequencies before playing any audio.
 | [AutoEq](https://autoeq.app/) | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
 | [Dirac Live 3.x](https://www.dirac.com/live/) | Target curve | `.targetcurve` | `targetcurve` | ✓ | ✓ | Untested: no license |
 | [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license |
+| [FuzzMeasure 4](https://www.rodetest.com/) | Document | `.fume4` | `fuzzmeasure` | ✓ | ✓ | Untested: no license |
+| FuzzMeasure 3 | Document | `.fume3` | `fuzzmeasure` | ✓ | | Untested: no license |
+| FuzzMeasure 2 | Document | `.fume` | `fuzzmeasure` | ✓ | | Untested: no license |
 | Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), [CamillaDSP](https://github.com/HEnquist/camilladsp), [Audio Hijack](https://rogueamoeba.com/support/manuals/audiohijack/?page=advancedblocks#fir-filter), [Roon](https://help.roonlabs.com/portal/en/kb/articles/dsp-engine-convolution#Introduction), ... |
 | [IK Multimedia ARC X 2.x](https://www.ikmultimedia.com/products/arcx/) | Session | `.arcXs` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
@@ -95,6 +98,12 @@ uv run python -m pytest
 - Filters calculated by Dirac's servers are signed; `inspect` checks the signature. Written slots are unsigned, as the ones the processor writes itself
 - Written slots hold a dual-rate filter at 32, 44.1 and 48 kHz, and add 446 samples of latency
 - Reading plays each output from its own input; bass management cross terms are left out
+
+### FuzzMeasure
+
+- `.fume4` and `.fume3` documents are folders (macOS packages); copy or unzip the whole folder. `eqx` writes `.fume4` as a folder
+- The response is FuzzMeasure's frequency response of the measurement's analysis window. The microphone calibration stored with a measurement is subtracted where FuzzMeasure applies it; `--no-mic-calibration` leaves it out. Levels are dB re full scale; `--spl` uses FuzzMeasure's SPL scale
+- Written documents hold one measurement per input and one frequency response graph. The mid band sits at 0 dB re full scale; the SPL reference level makes the SPL graph show the curves' own levels
 
 ### IK Multimedia ARC X
 

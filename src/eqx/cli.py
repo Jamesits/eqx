@@ -109,6 +109,24 @@ def cmd_inspect(args) -> int:
 # --------------------------------------------------------------------------
 # convert
 # --------------------------------------------------------------------------
+def write_output(path: Path, data: bytes | dict[str, bytes]) -> int:
+    """Write a file, or a package directory; return the byte count.
+
+    A package replaces its own files in an existing directory and leaves the
+    others.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(data, bytes):
+        path.write_bytes(data)
+        return len(data)
+    if path.exists() and not path.is_dir():
+        raise ValueError(f"{path} exists and is not a directory")
+    path.mkdir(exist_ok=True)
+    for name, contents in data.items():
+        (path / name).write_bytes(contents)
+    return sum(len(contents) for contents in data.values())
+
+
 def cmd_convert(args) -> int:
     source = args.source
     if source is None:
@@ -125,9 +143,8 @@ def cmd_convert(args) -> int:
                                      f"{cls.source} -> {cls.target}"))
     result = converter.convert(args.input)
     output = args.output or args.input[0].with_name(result.name)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(result.data)
-    print(f"wrote {output} ({len(result.data):,} bytes)")
+    size = write_output(output, result.data)
+    print(f"wrote {output} ({size:,} bytes)")
     for note in result.notes:
         print(note)
     return 0

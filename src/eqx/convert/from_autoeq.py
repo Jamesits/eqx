@@ -1,6 +1,6 @@
 """AutoEq frequency response CSV -> REW calibration and measurement, SoundID project and
 headphone profile, TotalMix Room EQ, ARC X session, SoundSource Headphone EQ profile,
-Dirac Live target curve, MultEQ-X project."""
+Dirac Live target curve, MultEQ-X project, FuzzMeasure document."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from ..model import Correction, Measurement, MicProfile, Peq
 from ..options import Option
 from ..rew import cal, mdat
 from ..rme import tmreq
+from ..rode import fuzzmeasure
 from ..rogueamoeba import soundsource
 from ..soundid import layout, peqb
 from .base import Converter, Result
@@ -357,6 +358,57 @@ class AutoeqToMqx(Converter):
             channels.append((designation, [[0.0] * lead + ir]))
         return Result(mqx.write(channels), f"{paths[0].stem}.mqx",
                       [f"FL, FR, 1 position, {mqx.SAMPLE_RATE:g} Hz; "
+                       f"{level:.2f} dB = 0 dB re full scale"])
+
+
+# Time of flight of the written measurements, m.
+FUZZMEASURE_FLIGHT_M = 3.0
+FUZZMEASURE_INPUTS = 16
+
+
+class AutoeqToFuzzmeasure(Converter):
+    """One measurement per input: the minimum-phase impulse response of the curve.
+
+    All measurements are shifted by one level: the median dB of 200 Hz-10 kHz
+    becomes 0 dB re a full-scale impulse.  The SPL reference level puts
+    FuzzMeasure's SPL graphs at the curves' own dB values.
+    """
+
+    source = "autoeq"
+    target = "fuzzmeasure"
+    description = "curves (one measurement per input) as a FuzzMeasure 4 document"
+    options = (COLUMN_OPTION, RATE_OPTION)
+    inputs = FUZZMEASURE_INPUTS
+
+    def __init__(self, column: str = response.RAW, rate: float = DEFAULT_RATE):
+        if rate <= 0 or rate != int(rate):
+            raise ValueError("--rate must be a whole number of Hz")
+        self.column = column
+        self.rate = int(rate)
+
+    def _convert(self, *paths: Path) -> Result:
+        curves = [(path.stem, response.load(path).curve(self.column)) for path in paths]
+        titles = [title for title, _ in curves]
+        if len(set(t.lower() for t in titles)) != len(titles):
+            raise ValueError(f"inputs need distinct names; got {', '.join(titles)}")
+        band = [f for f in standard_grid() if LEVEL_LOW_HZ <= f <= LEVEL_HIGH_HZ]
+        level = statistics.median(v for _, points in curves for v in _log_resample(points, band))
+        lead = round(FUZZMEASURE_FLIGHT_M / fuzzmeasure.SPEED_OF_SOUND * self.rate)
+        half = fuzzmeasure.IR_LENGTH // 2
+        records = []
+        for i, (path, (title, points)) in enumerate(zip(paths, curves)):
+            ir = dsp.design_fir([f for f, _ in points], [v - level for _, v in points],
+                                self.rate, "minimum", half - lead)
+            ir = [0.0] * lead + ir + [0.0] * (fuzzmeasure.IR_LENGTH - lead - len(ir))
+            records.append(fuzzmeasure.Record(
+                title, self.rate, ir,
+                fuzzmeasure.record_uuid(f"measurement/{i}/{title}"), window=(0, half, 0),
+                notes=f"{path.name}, column {self.column}",
+                start_hz=points[0][0], end_hz=min(points[-1][0], self.rate / 2),
+                use_spl=True, spl_reference=fuzzmeasure.CALIBRATOR_DB - level,
+                color=fuzzmeasure.COLORS[i % len(fuzzmeasure.COLORS)]))
+        return Result(fuzzmeasure.write(records), f"{paths[0].stem}.fume4",
+                      [f"{len(records)} measurements, {self.rate} Hz; "
                        f"{level:.2f} dB = 0 dB re full scale"])
 
 

@@ -18,9 +18,9 @@ class GeneratedTestdataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             written = gen_testdata.generate(tmp)
-            stored = {p.relative_to(ROOT) for d in ("audyssey", "autoeq", "dirac", "fir", "ik", "rew", "rme",
-                                                        "rogueamoeba", "sonarworks-reference",
-                                                        "soundid")
+            stored = {p.relative_to(ROOT)
+                      for d in ("audyssey", "autoeq", "dirac", "fir", "ik", "rew", "rme", "rode",
+                                "rogueamoeba", "sonarworks-reference", "soundid")
                       for p in (ROOT / d).rglob("*") if p.is_file()}
             self.assertEqual({p.relative_to(tmp) for p in written}, stored)
             for path in written:
@@ -44,6 +44,9 @@ class GeneratedTestdataTests(unittest.TestCase):
                     got = swproj.SwProj(result.data)
                     self.assertEqual((got.header.text, got.part("eqb"), got.xml),
                                      _project(ROOT / target))
+                elif isinstance(result.data, dict):
+                    self.assertEqual(result.data, {p.name: p.read_bytes()
+                                                   for p in (ROOT / target).iterdir()})
                 else:
                     self.assertEqual(result.data, (ROOT / target).read_bytes())
 

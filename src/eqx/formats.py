@@ -12,6 +12,7 @@ from .fileformat import Format
 from .ik import arc4, arcx
 from .rew import cal, mdat
 from .rme import tmreq
+from .rode import fuzzmeasure
 from .rogueamoeba import soundsource
 from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                       export_txt, peqb, swmicpkg, swproj, targetpreset)
@@ -24,7 +25,7 @@ FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
     filterslot, export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt,
     soundsource,
     tmreq,
-    arcx, arc4, fir, targetcurve, mqx,
+    arcx, arc4, fir, targetcurve, mqx, fuzzmeasure,
 )}
 
 

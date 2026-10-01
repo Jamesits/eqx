@@ -11,7 +11,8 @@ from ..options import Option
 
 @dataclass
 class Result:
-    data: bytes                             # complete output file
+    # Complete output file, or the files of a package (directory): name -> contents.
+    data: bytes | dict[str, bytes]
     name: str                               # default output file name
     notes: list[str] = field(default_factory=list)
 

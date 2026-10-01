@@ -33,6 +33,7 @@ SAMPLES = {
     "targetcurve": TESTDATA / "dirac/targetcurve/Tilt.targetcurve",
     "dirac-filter": TESTDATA / "dirac/dirac-filter/FIIR signed.bin",
     "mqx": TESTDATA / "audyssey/mqx/Mqx 5.1.mqx",
+    "fuzzmeasure": TESTDATA / "rode/fuzzmeasure/Fm4.fume4",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -63,7 +64,8 @@ class FormatTests(unittest.TestCase):
                            ("a.mdat", "mdat"), ("a.cal", "rewcal"), ("a.CSV", "autoeq"),
                            ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq"),
                            ("a.arcXs", "arcx"), ("a.arcXa", "arcx"), ("a.WAV", "fir"),
-                           ("a.MQX", "mqx")):
+                           ("a.MQX", "mqx"), ("a.fume4", "fuzzmeasure"),
+                           ("a.Fume3", "fuzzmeasure"), ("a.fume", "fuzzmeasure")):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
             formats.detect(Path("a.dat"))
@@ -188,7 +190,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", "-i", csv)
-        self.assertIn("11 converters from autoeq", err)
+        self.assertIn("12 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
             self.assertEqual(code, 0)
@@ -289,6 +291,32 @@ class ConvertTests(unittest.TestCase):
                              "-o", Path(tmp) / "x.mqx")
             self.assertEqual(code, 0)
             self.assertIn("FL, FR, 1 position", text)
+
+    def test_fuzzmeasure(self):
+        for name in ("Fm4.fume4", "Fm3.fume3", "Fm2.fume"):
+            with self.subTest(name):
+                code, text = run("inspect", TESTDATA / "rode/fuzzmeasure" / name)
+                self.assertEqual(code, 0)
+                self.assertIn("== measurement 1 Right", text)
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = run("convert", "-i", SAMPLES["fuzzmeasure"], "-o", Path(tmp) / "x.csv",
+                             "--measurement", "right", "--no-mic-calibration", "--spl")
+            self.assertEqual(code, 0)
+            self.assertIn("'Right', dB SPL, microphone calibration 'TILT01 mic' not applied", text)
+            code, err = run_error("convert", "-i", SAMPLES["fuzzmeasure"], "--measurement", "9")
+            self.assertIn("measurement 9 does not exist", err)
+            inputs = [TESTDATA / "autoeq/csv" / f"Room {side}.csv" for side in ("Left", "Right")]
+            output = Path(tmp) / "x.fume4"
+            for _ in range(2):
+                code, text = run("convert", "-i", inputs[0], "-i", inputs[1], "-o", output)
+                self.assertEqual(code, 0)
+            self.assertIn("2 measurements, 48000 Hz", text)
+            self.assertEqual(len(list(output.iterdir())), 3)
+            code, text = run("inspect", output)
+            self.assertIn("== measurement 1 Room Right", text)
+            (Path(tmp) / "y.fume4").write_bytes(b"")
+            code, err = run_error("convert", "-i", inputs[0], "-o", Path(tmp) / "y.fume4")
+            self.assertIn("exists and is not a directory", err)
 
     def test_fir(self):
         code, err = run_error("convert", "-i", SAMPLES["peqb"])
