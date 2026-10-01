@@ -3,7 +3,7 @@
 ![Works - On My Machine](https://img.shields.io/badge/Works-On_My_Machine-2ea44f)
 ![100% Written by AI](https://img.shields.io/badge/Written_by_AI-100%25-blue)
 
-Inspect and convert equalizer and audio correction files.
+Inspect and convert equalizer, mic and room correction files.
 
 ## WARNINGS
 
@@ -18,7 +18,7 @@ DO check the output levels on all frequencies before playing any audio.
 |:---|:---|:---|:---|:-:|:-:|:---|
 | [AutoEq](https://autoeq.app/) | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
 | [Dirac Live 3.x](https://www.dirac.com/live/) | Target curve | `.targetcurve` | `targetcurve` | ✓ | ✓ | Untested: no license |
-| [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license. Write: unsigned |
+| [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license |
 | Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), [CamillaDSP](https://github.com/HEnquist/camilladsp), [Roon](https://help.roonlabs.com/portal/en/kb/articles/dsp-engine-convolution#Introduction), ... |
 | [IK Multimedia ARC X 2.x](https://www.ikmultimedia.com/products/arcx/) | Session | `.arcXs` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
