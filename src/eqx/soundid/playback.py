@@ -129,10 +129,33 @@ def _lfe_map(project: swproj.SwProj) -> list[bool]:
     return []
 
 
+def sonarworks_reference_channels(curves: list) -> list[SpeakerChannel]:
+    """Left and right of a Sonarworks Reference 3 / 4 ``eqb``: no channel parameters; the
+    listening spot is the curve's ``transfer`` and ``delay_ms``.  A missing
+    measurement is the negated correction, as in the Reference plug-ins."""
+    by_type = {}
+    for c in curves:
+        by_type.setdefault(c.type_name, c)
+    channels = []
+    for index, side in enumerate(SIDES):
+        c = by_type.get(f"Correction{side}")
+        if c is None:
+            raise ValueError(f"the project has no Correction{side} curve")
+        m = by_type.get(f"Measurement{side}")
+        measurement = ([(f, r) for f, r, _ in m.points] if m is not None
+                       else [(f, -r) for f, r, _ in c.points])
+        channels.append(SpeakerChannel(index, side, "Front", False, measurement,
+                                       [(f, r) for f, r, _ in c.points],
+                                       c.delay_ms or 0.0, c.transfer or 0.0))
+    return channels
+
+
 def speaker_channels(project: swproj.SwProj) -> list[SpeakerChannel]:
     """The channels of a speaker project's ``eqb`` part, in channel order."""
     if project.eqb is None:
         raise ValueError("the project has no eqb part")
+    if project.eqb.version < (3, 0, 0, 2):
+        return sonarworks_reference_channels(project.eqb.curves)
     measurements, corrections = {}, {}
     for c in project.eqb.curves:
         if "ChannelIndex" not in c.parameters:

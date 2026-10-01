@@ -21,11 +21,11 @@ DO check the output levels on all frequencies before playing any audio.
 - IK Multimedia ARC X 2.x
     - Session `.arcXs`
     - Analysis `.arcXa`
-- RME TotalMix FX
-    - Room EQ preset `.tmreq`
 - REW
     - `.mdat`
     - `.cal`/`.txt`
+- RME TotalMix FX
+    - Room EQ preset `.tmreq`
 - SoundID Reference 5.x
     - `.swhp`
     - `.swproj`
@@ -40,6 +40,10 @@ DO check the output levels on all frequencies before playing any audio.
         - MERGING+ANUBIS `.bin`
         - SPQ DSP (AVID MTRX, DAD) `.txt`
         - Wayne Jones AUDIO `.bin`
+- Sonarworks Reference 3.x, 4.x
+    - `.swhp`
+    - `.swproj`
+    - `.eqb` (including the PEQb 2.x and `PEQB` versions)
 
 ## Usage
 

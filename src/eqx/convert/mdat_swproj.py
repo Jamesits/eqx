@@ -37,6 +37,8 @@ DEFAULT_CLIP_FRACTION = 0.05
 
 GRID_NAME = "LOG_355_20_22000"
 NULL_ID = "00000000-0000-0000-0000-000000000000"
+# Target applications: SoundID Reference, or Sonarworks Reference 3 and 4.
+APPS = ("soundid", "sonarworks-reference")
 
 
 
@@ -225,6 +227,32 @@ def _correction_type(measurement: Measurement) -> str:
     return {0: "CorrectionLeft", 1: "CorrectionRight"}.get(measurement.index, "Correction")
 
 
+def _side(measurement: Measurement) -> str:
+    return ("Left", "Right")[measurement.index]
+
+
+def _sonarworks_reference_params(measurement: Measurement, correction: bool,
+                      spot: dict | None = None) -> dict[str, Any]:
+    """Curve parameters of Sonarworks Reference 3 / 4: the listening spot gain (dB) and
+    delay (seconds) on the correction curve only."""
+    delay_ms, gain_db = (spot or {}).get(measurement.channel, (0.0, 0.0))
+    return {
+        "Delay": repr(delay_ms / 1000 if correction else 0.0),
+        "Frequency": GRID_NAME,
+        "Transfer": repr(float(gain_db) if correction else 0.0),
+    }
+
+
+def check_app(measurements: list[Measurement], layout: sid_layout.Layout, app: str) -> None:
+    """Sonarworks Reference 3 / 4 projects are stereo with both channels measured."""
+    if app not in APPS:
+        raise ValueError(f"app must be one of: {', '.join(APPS)}")
+    if app == "sonarworks-reference" and (layout is not sid_layout.STEREO
+                               or sorted(m.index for m in measurements) != [0, 1]):
+        raise ValueError("a Sonarworks Reference 3 / 4 project needs a stereo layout with Left and Right "
+                         "measured")
+
+
 def _channel_side(measurement: Measurement) -> str:
     """The ``Channel`` element: SoundID's enum has Left, Right and Other."""
     return {0: "Left", 1: "Right"}.get(measurement.index, "Other")
@@ -330,7 +358,11 @@ def build_project_xml(
     name: str,
     layout: sid_layout.Layout = sid_layout.STEREO,
     spot: dict | None = None,
+    app: str = "soundid",
 ) -> bytes:
+    """``app`` ``sonarworks-reference``: Sonarworks Reference 3 / 4 curve types and parameters; no
+    channel parameters, layout or version history."""
+    sonarworks = app == "sonarworks-reference"
     root = ET.Element(f"{{{NS_SW}}}Project")
     _db_stamp(root)
     _element(root, "CurveCollections")
@@ -339,12 +371,16 @@ def build_project_xml(
     for measurement in measurements:
         speaker = corrected[measurement.channel]
         index = measurement.index
-        _curve(curves, "Measurement", f"Balanced Measurement CH {index}", grid,
-               speaker.response, speaker.group_delay,
-               _channel_params(measurement, layout, False, spot).items())
+        if sonarworks:
+            measurement_type = f"Measurement{_side(measurement)}"
+            params = [_sonarworks_reference_params(measurement, c, spot) for c in (False, True)]
+        else:
+            measurement_type = "Measurement"
+            params = [_channel_params(measurement, layout, c, spot) for c in (False, True)]
+        _curve(curves, measurement_type, f"Balanced Measurement CH {index}", grid,
+               speaker.response, speaker.group_delay, params[0].items())
         _curve(curves, _correction_type(measurement), f"Correction CH {index}", grid,
-               speaker.correction, speaker.correction_group_delay,
-               _channel_params(measurement, layout, True, spot).items())
+               speaker.correction, speaker.correction_group_delay, params[1].items())
 
     mic_freq = [p[0] for p in profile.points]
     mic_response = [p[1] for p in profile.points]
@@ -381,7 +417,7 @@ def build_project_xml(
     _params(
         room_collection,
         (
-            ("ChannelLayout", layout.id),
+            *((("ChannelLayout", layout.id),) if not sonarworks else ()),
             ("DistanceBetweenSpeakers", "0"),
             ("IsLfeLouder", "false"),
             ("MeasuredDistanceBetweenSpeakers", "0"),
@@ -407,7 +443,7 @@ def build_project_xml(
             ("Size_W", "0.35"),
             # Written only with an LFE, so stereo projects stay as they were.
             *((("TestSignalConfig", test_signal_config(layout, measurements[0].sample_rate)),)
-              if any(c.is_lfe for c in layout.channels) else ()),
+              if any(c.is_lfe for c in layout.channels) and not sonarworks else ()),
         ),
     )
     room_points = _element(rm, "Points")
@@ -419,14 +455,14 @@ def build_project_xml(
         _element(point, "DistanceInSamples", "0")
         _element(point, "InputLevel", "0")
         _element(point, "OutputLevel", "0")
-        _params(point, (("ChannelIndex", measurement.index),))
+        _params(point, () if sonarworks else (("ChannelIndex", measurement.index),))
 
     for measurement in measurements:
         speaker = corrected[measurement.channel]
         m = _element(rms, "Measurement")
         _element(m, "Channel", _channel_side(measurement))
         _element(m, "Delay", "0")
-        _params(m, (("ChannelIndex", measurement.index),))
+        _params(m, () if sonarworks else (("ChannelIndex", measurement.index),))
         _point_list(m, grid, speaker.response, speaker.group_delay)
         _element(m, "RawData")  # optional audio samples intentionally omitted
         _element(m, "Time", measurement.timestamp)
@@ -434,7 +470,8 @@ def build_project_xml(
     _element(rm, "Time", max((m.timestamp for m in measurements if m.timestamp), default=EPOCH))
 
     values = _element(root, "Values")
-    _key_values(values, (("VersionHistory", "3.0.0.2_1"),))
+    if not sonarworks:
+        _key_values(values, (("VersionHistory", "3.0.0.2_1"),))
     ET.indent(root, "\t")
     xml = ET.tostring(root, encoding="utf-8")
     # DataContract emits this declaration on projects written by SoundID even
@@ -476,6 +513,32 @@ def build_eqb(
     return peqb.write(curves)
 
 
+def build_sonarworks_reference_eqb(measurements: list[Measurement], grid: list[float],
+                        corrected: dict[str, SpeakerCurves], spot: dict | None = None) -> bytes:
+    """PEQb 3.0.0.0, as Sonarworks Reference 4 Measure writes it: CorrectionLeft,
+    CorrectionRight, MeasurementLeft, MeasurementRight.  A correction's
+    ``transfer`` is its gain less the larger gain of the two; ``delay_ms`` is
+    absolute."""
+    by_side = {_side(m): m for m in measurements}
+    spot = spot or {}
+    gains = {side: spot.get(m.channel, (0.0, 0.0))[1] for side, m in by_side.items()}
+    top = max(gains.values())
+    curves = []
+    for kind in ("Correction", "Measurement"):
+        for side in ("Left", "Right"):
+            m = by_side[side]
+            speaker = corrected[m.channel]
+            if kind == "Correction":
+                points = zip(grid, speaker.correction, speaker.correction_group_delay)
+                transfer, delay = gains[side] - top, spot.get(m.channel, (0.0, 0.0))[0]
+            else:
+                points = zip(grid, speaker.response, speaker.group_delay)
+                transfer, delay = 0.0, 0.0
+            curves.append(peqb.Curve(peqb.CURVE_TYPE_ID[kind + side], list(points),
+                                     transfer=transfer, delay_ms=delay))
+    return peqb.write_v1(curves, version=(3, 0, 0, 0))
+
+
 # ---------------------------------------------------------------------------
 # top level
 # ---------------------------------------------------------------------------
@@ -500,12 +563,15 @@ def convert(
     lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
     layout: sid_layout.Layout = sid_layout.STEREO,
     spot: dict | None = None,
+    app: str = "soundid",
 ) -> Conversion:
     """``measurements`` are channels of ``layout``: ``index`` and ``channel`` as in the layout.
 
     ``spot``: {channel: (delay ms, gain dB)}, the listening spot adjustment.
+    ``app``: ``soundid`` (SoundID Reference) or ``sonarworks-reference`` (Sonarworks Reference 3 / 4).
     """
     check_layout(measurements, layout)
+    check_app(measurements, layout, app)
     unknown = set(spot or {}) - {m.channel for m in measurements}
     if unknown:
         raise ValueError(f"listening spot of unmeasured channel(s): {', '.join(sorted(unknown))}")
@@ -522,9 +588,13 @@ def convert(
         lfe=[c.name for c in layout.channels if c.is_lfe],
         lfe_high_cutoff_hz=lfe_high_cutoff_hz,
     )
-    xml = build_project_xml(measurements, grid, profile, corrected, name, layout, spot)
-    eqb = build_eqb(measurements, grid, corrected, layout, spot)
-    return Conversion(swproj.write(xml, eqb), grid, corrected, reference_spl)
+    xml = build_project_xml(measurements, grid, profile, corrected, name, layout, spot, app)
+    if app == "sonarworks-reference":
+        data = swproj.write(xml, build_sonarworks_reference_eqb(measurements, grid, corrected, spot),
+                            version=swproj.SONARWORKS_REFERENCE_VERSION)
+    else:
+        data = swproj.write(xml, build_eqb(measurements, grid, corrected, layout, spot))
+    return Conversion(data, grid, corrected, reference_spl)
 
 
 MIC_PROFILE_FORMATS = ("swmicpkg", "swproj")
@@ -597,6 +667,9 @@ class SpeakerProjectConverter(Converter):
         Option("--spot-gain-db", action="append", metavar="CHANNEL=DB",
                help="listening spot gain of a channel, e.g. Left=-0.5; repeatable "
                     "(default: 0)"),
+        Option("--app", choices=APPS,
+               help="soundid: SoundID Reference; sonarworks-reference: Sonarworks Reference 3 and 4, "
+                    "stereo only (default: soundid)"),
     )
 
     def __init__(
@@ -612,7 +685,11 @@ class SpeakerProjectConverter(Converter):
         clip_percent: float = DEFAULT_CLIP_FRACTION * 100,
         spot_delay_ms: list[str] | None = None,
         spot_gain_db: list[str] | None = None,
+        app: str = "soundid",
     ):
+        if app not in APPS:
+            raise ValueError(f"--app must be one of: {', '.join(APPS)}")
+        self.app = app
         if mic_profile is None:
             raise ValueError(f"{self.source} -> {self.target} needs --mic-profile")
         self.mic_profile = Path(mic_profile)
@@ -654,11 +731,12 @@ class SpeakerProjectConverter(Converter):
                                    self.mic_profile_format)
         spot = self.spot(measurements)
         result = convert(measurements, profile, path.stem, layout=layout, spot=spot,
-                         **self.settings)
+                         app=self.app, **self.settings)
         s = self.settings
         source = "estimated" if s["reference_spl"] is None else "given"
+        app = "Sonarworks Reference 3 / 4" if self.app == "sonarworks-reference" else "SoundID Reference"
         notes = [
-            f"layout: {layout.name}; measurements: {len(measurements)}; "
+            f"app: {app}; layout: {layout.name}; measurements: {len(measurements)}; "
             f"frequency points: {len(result.grid)}; mic table: {profile.name} {profile.angle}",
             f"reference: {result.reference_spl:.1f} dB SPL = 0 dB ({source}); correction band: "
             f"{s['low_cutoff_hz']:g}-{s['high_cutoff_hz']:g} Hz; "

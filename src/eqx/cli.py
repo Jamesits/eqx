@@ -135,7 +135,11 @@ def cmd_computer_id(args) -> int:
     print(f"cpu          : {cid.cpu.decode('latin-1')}")
     print(f"disk serial  : {cid.disk_serial.decode('latin-1')!r}")
     print(f"board serial : {cid.board_serial.decode('latin-1')!r}")
+    print(f"volume serial: {cid.volume_serial.decode('latin-1')!r}")
+    print(f"dynamic disk : {cid.dynamic_disk}")
     print(f"computer id  : {cid.value}")
+    for app, value in cid.values().items():
+        print(f"  {app + ':':<24}{value}")
     return 0
 
 
@@ -182,7 +186,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_convert, option_dests=dests)
 
     p = sub.add_parser("computer-id",
-                       help="print this machine's SoundID computer ID (the .swhp password)")
+                       help="print this machine's Sonarworks computer IDs (the .swhp passwords)")
     p.set_defaults(func=cmd_computer_id)
     return parser
 

@@ -1,4 +1,5 @@
-"""Reader and writer for SoundID Reference measurement projects (``*.swproj``).
+"""Reader and writer for SoundID Reference and Sonarworks Reference 3 / 4
+measurement projects (``*.swproj``).
 
 Layout: plain-text XML ``ProjectHeader``, one ESC byte, then the parts listed
 in the header.  The ``swproj`` part is the project XML (gzip, then AES-128-CBC);
@@ -35,6 +36,27 @@ NS = {
 }
 VERSION = "3.0.0.2"
 SUPPORTED_VERSIONS = ("3.0.0.0", "3.0.0.1")
+# The version Sonarworks Reference 3 and 4 write.
+SONARWORKS_REFERENCE_VERSION = "3.0.0.0"
+_ROOT = re.compile(rb"<Project(?=[\s>])")
+
+
+def parse_xml(raw: bytes) -> ET.Element:
+    """Parse project XML.
+
+    Sonarworks Reference 4 Measure uses the ``a:`` prefix in parameters without declaring
+    it; it is bound to the Arrays namespace on the root.
+    """
+    try:
+        return ET.fromstring(raw)
+    except ET.ParseError as exc:
+        if "unbound prefix" not in str(exc):
+            raise
+    m = _ROOT.search(raw)
+    if m is None:
+        raise ValueError("project XML has an unbound prefix and no <Project> root")
+    declared = m.group() + f' xmlns:a="{NS["a"]}"'.encode()
+    return ET.fromstring(raw[:m.start()] + declared + raw[m.end():])
 
 
 def _inflate(data: bytes) -> bytes:
@@ -162,7 +184,7 @@ class SwProj:
         return self._eqb
 
     def tree(self) -> ET.Element:
-        return ET.fromstring(self.xml)
+        return parse_xml(self.xml)
 
     def recordings(self):
         """Yield (index, params, float32 samples) for every <RawData> present."""
@@ -183,28 +205,35 @@ class SwProj:
 # writer
 # --------------------------------------------------------------------------
 def write(xml: bytes, eqb: bytes | None = None, password: bytes | None = None,
-          iv: bytes = bytes(16)) -> bytes:
-    """Build a compressed, encrypted 3.0.0.2 container.
+          iv: bytes = bytes(16), version: str = VERSION) -> bytes:
+    """Build a compressed, encrypted container.
 
     ``password`` None uses the built-in default and marks the project as not
-    password protected.
+    password protected.  ``version`` ``SONARWORKS_REFERENCE_VERSION`` lists the ``eqb``
+    part first and no supported versions, as Sonarworks Reference 3 does.
     """
+    if version not in (VERSION, SONARWORKS_REFERENCE_VERSION):
+        raise ValueError(f"project version must be {VERSION} or {SONARWORKS_REFERENCE_VERSION}")
     key = crypto.derive_key(password if password is not None else crypto.DEFAULT_PASSWORD)
     # A fixed IV keeps the output reproducible.  SoundID also writes projects
     # with a zero IV; the key is public, so a random IV protects nothing.
     swproj = crypto.encrypt(key, gzip.compress(xml, mtime=0), iv)
-    parts = "\t\t<ProjectHeaderPart><Type>swproj</Type><Size>-1</Size></ProjectHeaderPart>\n"
+    parts = ["\t\t<ProjectHeaderPart><Type>swproj</Type><Size>-1</Size></ProjectHeaderPart>\n"]
     if eqb is not None:
-        parts += f"\t\t<ProjectHeaderPart><Type>eqb</Type><Size>{len(eqb)}</Size></ProjectHeaderPart>\n"
-    supported = "".join(f"\t\t<a:string>{v}</a:string>\n" for v in SUPPORTED_VERSIONS)
+        part = f"\t\t<ProjectHeaderPart><Type>eqb</Type><Size>{len(eqb)}</Size></ProjectHeaderPart>\n"
+        # The Sonarworks Reference 3 plug-in adds every earlier Size, -1 included, to the
+        # eqb offset, so there the eqb part must be listed first.
+        parts.insert(0 if version == SONARWORKS_REFERENCE_VERSION else 1, part)
+    supported = "".join(f"\t\t<a:string>{v}</a:string>\n" for v in SUPPORTED_VERSIONS
+                        if version == VERSION)
     header = (
         f'<ProjectHeader xmlns="{NS["s"]}" xmlns:a="{NS["a"]}">\n'
-        f"\t<Version>{VERSION}</Version>\n"
+        f"\t<Version>{version}</Version>\n"
         f"\t<SupportedVersions>\n{supported}\t</SupportedVersions>\n"
         "\t<Compressed>true</Compressed>\n"
         "\t<Encrypted>true</Encrypted>\n"
         f"\t<PasswordProtected>{'false' if password is None else 'true'}</PasswordProtected>\n"
-        f"\t<Parts>\n{parts}\t</Parts>\n"
+        f"\t<Parts>\n{''.join(parts)}\t</Parts>\n"
         "</ProjectHeader>\n\n"
     ).encode("utf-8")
     # The Size=-1 part is physically last, after every sized part.
@@ -240,20 +269,32 @@ def mic_profiles(project: SwProj) -> list[MicProfile]:
         points = [
             (float(p.findtext("s:Frequency", namespaces=NS)),
              float(p.findtext("s:Response", namespaces=NS)))
-            for p in curve.findall("s:Points/l:list/s:AflPoint", NS)
+            for p in _afl_points(curve.find("s:Points", NS))
         ]
         profiles.append(MicProfile.from_points(serial, angle, points))
     return profiles
 
 
+# Curve types of the measurements of a Sonarworks Reference 3 / 4 project.
+SIDE_MEASUREMENTS = {"MeasurementLeft": "Left", "MeasurementRight": "Right"}
+
+
 def measurement_curves(project: SwProj) -> dict[str, list[tuple]]:
-    """{channel name: points} of the ``Measurement`` curves (level-normalized responses)."""
+    """{channel name: points} of the measurement curves (level-normalized responses).
+
+    SoundID names a ``Measurement`` by its ``ChannelName``; Sonarworks Reference 3 / 4
+    write ``MeasurementLeft`` and ``MeasurementRight``.
+    """
     curves = {}
     for curve in project.tree().findall("s:Curves/s:Curve", NS):
-        if curve.findtext("s:CurveType", namespaces=NS) != "Measurement":
+        ctype = curve.findtext("s:CurveType", namespaces=NS)
+        if ctype == "Measurement":
+            name = _curve_params(curve).get("ChannelName", "")
+        elif ctype in SIDE_MEASUREMENTS:
+            name = SIDE_MEASUREMENTS[ctype]
+        else:
             continue
-        params = _curve_params(curve)
-        curves[params.get("ChannelName", "")] = _points(curve.find("s:Points", NS))
+        curves[name] = _points(curve.find("s:Points", NS))
     return curves
 
 
@@ -273,11 +314,17 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
+def _afl_points(elem: ET.Element) -> list[ET.Element]:
+    """The ``AflPoint``s of a ``Points`` element; Sonarworks Reference 4 writes curve points
+    without the ``list`` wrapper."""
+    return elem.findall("l:list/s:AflPoint", NS) or elem.findall("s:AflPoint", NS)
+
+
 def _points(elem: ET.Element) -> list[tuple]:
     return [
         tuple(float(p.findtext(f"s:{name}", default="nan", namespaces=NS))
               for name in ("Frequency", "Response", "GroupDelay"))
-        for p in elem.findall("l:list/s:AflPoint", NS)
+        for p in _afl_points(elem)
     ]
 
 
@@ -314,7 +361,7 @@ def _xml_sections(elem: ET.Element, title: str, trail: str = "") -> list[Section
             fields += [(f"param {kv.findtext('a:Key', namespaces=NS)}",
                         kv.findtext("a:Value", namespaces=NS))
                        for kv in child.findall("a:KeyValueOfstringstring", NS)]
-        elif tag == "Points" and child.find("l:list", NS) is not None:
+        elif tag == "Points" and _afl_points(child):
             table = Table(peqb.POINT_COLUMNS, _points(child))
             fields += [("points", len(table.rows)), ("range", frequency_range(table.rows))]
         elif len({_local(c.tag) for c in child}) == 1 and all(len(c) == 0 for c in child):
@@ -395,4 +442,5 @@ class SwprojInspector(Inspector):
         return sections
 
 
-FORMAT = Format("swproj", (".swproj",), "SoundID measurement project", SwprojInspector)
+FORMAT = Format("swproj", (".swproj",), "SoundID / Sonarworks Reference 3, 4 measurement project",
+                SwprojInspector)

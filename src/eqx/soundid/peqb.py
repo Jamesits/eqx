@@ -3,13 +3,17 @@
 Used by ``*.swhp`` headphone profiles, ``*.eqb`` exports, and the ``eqb`` part
 of a ``*.swproj``.
 
-Two body grammars exist and are selected by the container version:
+The container version selects the body grammar:
   3.0.0.0 / 3.0.0.1  - float64 columns, per-curve Transfer/Delay scalars
+  2.0.14.10 / 2.1.3.14 - the same grammar (Sonarworks Reference 3 and 4 read them)
   3.0.0.2            - float32 columns, per-curve flags + parameter map
+  2.0.13.30          - two float64 tables, gains and delays, no curve types
+  magic ``PEQB``     - no version; left/right gains on a fixed grid
 
 An encrypted body is ``IV || AES-128-CBC(b"Sonarworks" || body)``.
 
-The writers emit 3.0.0.2 (``write``) and 3.0.0.1 (``write_v1``), unencrypted.
+The writers emit 3.0.0.2 (``write``) and 3.0.0.0 / 3.0.0.1 (``write_v1``),
+unencrypted.
 """
 
 from __future__ import annotations
@@ -27,6 +31,9 @@ from ..report import Section, Table
 from . import computerid, crypto
 
 MAGIC = b"PEQb"
+LEGACY_MAGIC = b"PEQB"
+# Versions with no flag byte, never encrypted.
+UNFLAGGED_VERSIONS = ((2, 0, 13, 30), (2, 0, 14, 10), (2, 1, 3, 14), (3, 0, 0, 0))
 # Plaintext prefix of an encrypted body; the reader rejects the key without it.
 BODY_HEADER = b"Sonarworks"
 
@@ -72,22 +79,26 @@ class Peqb:
 
     @property
     def version_str(self) -> str:
-        return ".".join(str(v) for v in self.version)
+        """``PEQB`` for the unversioned container."""
+        return ".".join(str(v) for v in self.version) if self.version else "PEQB"
 
 
 # --------------------------------------------------------------------------
 # reader
 # --------------------------------------------------------------------------
 def parse_header(blob: bytes) -> Peqb:
-    """Parse the 8- or 9-byte container header.
+    """Parse the 4-, 8- or 9-byte container header.
 
-    3.0.0.0 has no encryption-flag byte; 3.0.0.1 and 3.0.0.2 do.  (The writer
-    emits the flag only on the 3.0.0.1+ paths.)
+    3.0.0.0 and the 2.x versions have no encryption-flag byte; 3.0.0.1 and
+    3.0.0.2 do.  ``PEQB`` has no version.
     """
+    if blob[:4] == LEGACY_MAGIC:
+        return Peqb(version=(), encrypted=False, header_size=4, iv=None,
+                    ciphertext_len=len(blob) - 4)
     if blob[:4] != MAGIC:
         raise ValueError(f"not a PEQb container (magic {blob[:4]!r})")
     version = tuple(blob[4:8])
-    if version == (3, 0, 0, 0):
+    if version in UNFLAGGED_VERSIONS:
         header_size, encrypted = 8, False
     else:
         header_size, encrypted = 9, bool(blob[8])
@@ -203,8 +214,71 @@ def parse_body_v2(body: bytes) -> tuple[list, dict, bytes]:
     return curves, params, body[p:]
 
 
+def _gain_db(percent: float) -> float:
+    """A legacy linear gain, 100 = 0 dB, in dB."""
+    return 20 * math.log10(percent / 100) if percent > 1e-5 else -100.0
+
+
+def _corrections(left: list, right: list, gains: tuple, delays: tuple) -> list[Curve]:
+    return [Curve(CURVE_TYPE_ID[name], points, transfer=_gain_db(gain), delay_ms=delay)
+            for name, points, gain, delay in (("CorrectionLeft", left, gains[0], delays[0]),
+                                              ("CorrectionRight", right, gains[1], delays[1]))]
+
+
+def parse_body_2013(body: bytes) -> tuple[list, dict, bytes]:
+    """2.0.13.30 grammar - left and right correction tables.
+
+        f64 gainL, f64 gainR      linear, 100 = 0 dB
+        f64 delayL, f64 delayR    milliseconds
+        u32 nL; nL x { f64 frequency; f64 response; f64 groupDelay }
+        u32 nR; nR x { ... }
+    """
+    gain_l, gain_r, delay_l, delay_r = struct.unpack_from("<4d", body, 0)
+    p, tables = 32, []
+    for _ in range(2):
+        (n,) = struct.unpack_from("<I", body, p)
+        vals = struct.unpack_from("<%dd" % (n * 3), body, p + 4)
+        tables.append([tuple(vals[i * 3:i * 3 + 3]) for i in range(n)])
+        p += 4 + n * 24
+    return _corrections(*tables, (gain_l, gain_r), (delay_l, delay_r)), {}, body[p:]
+
+
+# The unversioned container ends with 10 float64 settings and 8 unused bytes.
+LEGACY_SETTINGS_SIZE = 10 * 8 + 8
+
+
+def legacy_grid(n: int) -> list[float]:
+    """The frequencies of an unversioned ``PEQB``: quadratic from 20 Hz to 22 kHz."""
+    return [20 + 21980 * ((i + 1) / (n + 2)) ** 2 for i in range(n)]
+
+
+def parse_body_legacy(body: bytes) -> tuple[list, dict, bytes]:
+    """``PEQB`` grammar - responses on ``legacy_grid``.
+
+        f64 count                 a double, not an integer
+        count x { f64 left; f64 right }
+        f64 gainL, f64 gainR      linear, 100 = 0 dB
+        f64 delayL, f64 delayR    milliseconds
+        6 x f64, 8 bytes          playback settings, not used
+    """
+    (count,) = struct.unpack_from("<d", body, 0)
+    n = int(count)
+    vals = struct.unpack_from("<%dd" % (2 * n), body, 8)
+    p = 8 + 16 * n
+    gain_l, gain_r, delay_l, delay_r = struct.unpack_from("<4d", body, p)
+    grid = legacy_grid(n)
+    left = [(f, vals[2 * i], 0.0) for i, f in enumerate(grid)]
+    right = [(f, vals[2 * i + 1], 0.0) for i, f in enumerate(grid)]
+    p = min(len(body), p + LEGACY_SETTINGS_SIZE)
+    return _corrections(left, right, (gain_l, gain_r), (delay_l, delay_r)), {}, body[p:]
+
+
 def parse_body(body: bytes, version: tuple) -> tuple[list, dict, bytes]:
     """Try the grammar matching ``version`` first, then the other one."""
+    if version == ():
+        return parse_body_legacy(body)
+    if version == (2, 0, 13, 30):
+        return parse_body_2013(body)
     grammars = [parse_body_v2, parse_body_v1] if version >= (3, 0, 0, 2) \
         else [parse_body_v1, parse_body_v2]
     last = None
@@ -320,9 +394,14 @@ def body_v1(curves: Iterable[Curve], parameters: dict | None = None) -> bytes:
     return bytes(body + _write_map((parameters or {}).items()))
 
 
-def write_v1(curves: Iterable[Curve], parameters: dict | None = None) -> bytes:
-    """Serialize curves as an unencrypted PEQb 3.0.0.1 blob, the ``.swhp`` version."""
-    return MAGIC + bytes((3, 0, 0, 1)) + b"\x00" + body_v1(curves, parameters)
+def write_v1(curves: Iterable[Curve], parameters: dict | None = None,
+             version: tuple = (3, 0, 0, 1)) -> bytes:
+    """Serialize curves as an unencrypted PEQb 3.0.0.1 blob (the ``.swhp`` version)
+    or 3.0.0.0 blob (the ``eqb`` part of a Sonarworks Reference 3 / 4 project)."""
+    if version not in ((3, 0, 0, 0), (3, 0, 0, 1)):
+        raise ValueError(f"write_v1 writes 3.0.0.0 or 3.0.0.1, not {version}")
+    flag = b"" if version == (3, 0, 0, 0) else b"\x00"
+    return MAGIC + bytes(version) + flag + body_v1(curves, parameters)
 
 
 # --------------------------------------------------------------------------
@@ -385,17 +464,35 @@ def key_for(computer_id: str | None = None, key: str | None = None) -> bytes | N
     return crypto.swhp_key(computer_id) if computer_id else None
 
 
+def read_local(blob: bytes) -> tuple[Peqb, str]:
+    """Decode with each computer ID of this machine (SoundID, Sonarworks Reference 4, Sonarworks Reference 3).
+
+    Returns the container and, when no ID matches, why it is not decoded.
+    """
+    try:
+        ids = computerid.local().values()
+    except (OSError, ValueError) as exc:
+        return parse_header(blob), f"no key supplied ({exc})"
+    for cid in dict.fromkeys(ids.values()):
+        try:
+            return read(blob, crypto.swhp_key(cid)), ""
+        except ValueError:
+            pass
+    return parse_header(blob), (f"no computer ID of this machine matches: "
+                                f"{', '.join(dict.fromkeys(ids.values()))}")
+
+
 def open_decoded(blob: bytes, computer_id: str | None = None, key: str | None = None) -> Peqb:
-    """Read and decode ``blob``; an encrypted body without a key uses this machine's ID."""
+    """Read and decode ``blob``; an encrypted body without a key uses this machine's IDs."""
     if not key:
         computer_id = computer_id or os.environ.get("SWHP_COMPUTER_ID")
     body_key = key_for(computer_id, key)
     if body_key is None and parse_header(blob).encrypted:
-        try:
-            body_key = crypto.swhp_key(computerid.local().value)
-        except (OSError, ValueError) as exc:
+        p, why = read_local(blob)
+        if not p.decoded:
             raise ValueError(f"body is encrypted and no key is given "
-                             f"(--computer-id / --key / SWHP_COMPUTER_ID): {exc}") from None
+                             f"(--computer-id / --key / SWHP_COMPUTER_ID); {why}")
+        return p
     return read(blob, body_key)
 
 
@@ -419,7 +516,10 @@ def inspect_sections(p: Peqb, blob: bytes, why: str, prefix: str = "") -> list[S
     if not p.decoded:
         fields.append(("body", f"not decoded ({why})"))
         return [Section(f"{prefix}PEQb", fields)]
-    fields += [("curves", len(p.curves)), ("trailing", f"{len(p.trailing)} unparsed bytes")]
+    # Sonarworks Reference 3 pads the eqb part of a project with zeros.
+    padding = " (zeros)" if p.trailing and not p.trailing.strip(b"\0") else ""
+    fields += [("curves", len(p.curves)),
+               ("trailing", f"{len(p.trailing)} unparsed bytes{padding}")]
     fields += [(f"param {k}", v) for k, v in p.parameters.items()]
     sections = [Section(f"{prefix}PEQb", fields)]
     for i, c in enumerate(p.curves):
@@ -477,15 +577,8 @@ class PeqbInspector(Inspector):
             key = crypto.swhp_key(self.computer_id)
         if key is not None or not parse_header(blob).encrypted:
             return read(blob, key), ""
-        # Without an explicit key, try this machine's ID; a mismatch is not an error.
-        try:
-            cid = computerid.local().value
-        except (OSError, ValueError):
-            return parse_header(blob), "no key supplied"
-        try:
-            return read(blob, crypto.swhp_key(cid)), ""
-        except ValueError:
-            return parse_header(blob), f"current computer ID {cid} does not match"
+        # Without an explicit key, try this machine's IDs; a mismatch is not an error.
+        return read_local(blob)
 
     def inspect(self, path: Path) -> list[Section]:
         blob = Path(path).read_bytes()
