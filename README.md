@@ -85,7 +85,7 @@ You can use it as a Python library too.
 
 Testing:
 ```shell
-uv run python -m pytest
+uv run pytest
 ```
 
 ## Caveats
