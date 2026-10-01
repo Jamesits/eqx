@@ -1,4 +1,5 @@
-"""SoundID profiles, AutoEq CSV, Dirac Live Processor filter slot -> FIR filter WAV."""
+"""SoundID profiles, AutoEq CSV, Dirac Live Processor filter slot, dearVR MIX headphone
+compensation -> FIR filter WAV."""
 
 from __future__ import annotations
 
@@ -11,14 +12,13 @@ from ..autoeq import response
 from ..dirac import filterslot
 from ..dirac import playback as dirac_playback
 from ..options import Option
+from ..sennheiser import hpc
 from ..soundid import peqb, playback, swproj
 from ..wav import fir
 from .base import Converter, Result
-from .common import COLUMN_OPTION, DEFAULT_RATE, RATE_OPTION, curves, dirac_notes, dirac_rate
+from .common import (COLUMN_OPTION, DEFAULT_RATE, PHASE_OPTION, RATE_OPTION, curves,
+                     dearvr_filter, dirac_notes, dirac_rate, file_name)
 
-PHASE_OPTION = Option("--phase", choices=dsp.PHASES,
-                      help="minimum (SoundID Zero Latency) or linear (SoundID Linear Phase) "
-                           "phase (default: minimum)")
 TAPS_OPTION = Option("--taps", type=int,
                      help="filter length (default: SoundID's, at 48 kHz 4096 minimum phase, "
                           "4353 linear phase)")
@@ -189,3 +189,23 @@ class DiracFilterToFir(Converter):
                        [f"{len(channels)} channel(s): {', '.join(names)}; {len(channels[0])} taps"]
                        + dirac_notes(slot, self.rate,
                                      [(n, c) for n, (_, c) in zip(names, played)]))
+
+
+class DearvrHpcToFir(Converter):
+    source = "dearvr-hpc"
+    target = "fir"
+    description = "one dearVR MIX headphone compensation filter, as stored"
+    options = (hpc.HEADPHONE_OPTION, PHASE_OPTION, RATE_OPTION, ENCODING_OPTION)
+
+    def __init__(self, headphone: str | None = None, phase: str = "minimum",
+                 rate: float = DEFAULT_RATE, encoding: str = fir.FLOAT32):
+        _check(phase, rate, None, encoding)
+        self.headphone, self.phase, self.rate, self.encoding = headphone, phase, rate, encoding
+
+    def _convert(self, path: Path) -> Result:
+        h, f, notes = dearvr_filter(path, self.headphone, self.phase, self.rate)
+        channels = f.channels()
+        return _result(channels, f.sample_rate, self.encoding, f"{file_name(h.name)}.wav",
+                       [f"{len(channels)} channel(s), {f.taps} taps at {f.sample_rate} Hz, "
+                        f"{f.phase} phase, latency {hpc.peak(f)} samples "
+                        f"({1000 * hpc.peak(f) / f.sample_rate:.2f} ms)", *notes])

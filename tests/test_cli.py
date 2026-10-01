@@ -41,6 +41,7 @@ SAMPLES = {
     "smaart-ref": TESTDATA / "rationalacoustics/smaart-trace/Ref Left.ref",
     "smaart-ascii": TESTDATA / "rationalacoustics/smaart-ascii/Tf export.txt",
     "smaart-curve": TESTDATA / "rationalacoustics/smaart-curve/Haystack.crv",
+    "dearvr-hpc": TESTDATA / "sennheiser/dearvr-hpc/hpc.dat",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -74,10 +75,11 @@ class FormatTests(unittest.TestCase):
                            ("a.MQX", "mqx"), ("a.fume4", "fuzzmeasure"),
                            ("a.Fume3", "fuzzmeasure"), ("a.fume", "fuzzmeasure"),
                            ("a.trf", "smaart-trf"), ("a.SRF", "smaart-srf"),
-                           ("a.ref", "smaart-ref"), ("a.crv", "smaart-curve")):
+                           ("a.ref", "smaart-ref"), ("a.crv", "smaart-curve"),
+                           ("hpc.DAT", "dearvr-hpc")):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
-            formats.detect(Path("a.dat"))
+            formats.detect(Path("a.xyz"))
 
     def test_detect_shared_extension(self):
         with with_other_txt():
@@ -130,6 +132,12 @@ class InspectTests(unittest.TestCase):
         self.assertEqual(on.count("-- graph: gain dB"), 3)
         self.assertIn("1k", on)
         self.assertNotIn("\x1b[", on)
+
+    def test_inspector_option(self):
+        _, out = run("inspect", SAMPLES["dearvr-hpc"], "--headphone", "Tilt Studio",
+                     "--graph", "on")
+        self.assertIn("== headphone Tilt Studio", out)
+        self.assertIn("-- graph: linear dB", out)
 
     def test_graph_of_filters(self):
         # A filter table is drawn as its response; a biquad table too.
@@ -213,11 +221,11 @@ class ConvertTests(unittest.TestCase):
 
     def test_mic_profile_format_override(self):
         with tempfile.TemporaryDirectory() as tmp:
-            profile = Path(tmp) / "mic.dat"
+            profile = Path(tmp) / "mic.xyz"
             profile.write_bytes(PACKAGE.read_bytes())
             out = Path(tmp) / "x.swproj"
             code, err = run_error("convert", "-i", MDAT, "-o", out, "--mic-profile", profile)
-            self.assertIn("cannot detect the format of 'mic.dat'", err)
+            self.assertIn("cannot detect the format of 'mic.xyz'", err)
             code, text = run("convert", "-i", MDAT, "-o", out, "--mic-profile", profile,
                              "--mic-profile-format", "swmicpkg")
             self.assertEqual(code, 0)

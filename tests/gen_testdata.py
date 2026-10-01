@@ -12,8 +12,8 @@ library: encrypted PEQb, PEQb 2.x and ``PEQB``, Custom Target Presets, a REW
 ``.cal`` with a sensitivity line, the SoundID device exports, Sonarworks
 Reference 3 and Sonarworks Reference 4 Measure projects, ARC 4 files,
 FuzzMeasure 3 and 2 documents, miniDSP UMIK calibration files, Smaart 7
-reference files, Smaart ASCII exports and curve files other than the written
-target curves.  A package
+reference files, Smaart ASCII exports, curve files other than the written
+target curves and the dearVR MIX ``hpc.dat``.  A package
 (directory) is a dict of its files.
 """
 
@@ -25,7 +25,7 @@ from pathlib import Path
 from eqx import convert, formats
 from eqx.soundid import swproj
 from testgen import (audyssey, dirac, ik, minidsp, rationalacoustics, rew, rme, rode,
-                     rogueamoeba, soundid, sonarworks_reference)
+                     rogueamoeba, sennheiser, soundid, sonarworks_reference)
 from testgen.audyssey import MQX_DIR
 from testgen.common import ANGLES, COMPUTER_ID, CSV_DIR, FIR_DIR, ROOT, SWPROJ_PASSWORD
 from testgen.dirac import DIRAC_FILTER_DIR, TARGETCURVE_DIR
@@ -36,13 +36,14 @@ from testgen.rew import CAL_DIR, MDAT_DIR
 from testgen.rme import TMREQ_DIR
 from testgen.rode import FUZZMEASURE_DIR
 from testgen.rogueamoeba import SOUNDSOURCE_DIR
+from testgen.sennheiser import HPC_DIR
 from testgen.sonarworks_reference import SONARWORKS_PROJ_DIR
 from testgen.soundid import (BIQUAD_JSON_DIR, EXPORT_TXT_DIR, LVND_DIR, MIC_DIR, MICS, PEQB_DIR,
                              PRESET_DIR, PROJ_DIR)
 
 # The writers of the source files, one per directory below the root.
 SOURCES = (rew, soundid, sonarworks_reference, rme, rogueamoeba, dirac, ik, audyssey, rode,
-           minidsp, rationalacoustics)
+           minidsp, rationalacoustics, sennheiser)
 
 # (input or tuple of inputs, output, converter options); paths relative to
 # the root.  In dependency order: a later input may be an earlier output.
@@ -133,6 +134,8 @@ CONVERSIONS = [
     (f"{CSV_DIR}/Bass and treble.csv", f"{ASCII_DIR}/Bass and treble.txt",
      {"to": "smaart-ascii"}),
     (f"{CSV_DIR}/Bass and treble.csv", f"{CURVE_DIR}/Bass and treble.crv", {}),
+    (f"{HPC_DIR}/hpc.dat", f"{CSV_DIR}/Tilt Studio.csv", {"headphone": "tilt studio"}),
+    (f"{HPC_DIR}/hpc.dat", f"{FIR_DIR}/Tilt Stereo.wav", {"headphone": "Tilt Stereo"}),
 ]
 PATH_OPTIONS = ("mic_profile", "target_curve", "mic_response")
 

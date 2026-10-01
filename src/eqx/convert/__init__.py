@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from .base import Converter, Result
 from .to_arcx import AutoeqToArcx
-from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, DiracFilterToAutoeq, FirToAutoeq,
-                        FuzzmeasureToAutoeq, MdatToAutoeq, MqxToAutoeq, PeqbToAutoeq,
+from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, DearvrHpcToAutoeq, DiracFilterToAutoeq,
+                        FirToAutoeq, FuzzmeasureToAutoeq, MdatToAutoeq, MqxToAutoeq, PeqbToAutoeq,
                         SmaartAsciiToAutoeq, SmaartCurveToAutoeq, SmaartRefToAutoeq,
                         SmaartSrfToAutoeq, SmaartTrfToAutoeq,
                         SoundidExportBiquadJsonToAutoeq, SoundidExportBiquadXmlToAutoeq,
@@ -16,7 +16,7 @@ from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, DiracFilterToAutoeq, FirToAu
                         SoundidExportTxtToAutoeq, SoundsourceToAutoeq, SwprojToAutoeq,
                         TargetcurveToAutoeq, TargetpresetToAutoeq, TmreqToAutoeq)
 from .to_dirac_filter import AutoeqToDiracFilter, FirToDiracFilter
-from .to_fir import AutoeqToFir, DiracFilterToFir, PeqbToFir, SwprojToFir
+from .to_fir import AutoeqToFir, DearvrHpcToFir, DiracFilterToFir, PeqbToFir, SwprojToFir
 from .to_fuzzmeasure import AutoeqToFuzzmeasure
 from .to_mdat import AutoeqToMdat
 from .to_mqx import AutoeqToMqx
@@ -50,6 +50,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         SmaartTrfToAutoeq, AutoeqToSmaartTrf, SmaartSrfToAutoeq, AutoeqToSmaartSrf,
         SmaartRefToAutoeq, SmaartAsciiToAutoeq, AutoeqToSmaartAscii,
         SmaartCurveToAutoeq, AutoeqToSmaartCurve,
+        DearvrHpcToAutoeq, DearvrHpcToFir,
     )
 }
 

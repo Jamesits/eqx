@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import statistics
 from pathlib import Path
 
@@ -13,12 +14,16 @@ from ..fileformat import frequency_range
 from ..model import Correction, Peq, standard_grid
 from ..options import Option
 from ..rew import cal
+from ..sennheiser import hpc
 from ..soundid.speakerproject import LEVEL_HIGH_HZ, LEVEL_LOW_HZ
 from .base import Result
 
 COLUMN_OPTION = Option("--column", help=f"AutoEq CSV column to read (default: {response.RAW})")
 DEFAULT_RATE = 48000.0
 RATE_OPTION = Option("--rate", type=float, help="sample rate, Hz (default: 48000)")
+PHASE_OPTION = Option("--phase", choices=dsp.PHASES,
+                      help="minimum (SoundID Zero Latency, dearVR MIX min) or linear "
+                           "(SoundID Linear Phase, dearVR MIX Lin) phase (default: minimum)")
 CHANNELS = ("left", "right")
 CHANNEL_OPTION = Option("--channel", choices=CHANNELS, help="channel to convert (default: left)")
 TOLERANCE_DB = 0.1
@@ -34,6 +39,11 @@ def channel_name(channel: str) -> str:
     if channel not in CHANNELS:
         raise ValueError(f"channel must be one of: {', '.join(CHANNELS)}")
     return channel.capitalize()
+
+
+def file_name(text: str) -> str:
+    """Free text as part of a file name."""
+    return re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", text).strip()
 
 
 def missing(channel: str, available) -> ValueError:
@@ -142,3 +152,15 @@ def dirac_notes(slot: dict, rate: int, irs: list[tuple[str, int]]) -> list[str]:
     notes = [f"{playback.filter_type(playback.live_section(slot))} filter at {rate} Hz"]
     notes += [f"{name}: {cross} cross-term cells left out" for name, cross in irs if cross]
     return notes
+
+
+# ---------------------------------------------------------------------------
+# dearVR MIX headphone compensation
+# ---------------------------------------------------------------------------
+def dearvr_filter(path: Path, headphone: str | None, phase: str,
+                  rate: float) -> tuple[hpc.Headphone, hpc.Filter, list[str]]:
+    """The stored filter of ``headphone``; and notes."""
+    h = hpc.load(path).headphone(headphone)
+    f = h.filter(phase, rate)
+    return h, f, [f"{h.name} (id {h.id:08x}); dearVR MIX adds its gain trim "
+                  "(default -6 dB) and shelving filters"]

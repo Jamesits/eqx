@@ -38,6 +38,7 @@ DO check the output levels on all frequencies before playing any audio.
 | | Microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ | |
 | [RME TotalMix FX](https://rme-audio.de/totalmix-fx.html) | [Room EQ preset](https://rme-audio.de/totalmix-fx-room-eq.html) | `.tmreq` | `tmreq` | ✓ | ✓ | Untested: no hardware |
 | [Rogue Amoeba SoundSource](https://rogueamoeba.com/soundsource/) | [Headphone EQ custom profile](https://rogueamoeba.com/support/knowledgebase/?showArticle=SoundSource-Custom-HPEQ) | `.txt` | `soundsource` | ✓ | ✓ | |
+| Sennheiser dearVR MIX | Headphone compensation filters (built-in) | `hpc.dat` | `dearvr-hpc` | ✓ | | |
 | Sonarworks Reference 3.x, 4.x | Headphone profile | `.swhp` | `peqb` | ✓ | | Untested: no license |
 | | Project | `.swproj` | `swproj` | ✓ | ✓ | Untested: no license |
 | | Export (including the PEQb 2.x and `PEQB` versions) | `.eqb` | `peqb` | ✓ | | Untested: no license |
@@ -139,6 +140,13 @@ uv run python -m pytest
 - `.csv` to `.crv`: a transfer function target curve, or a spectrum target curve with `--band`; load it with File > Import > Target Curve. Reading a `.crv` does not apply its `Offset`
 - Smaart 7 and older reference files (`.ref`) with fixed points per octave (FPPO) data are not supported
 - Convert curves to `.wav` as IR: use `--encoding pcm24`
+
+### Sennheiser dearVR MIX
+
+- The built-in Spatial Headphone Compensation filters are in `hpc.dat`: macOS `/Library/Application Support/DearReality/dearVRMix/`; or extract it from the installer's `dearVRMixIRData.pkg`
+- `inspect --full` lists the headphones only; `--headphone <name>` shows one headphone's filters and gain
+- Converts one headphone's filter to `.wav` (as stored) or `.csv` (its gain): `--headphone <name> [--phase minimum|linear] [--rate <Hz>]`. The rate must be one of the file's (44.1-192 kHz)
+- The plug-in's gain trim (default -6 dB) and shelves are not applied
 
 ### SoundID Reference 5.x
 

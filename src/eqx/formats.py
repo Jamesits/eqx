@@ -16,6 +16,7 @@ from .rew import cal, mdat
 from .rme import tmreq
 from .rode import fuzzmeasure
 from .rogueamoeba import soundsource
+from .sennheiser import hpc
 from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                       export_txt, peqb, swmicpkg, swproj, targetpreset)
 from .wav import fir
@@ -28,7 +29,7 @@ FORMATS: dict[str, Format] = {f.id: f for m in (
     filterslot, export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt,
     soundsource,
     tmreq,
-    arcx, arc4, fir, targetcurve, mqx, fuzzmeasure, trace, crv,
+    arcx, arc4, fir, targetcurve, mqx, fuzzmeasure, trace, crv, hpc,
 ) for f in getattr(m, "FORMATS", None) or (m.FORMAT,)}
 
 

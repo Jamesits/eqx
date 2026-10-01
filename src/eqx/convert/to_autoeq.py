@@ -5,7 +5,6 @@ One file holds one curve, so stereo sources are converted one channel at a time.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Callable
 
@@ -20,18 +19,14 @@ from ..rew import mdat
 from ..rme import tmreq
 from ..rode import fuzzmeasure
 from ..rogueamoeba import soundsource
+from ..sennheiser import hpc
 from ..soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                        export_txt, peqb, swproj, targetpreset)
 from ..wav import fir
 from .base import Converter, Result
-from .common import (CHANNEL_OPTION, DEFAULT_RATE, RATE_OPTION, SPEAKER_OPTION, channel_name,
-                     csv_result, dirac_notes, dirac_output, dirac_rate, mic_response_db,
-                     missing)
-
-
-def file_name(text: str) -> str:
-    """Free text as part of a file name."""
-    return re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", text).strip()
+from .common import (CHANNEL_OPTION, DEFAULT_RATE, PHASE_OPTION, RATE_OPTION, SPEAKER_OPTION,
+                     channel_name, csv_result, dearvr_filter, dirac_notes, dirac_output,
+                     dirac_rate, file_name, mic_response_db, missing)
 
 
 class MdatToAutoeq(Converter):
@@ -445,3 +440,20 @@ class DiracFilterToAutoeq(Converter):
         points = fir.response(fir.Fir(self.rate, [ir]), 0)
         return csv_result(points, f"{path.stem} {name}.csv",
                           *dirac_notes(slot, self.rate, [(name, cross)]))
+
+
+class DearvrHpcToAutoeq(Converter):
+    source = "dearvr-hpc"
+    target = "autoeq"
+    description = "the gain of one dearVR MIX headphone compensation filter, on the standard grid"
+    options = (hpc.HEADPHONE_OPTION, PHASE_OPTION, RATE_OPTION)
+
+    def __init__(self, headphone: str | None = None, phase: str = "minimum",
+                 rate: float = DEFAULT_RATE):
+        self.headphone, self.phase, self.rate = headphone, phase, rate
+
+    def _convert(self, path: Path) -> Result:
+        h, f, notes = dearvr_filter(path, self.headphone, self.phase, self.rate)
+        return csv_result(fir.response(hpc.as_fir(f), 0), f"{file_name(h.name)}.csv",
+                          f"gain of the {f.phase} phase filter, {f.taps} taps at "
+                          f"{f.sample_rate} Hz, dB", *notes)
