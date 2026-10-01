@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 
 from .. import dsp
@@ -21,18 +22,34 @@ PHASE_OPTION = Option("--phase", choices=dsp.PHASES,
 TAPS_OPTION = Option("--taps", type=int,
                      help="filter length (default: SoundID's, at 48 kHz 4096 minimum phase, "
                           "4353 linear phase)")
+ENCODING_OPTION = Option(
+    "--encoding", choices=tuple(fir.ENCODINGS),
+    help="WAV sample format; Smaart's IR mode needs PCM, e.g. pcm24 (default: float32)")
 SAFE_HEADROOM_OPTION = Option(
     "--safe-headroom", action=argparse.BooleanOptionalAction,
     help="lower the gain by the highest boost, as SoundID's Safe Headroom (default: on)")
 
 
-def _check(phase: str, rate: float, taps: int | None) -> None:
+def _check(phase: str, rate: float, taps: int | None, encoding: str = fir.FLOAT32) -> None:
+    if encoding not in fir.ENCODINGS:
+        raise ValueError(f"--encoding must be one of: {', '.join(fir.ENCODINGS)}")
     if phase not in dsp.PHASES:
         raise ValueError(f"phase must be one of: {', '.join(dsp.PHASES)}")
     if not rate > 0:
         raise ValueError("the sample rate must be positive")
     if taps is not None and (taps < 3 or (phase == "linear" and taps % 2 == 0)):
         raise ValueError("--taps must be at least 3, and odd for linear phase")
+
+
+def _result(channels: list[list[float]], rate: float, encoding: str, name: str,
+            notes: list[str]) -> Result:
+    """The WAV; PCM beyond full scale is scaled down to it, with a note."""
+    if encoding != fir.FLOAT32:
+        peak = max(abs(v) for c in channels for v in c)
+        if peak > 1.0:
+            channels = [[v / peak for v in c] for c in channels]
+            notes = notes + [f"scaled by {-20 * math.log10(peak):.2f} dB to fit {encoding}"]
+    return Result(fir.write(fir.Fir(rate, channels), encoding), name, notes)
 
 
 def _notes(channels: list[list[float]], rate: float, phase: str,
@@ -50,13 +67,14 @@ class PeqbToFir(Converter):
     description = "the stereo filter SoundID Reference plays for a headphone profile"
     options = (
         PHASE_OPTION, RATE_OPTION, TAPS_OPTION, peqb.COMPUTER_ID_OPTION, peqb.KEY_OPTION,
-        SAFE_HEADROOM_OPTION,
+        SAFE_HEADROOM_OPTION, ENCODING_OPTION,
     )
 
     def __init__(self, phase: str = "minimum", rate: float = DEFAULT_RATE, taps: int | None = None,
                  computer_id: str | None = None, key: str | None = None,
-                 safe_headroom: bool = True):
-        _check(phase, rate, taps)
+                 safe_headroom: bool = True, encoding: str = fir.FLOAT32):
+        _check(phase, rate, taps, encoding)
+        self.encoding = encoding
         peqb.key_for(computer_id, key)
         self.phase, self.rate, self.taps = phase, rate, taps
         self.computer_id, self.key = computer_id, key
@@ -66,9 +84,9 @@ class PeqbToFir(Converter):
         p = peqb.open_decoded(path.read_bytes(), self.computer_id, self.key)
         channels, gain = playback.headphone_fir(p, self.rate, self.phase, self.taps,
                                                 self.safe_headroom)
-        return Result(fir.write(fir.Fir(self.rate, channels)), f"{path.stem}.wav",
-                      _notes(channels, self.rate, self.phase, self.taps)
-                      + [f"gain {gain:.2f} dB"])
+        return _result(channels, self.rate, self.encoding, f"{path.stem}.wav",
+                       _notes(channels, self.rate, self.phase, self.taps)
+                       + [f"gain {gain:.2f} dB"])
 
 
 class SwprojToFir(Converter):
@@ -88,13 +106,16 @@ class SwprojToFir(Converter):
                help="SoundID's Limit Controls Max low frequencies (default: neutral)"),
         Option("--limit-high", choices=playback.LIMIT_HIGH,
                help="SoundID's Limit Controls Max high frequencies (default: neutral)"),
+        ENCODING_OPTION,
     )
 
     def __init__(self, phase: str = "minimum", rate: float = DEFAULT_RATE, taps: int | None = None,
                  password: str | None = None, safe_headroom: bool = True,
                  listening_spot: bool = True, limit_correction: float = 12.0,
-                 limit_low: str = "neutral", limit_high: str = "neutral"):
-        _check(phase, rate, taps)
+                 limit_low: str = "neutral", limit_high: str = "neutral",
+                 encoding: str = fir.FLOAT32):
+        _check(phase, rate, taps, encoding)
+        self.encoding = encoding
         if limit_correction not in playback.LIMIT_CORRECTION_DB:
             raise ValueError("--limit-correction must be 12, 6 or 0")
         if limit_low not in playback.LIMIT_LOW or limit_high not in playback.LIMIT_HIGH:
@@ -119,7 +140,7 @@ class SwprojToFir(Converter):
                       f"{playback.spot_samples(c.delay_ms - first, self.rate)} samples, "
                       f"{c.gain_db - top:+.2f} dB"
                       for c in channels if c.delay_ms != first or c.gain_db != top]
-        return Result(fir.write(fir.Fir(self.rate, irs)), f"{path.stem}.wav", notes)
+        return _result(irs, self.rate, self.encoding, f"{path.stem}.wav", notes)
 
 
 class AutoeqToFir(Converter):
@@ -128,20 +149,22 @@ class AutoeqToFir(Converter):
     source = "autoeq"
     target = "fir"
     description = "a curve (inputs: left, optional right) as a FIR filter"
-    options = (COLUMN_OPTION, PHASE_OPTION, RATE_OPTION, TAPS_OPTION)
+    options = (COLUMN_OPTION, PHASE_OPTION, RATE_OPTION, TAPS_OPTION, ENCODING_OPTION)
     inputs = 2
 
     def __init__(self, column: str = response.RAW,
-                 phase: str = "minimum", rate: float = DEFAULT_RATE, taps: int | None = None):
-        _check(phase, rate, taps)
+                 phase: str = "minimum", rate: float = DEFAULT_RATE, taps: int | None = None,
+                 encoding: str = fir.FLOAT32):
+        _check(phase, rate, taps, encoding)
+        self.encoding = encoding
         self.column = column
         self.phase, self.rate, self.taps = phase, rate, taps
 
     def _convert(self, *paths: Path) -> Result:
         channels = [dsp.design_fir_points(points, self.rate, self.phase, self.taps)
                     for _, points in curves(paths, self.column)]
-        return Result(fir.write(fir.Fir(self.rate, channels)), f"{paths[0].stem}.wav",
-                      _notes(channels, self.rate, self.phase, self.taps))
+        return _result(channels, self.rate, self.encoding, f"{paths[0].stem}.wav",
+                       _notes(channels, self.rate, self.phase, self.taps))
 
 
 class DiracFilterToFir(Converter):
@@ -150,17 +173,19 @@ class DiracFilterToFir(Converter):
     source = "dirac-filter"
     target = "fir"
     description = "the impulse responses the Dirac Live Processor plays, as a FIR filter"
-    options = (RATE_OPTION,)
+    options = (RATE_OPTION, ENCODING_OPTION)
 
-    def __init__(self, rate: float = DEFAULT_RATE):
+    def __init__(self, rate: float = DEFAULT_RATE, encoding: str = fir.FLOAT32):
         self.rate = dirac_rate(rate)
+        _check("minimum", self.rate, None, encoding)
+        self.encoding = encoding
 
     def _convert(self, path: Path) -> Result:
         slot = filterslot.load(path).slot
         names = dirac_playback.output_names(slot)
         played = [dirac_playback.impulse_response(slot, i, self.rate) for i in range(len(names))]
         channels = dsp.padded([ir for ir, _ in played])
-        return Result(fir.write(fir.Fir(self.rate, channels)), f"{path.stem}.wav",
-                      [f"{len(channels)} channel(s): {', '.join(names)}; {len(channels[0])} taps"]
-                      + dirac_notes(slot, self.rate,
-                                    [(n, c) for n, (_, c) in zip(names, played)]))
+        return _result(channels, self.rate, self.encoding, f"{path.stem}.wav",
+                       [f"{len(channels)} channel(s): {', '.join(names)}; {len(channels[0])} taps"]
+                       + dirac_notes(slot, self.rate,
+                                     [(n, c) for n, (_, c) in zip(names, played)]))

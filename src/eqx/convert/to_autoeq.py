@@ -15,6 +15,7 @@ from ..dirac import filterslot, playback, targetcurve
 from ..ik import arc4, arcx
 from ..model import Correction, standard_grid
 from ..options import Option
+from ..rationalacoustics import ascii, crv, trace
 from ..rew import mdat
 from ..rme import tmreq
 from ..rode import fuzzmeasure
@@ -26,6 +27,11 @@ from .base import Converter, Result
 from .common import (CHANNEL_OPTION, DEFAULT_RATE, RATE_OPTION, SPEAKER_OPTION, channel_name,
                      csv_result, dirac_notes, dirac_output, dirac_rate, mic_response_db,
                      missing)
+
+
+def file_name(text: str) -> str:
+    """Free text as part of a file name."""
+    return re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", text).strip()
 
 
 class MdatToAutoeq(Converter):
@@ -117,9 +123,82 @@ class FuzzmeasureToAutoeq(Converter):
             mic = (f"minus microphone calibration {r.calibration.name!r}" if self.mic_calibration
                    else f"microphone calibration {r.calibration.name!r} not applied")
         # Titles are free text; keep the file name valid.
-        name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", r.title).strip() or f"measurement {i}"
+        name = file_name(r.title) or f"measurement {i}"
         return csv_result(list(zip(frequencies, db)), f"{path.stem} {name}.csv",
                           f"measurement {r.title!r}, {level}, {mic}")
+
+
+class SmaartTraceToAutoeq(Converter):
+    """The magnitude of a Smaart trace, unresampled.  Bin 0 and transfer
+    function bins without data are left out."""
+
+    target = "autoeq"
+
+    def __init__(self, mtw: bool = False, calibrated: bool = False):
+        self.mtw = mtw
+        self.calibrated = calibrated
+
+    def _convert(self, path: Path) -> Result:
+        t = trace.load(path)
+        points = trace.curve(t, self.mtw, self.calibrated)
+        if t.transfer_function:
+            level = "dB"
+        else:
+            level = (f"dB + calibration offset {t.calibration_db:g} dB" if self.calibrated
+                     else "dB as stored")
+        return csv_result(points, f"{path.stem}.csv",
+                          f"{trace.KINDS[t.kind]} {t.name!r}, "
+                          f"{'MTW' if self.mtw else trace.fft_text(t)} data, {level}")
+
+
+class SmaartTrfToAutoeq(SmaartTraceToAutoeq):
+    source = "smaart-trf"
+    description = "the magnitude of a Smaart transfer function trace, unresampled"
+    options = (trace.MTW_OPTION,)
+
+
+class SmaartSrfToAutoeq(SmaartTraceToAutoeq):
+    source = "smaart-srf"
+    description = "the level of a Smaart spectrum trace, unresampled"
+    options = (trace.CALIBRATED_OPTION,)
+
+
+class SmaartRefToAutoeq(SmaartTraceToAutoeq):
+    source = "smaart-ref"
+    description = "the magnitude of a Smaart 7 or older reference file, unresampled"
+
+
+class SmaartAsciiToAutoeq(Converter):
+    source = "smaart-ascii"
+    target = "autoeq"
+    description = "the magnitude or level of one trace of a Smaart ASCII table"
+    options = (ascii.TRACE_OPTION,)
+
+    def __init__(self, trace: str | None = None):
+        self.trace = trace
+
+    def _convert(self, path: Path) -> Result:
+        table = ascii.load(path)
+        i = table.trace(self.trace)
+        t = table.traces[i]
+        name = file_name(t.name)
+        return csv_result(table.curve(i), f"{path.stem} {name}.csv" if name else f"{path.stem}.csv",
+                          f"trace {t.name or i!r}, column {t.columns[0]}")
+
+
+class SmaartCurveToAutoeq(Converter):
+    """The points as they are; Smaart's Offset is not applied."""
+
+    source = "smaart-curve"
+    target = "autoeq"
+    description = "the points of a Smaart target or microphone correction curve"
+
+    def _convert(self, path: Path) -> Result:
+        c = crv.load(path)
+        offset = c.number("Offset")
+        return csv_result(c.points, f"{path.stem}.csv",
+                          f"{c.kind} curve" + (f"; Offset {offset:g} dB not applied"
+                                               if offset else ""))
 
 
 class Arc4ToAutoeq(Converter):

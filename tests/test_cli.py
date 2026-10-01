@@ -36,6 +36,11 @@ SAMPLES = {
     "dirac-filter": TESTDATA / "dirac/dirac-filter/FIIR signed.bin",
     "mqx": TESTDATA / "audyssey/mqx/Mqx 5.1.mqx",
     "fuzzmeasure": TESTDATA / "rode/fuzzmeasure/Fm4.fume4",
+    "smaart-trf": TESTDATA / "rationalacoustics/smaart-trace/Tf Left.trf",
+    "smaart-srf": TESTDATA / "rationalacoustics/smaart-trace/Rta.srf",
+    "smaart-ref": TESTDATA / "rationalacoustics/smaart-trace/Ref Left.ref",
+    "smaart-ascii": TESTDATA / "rationalacoustics/smaart-ascii/Tf export.txt",
+    "smaart-curve": TESTDATA / "rationalacoustics/smaart-curve/Haystack.crv",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -67,7 +72,9 @@ class FormatTests(unittest.TestCase):
                            ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq"),
                            ("a.arcXs", "arcx"), ("a.arcXa", "arcx"), ("a.WAV", "fir"),
                            ("a.MQX", "mqx"), ("a.fume4", "fuzzmeasure"),
-                           ("a.Fume3", "fuzzmeasure"), ("a.fume", "fuzzmeasure")):
+                           ("a.Fume3", "fuzzmeasure"), ("a.fume", "fuzzmeasure"),
+                           ("a.trf", "smaart-trf"), ("a.SRF", "smaart-srf"),
+                           ("a.ref", "smaart-ref"), ("a.crv", "smaart-curve")):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
             formats.detect(Path("a.dat"))
@@ -223,7 +230,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", "-i", csv)
-        self.assertIn("12 converters from autoeq", err)
+        self.assertIn("16 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
             self.assertEqual(code, 0)
@@ -350,6 +357,43 @@ class ConvertTests(unittest.TestCase):
             (Path(tmp) / "y.fume4").write_bytes(b"")
             code, err = run_error("convert", "-i", inputs[0], "-o", Path(tmp) / "y.fume4")
             self.assertIn("exists and is not a directory", err)
+
+    def test_smaart(self):
+        code, text = run("inspect", TESTDATA / "rationalacoustics/smaart-trace/Rta.srf")
+        self.assertEqual(code, 0)
+        self.assertIn("calibration offset dB  : 100", text)
+        csv = SAMPLES["autoeq"]
+        with tempfile.TemporaryDirectory() as tmp:
+            code, text = run("convert", "-i", SAMPLES["smaart-trf"], "-o", Path(tmp) / "x.csv",
+                             "--mtw")
+            self.assertEqual(code, 0)
+            self.assertIn("MTW data", text)
+            code, text = run("convert", "-i", SAMPLES["smaart-ascii"], "-o", Path(tmp) / "y.csv",
+                             "--trace", "1")
+            self.assertIn("trace 'Right'", text)
+            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.trf", "--fft", "1024")
+            self.assertIn("513 bins, FFT 1024 at 48000 Hz, minimum phase", text)
+            # The output extension selects the trace kind.
+            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.srf", "--fft", "1024",
+                             "--calibration-db", "90")
+            self.assertIn("calibration offset 90 dB", text)
+            code, text = run("convert", "-i", Path(tmp) / "x.srf", "-o", Path(tmp) / "s.csv",
+                             "--calibrated")
+            self.assertIn("dB + calibration offset 90 dB", text)
+            code, err = run_error("convert", "-i", Path(tmp) / "x.srf", "--mtw")
+            self.assertIn("--mtw", err)
+            code, text = run("convert", "-i", SAMPLES["smaart-ref"], "-o", Path(tmp) / "r.csv")
+            self.assertEqual(code, 0)
+            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.crv", "--band", "3")
+            self.assertIn("spectrum, 1/3 octave target curve", text)
+            code, err = run_error("convert", "-i", csv, "-o", Path(tmp) / "x.txt")
+            self.assertIn("ambiguous", err)
+            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.txt",
+                             "--to", "smaart-ascii")
+            self.assertEqual(code, 0)
+            # The existing output is read as a Smaart table.
+            code, text = run("convert", "-i", Path(tmp) / "x.txt", "-o", Path(tmp) / "z.csv")
+            self.assertIn("column Magnitude (dB)", text)
 
     def test_fir(self):
         code, err = run_error("convert", "-i", SAMPLES["peqb"])

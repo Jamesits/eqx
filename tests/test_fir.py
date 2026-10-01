@@ -81,6 +81,25 @@ class WavTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "one non-zero length"):
             fir.write(fir.Fir(48000.0, [[1.0], [1.0, 0.0]]))
 
+    def test_pcm(self):
+        f = fir.Fir(48000.0, [SAMPLES, SAMPLES[::-1]])
+        for encoding, bits in (("pcm16", 16), ("pcm24", 24), ("pcm32", 32)):
+            with self.subTest(encoding):
+                data = fir.write(f, encoding)
+                self.assertEqual(struct.unpack_from("<HHIIHH", data, 20),
+                                 (fir.PCM, 2, 48000, 48000 * bits // 4, bits // 4, bits))
+                got = fir.read(data)
+                self.assertEqual(got.encoding, f"PCM {bits} bit")
+                for a, b in zip(got.channels, f.channels):
+                    for x, y in zip(a, b):
+                        self.assertAlmostEqual(x, y, delta=2 ** (1 - bits))
+        self.assertEqual(fir.write(fir.Fir(48000.0, [[1.0, -1.0]]), "pcm16")[-4:],
+                         struct.pack("<hh", 32767, -32767))
+        with self.assertRaisesRegex(ValueError, r"\+0.83 dB re full scale; pcm24 would clip"):
+            fir.write(fir.Fir(48000.0, [[1.1, 0.0]]), "pcm24")
+        with self.assertRaisesRegex(ValueError, "encoding must be one of"):
+            fir.write(f, "pcm8")
+
 
 class DesignTests(unittest.TestCase):
     def test_hermite(self):
@@ -223,6 +242,16 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual((result.name, len(stereo.channels), stereo.taps),
                          ("Room Left.wav", 2, 2001))
         self.assertNotEqual(stereo.channels[0], stereo.channels[1])
+        # Room Left is dB SPL: the filter is far above full scale.
+        result = AutoeqToFir(encoding="pcm24").convert([ROOM_LEFT])
+        pcm = fir.read(result.data)
+        peak = max(abs(v) for v in mono.channels[0])
+        self.assertEqual(pcm.encoding, "PCM 24 bit")
+        self.assertIn(f"scaled by {-20 * math.log10(peak):.2f} dB to fit pcm24", result.notes[-1])
+        self.assertLess(max(abs(a - b / peak) for a, b in zip(pcm.channels[0], mono.channels[0])),
+                        1e-6)
+        with self.assertRaisesRegex(ValueError, "--encoding must be one of"):
+            AutoeqToFir(encoding="mp3")
 
     def test_fir_to_autoeq(self):
         with tempfile.TemporaryDirectory() as tmp:

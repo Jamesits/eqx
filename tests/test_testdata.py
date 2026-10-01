@@ -20,7 +20,7 @@ class GeneratedTestdataTests(unittest.TestCase):
             tmp = Path(tmp)
             written = gen_testdata.generate(tmp)
             stored = {p.relative_to(ROOT)
-                      for d in ("audyssey", "autoeq", "dirac", "fir", "ik", "minidsp", "rew", "rme", "rode",
+                      for d in ("audyssey", "autoeq", "dirac", "fir", "ik", "minidsp", "rationalacoustics", "rew", "rme", "rode",
                                 "rogueamoeba", "sonarworks-reference", "soundid")
                       for p in (ROOT / d).rglob("*") if p.is_file()}
             self.assertEqual({p.relative_to(tmp) for p in written}, stored)

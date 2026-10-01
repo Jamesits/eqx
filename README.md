@@ -28,6 +28,12 @@ DO check the output levels on all frequencies before playing any audio.
 | | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | IK Multimedia ARC 4 | Analysis | `.arc4a` | `arc4` | ✓ | | Untested: no hardware |
 | [miniDSP UMIK Series](https://www.minidsp.com/products/acoustic-measurement) | Microphone calibration | `.txt` | `umik` | ✓ | | |
+| [Rational Acoustics Smaart 9](https://www.rationalacoustics.com/pages/smaart) | Transfer function trace | `.trf` | `smaart-trf` | ✓ | ✓ | Not yet checked in Smaart |
+| | Spectrum trace | `.srf` | `smaart-srf` | ✓ | ✓ | Not yet checked in Smaart |
+| | ASCII export, Import ASCII | `.txt` | `smaart-ascii` | ✓ | ✓ | Not yet checked in Smaart |
+| | Target curve | `.crv` | `smaart-curve` | ✓ | ✓ | |
+| | Microphone correction curve | `.crv` | `smaart-curve` | ✓ | | |
+| Rational Acoustics Smaart 7 and older | Reference file | `.ref` | `smaart-ref` | ✓ | | Untested: software unavailable |
 | [REW](https://www.roomeqwizard.com/) | Measurement | `.mdat` | `mdat` | ✓ | ✓ | |
 | | Microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ | |
 | [RME TotalMix FX](https://rme-audio.de/totalmix-fx.html) | [Room EQ preset](https://rme-audio.de/totalmix-fx-room-eq.html) | `.tmreq` | `tmreq` | ✓ | ✓ | Untested: no hardware |
@@ -122,6 +128,17 @@ uv run python -m pytest
 - Converts to `.swmicpkg` (`-i <serial>.txt [-i <serial>_90deg.txt]`); the 30 degree table is a copy of the 0 degree table
 - Usable as `--mic-profile` of `.swproj` conversions; pass the `_90deg` file for the 90 degree table, without `--mic-angle`
 - The sensitivity (`Sens Factor`) is shown by `inspect`, not converted
+
+### Rational Acoustics Smaart
+
+- Smaart keeps its files in `Documents/Smaart Suite/`: traces in `Data/Transfer Function/` and `Data/Spectrum/`, target curves in `TargetCurves/`, microphone correction curves in `MicCorrectionCurves/`
+- `.trf` / `.srf` / `.ref` to `.csv`: the trace's points, unresampled; bins below the coherence threshold are left out. Spectrum levels are dB as stored; `--calibrated` adds the trace's calibration offset. `--mtw` converts the MTW data set
+- `.csv` to `.trf`: a minimum-phase transfer function with coherence 1, FFT 32k (`--fft`); load it with File > Import > Trace Data File
+- `.csv` to `.srf`: a spectrum trace; `--calibration-db` stores a calibration offset so that Plot Calibrated Levels shows the curve's values
+- `.csv` to `.txt` (`--to smaart-ascii`): load it with File > Import > Import ASCII
+- `.csv` to `.crv`: a transfer function target curve, or a spectrum target curve with `--band`; load it with File > Import > Target Curve. Reading a `.crv` does not apply its `Offset`
+- Smaart 7 and older reference files (`.ref`) with fixed points per octave (FPPO) data are not supported
+- Convert curves to `.wav` as IR: use `--encoding pcm24`
 
 ### SoundID Reference 5.x
 

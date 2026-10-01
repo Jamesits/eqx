@@ -9,6 +9,8 @@ from .base import Converter, Result
 from .to_arcx import AutoeqToArcx
 from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, DiracFilterToAutoeq, FirToAutoeq,
                         FuzzmeasureToAutoeq, MdatToAutoeq, MqxToAutoeq, PeqbToAutoeq,
+                        SmaartAsciiToAutoeq, SmaartCurveToAutoeq, SmaartRefToAutoeq,
+                        SmaartSrfToAutoeq, SmaartTrfToAutoeq,
                         SoundidExportBiquadJsonToAutoeq, SoundidExportBiquadXmlToAutoeq,
                         SoundidExportLvndToAutoeq, SoundidExportPeqJsonToAutoeq,
                         SoundidExportTxtToAutoeq, SoundsourceToAutoeq, SwprojToAutoeq,
@@ -20,6 +22,9 @@ from .to_mdat import AutoeqToMdat
 from .to_mqx import AutoeqToMqx
 from .to_peqb import AutoeqToPeqb
 from .to_rewcal import AutoeqToRewcal, SwmicpkgToRewcal
+from .to_smaart_ascii import AutoeqToSmaartAscii
+from .to_smaart_curve import AutoeqToSmaartCurve
+from .to_smaart_trace import AutoeqToSmaartSrf, AutoeqToSmaartTrf
 from .to_soundsource import AutoeqToSoundsource
 from .to_swmicpkg import RewcalToSwmicpkg, UmikToSwmicpkg
 from .to_swproj import Arc4ToSwproj, ArcxToSwproj, AutoeqToSwproj, MdatToSwproj, MqxToSwproj
@@ -42,6 +47,9 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         DiracFilterToAutoeq, DiracFilterToFir, AutoeqToDiracFilter, FirToDiracFilter,
         MqxToAutoeq, MqxToSwproj, AutoeqToMqx,
         FuzzmeasureToAutoeq, AutoeqToFuzzmeasure,
+        SmaartTrfToAutoeq, AutoeqToSmaartTrf, SmaartSrfToAutoeq, AutoeqToSmaartSrf,
+        SmaartRefToAutoeq, SmaartAsciiToAutoeq, AutoeqToSmaartAscii,
+        SmaartCurveToAutoeq, AutoeqToSmaartCurve,
     )
 }
 

@@ -11,7 +11,9 @@ Writers for formats that ``eqx`` only reads live in ``testgen``, not in the
 library: encrypted PEQb, PEQb 2.x and ``PEQB``, Custom Target Presets, a REW
 ``.cal`` with a sensitivity line, the SoundID device exports, Sonarworks
 Reference 3 and Sonarworks Reference 4 Measure projects, ARC 4 files,
-FuzzMeasure 3 and 2 documents, miniDSP UMIK calibration files.  A package
+FuzzMeasure 3 and 2 documents, miniDSP UMIK calibration files, Smaart 7
+reference files, Smaart ASCII exports and curve files other than the written
+target curves.  A package
 (directory) is a dict of its files.
 """
 
@@ -22,13 +24,14 @@ from pathlib import Path
 
 from eqx import convert, formats
 from eqx.soundid import swproj
-from testgen import (audyssey, dirac, ik, minidsp, rew, rme, rode, rogueamoeba, soundid,
-                     sonarworks_reference)
+from testgen import (audyssey, dirac, ik, minidsp, rationalacoustics, rew, rme, rode,
+                     rogueamoeba, soundid, sonarworks_reference)
 from testgen.audyssey import MQX_DIR
 from testgen.common import ANGLES, COMPUTER_ID, CSV_DIR, FIR_DIR, ROOT, SWPROJ_PASSWORD
 from testgen.dirac import DIRAC_FILTER_DIR, TARGETCURVE_DIR
 from testgen.ik import ARC4_DIR, ARCX_DIR
 from testgen.minidsp import UMIK_DIR
+from testgen.rationalacoustics import ASCII_DIR, CURVE_DIR, TRACE_DIR
 from testgen.rew import CAL_DIR, MDAT_DIR
 from testgen.rme import TMREQ_DIR
 from testgen.rode import FUZZMEASURE_DIR
@@ -39,7 +42,7 @@ from testgen.soundid import (BIQUAD_JSON_DIR, EXPORT_TXT_DIR, LVND_DIR, MIC_DIR,
 
 # The writers of the source files, one per directory below the root.
 SOURCES = (rew, soundid, sonarworks_reference, rme, rogueamoeba, dirac, ik, audyssey, rode,
-           minidsp)
+           minidsp, rationalacoustics)
 
 # (input or tuple of inputs, output, converter options); paths relative to
 # the root.  In dependency order: a later input may be an earlier output.
@@ -119,6 +122,17 @@ CONVERSIONS = [
     (f"{FUZZMEASURE_DIR}/Fm3.fume3", f"{CSV_DIR}/Fm3 Left.csv", {}),
     ((f"{CSV_DIR}/Bandpass Left.csv", f"{CSV_DIR}/Bandpass Right.csv"),
      f"{FUZZMEASURE_DIR}/Bandpass Left.fume4", {}),
+    (f"{TRACE_DIR}/Tf Left.trf", f"{CSV_DIR}/Tf Left.csv", {}),
+    (f"{TRACE_DIR}/Rta.srf", f"{CSV_DIR}/Rta.csv", {"calibrated": True}),
+    (f"{ASCII_DIR}/Tf export.txt", f"{CSV_DIR}/Tf export Right.csv", {"trace": "right"}),
+    (f"{CURVE_DIR}/Haystack.crv", f"{CSV_DIR}/Haystack.csv", {}),
+    (f"{TRACE_DIR}/Ref Left.ref", f"{CSV_DIR}/Ref Left.csv", {}),
+    (f"{CSV_DIR}/Bandpass Left.csv", f"{TRACE_DIR}/Bandpass Left.trf", {"fft": 4096}),
+    (f"{CSV_DIR}/Bandpass Left.csv", f"{TRACE_DIR}/Bandpass Left.srf",
+     {"fft": 4096, "calibration_db": 100.0}),
+    (f"{CSV_DIR}/Bass and treble.csv", f"{ASCII_DIR}/Bass and treble.txt",
+     {"to": "smaart-ascii"}),
+    (f"{CSV_DIR}/Bass and treble.csv", f"{CURVE_DIR}/Bass and treble.crv", {}),
 ]
 PATH_OPTIONS = ("mic_profile", "target_curve", "mic_response")
 

@@ -5,14 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..autoeq import response
-from ..curve import log_resample
 from ..dirac import targetcurve
-from ..model import standard_grid
 from ..options import Option
 from .base import Converter, Result
-from .common import COLUMN_OPTION
-
-TOLERANCE_DB = 0.1
+from .common import COLUMN_OPTION, TOLERANCE_DB, TOLERANCE_OPTION, simplified
 
 
 class AutoeqToTargetcurve(Converter):
@@ -24,8 +20,7 @@ class AutoeqToTargetcurve(Converter):
     description = "a curve as a Dirac Live target curve"
     options = (
         COLUMN_OPTION,
-        Option("--tolerance-db", type=float,
-               help=f"largest deviation from the curve, dB (default: {TOLERANCE_DB:g})"),
+        TOLERANCE_OPTION,
         Option("--low-hz", type=float,
                help=f"low correction limit, Hz (default: {targetcurve.DEFAULT_LOW_HZ:g})"),
         Option("--high-hz", type=float,
@@ -43,10 +38,7 @@ class AutoeqToTargetcurve(Converter):
         self.low_hz, self.high_hz = low_hz, high_hz
 
     def _convert(self, path: Path) -> Result:
-        grid = standard_grid()
-        points = list(zip(grid, log_resample(response.load(path).curve(self.column), grid)))
-        breakpoints = targetcurve.simplify(points, self.tolerance_db)
+        breakpoints, error = simplified(response.load(path).curve(self.column), self.tolerance_db)
         curve = targetcurve.TargetCurve(path.stem, "", breakpoints, self.low_hz, self.high_hz)
-        error = max(abs(a - v) for a, (_, v) in zip(curve.response(grid), points))
         return Result(targetcurve.write(curve).encode("utf-8"), f"{path.stem}.targetcurve",
                       [f"{len(breakpoints)} breakpoints; error {error:.2f} dB max"])

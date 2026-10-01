@@ -11,6 +11,7 @@ from .dirac import filterslot, targetcurve
 from .fileformat import Format
 from .ik import arc4, arcx
 from .minidsp import umik
+from .rationalacoustics import ascii, crv, trace
 from .rew import cal, mdat
 from .rme import tmreq
 from .rode import fuzzmeasure
@@ -19,16 +20,16 @@ from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export
                       export_txt, peqb, swmicpkg, swproj, targetpreset)
 from .wav import fir
 
-FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
-    # umik before cal: a UMIK file is also a REW calibration file.
-    swproj, peqb, swmicpkg, targetpreset, mdat, umik, cal, response,
+FORMATS: dict[str, Format] = {f.id: f for m in (
+    # umik and ascii before cal: their files are also REW calibration files.
+    swproj, peqb, swmicpkg, targetpreset, mdat, umik, ascii, cal, response,
     # Content checks run in this order: the cheap magics before the
     # MERGING key search of an encrypted export.
     filterslot, export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt,
     soundsource,
     tmreq,
-    arcx, arc4, fir, targetcurve, mqx, fuzzmeasure,
-)}
+    arcx, arc4, fir, targetcurve, mqx, fuzzmeasure, trace, crv,
+) for f in getattr(m, "FORMATS", None) or (m.FORMAT,)}
 
 
 def detect(path: Path, allowed: Iterable[str] | None = None) -> str:

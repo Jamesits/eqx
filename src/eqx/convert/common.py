@@ -8,7 +8,7 @@ from pathlib import Path
 from .. import dsp
 from ..autoeq import response
 from ..curve import log_resample
-from ..dirac import playback
+from ..dirac import playback, targetcurve
 from ..fileformat import frequency_range
 from ..model import Correction, Peq, standard_grid
 from ..options import Option
@@ -21,6 +21,9 @@ DEFAULT_RATE = 48000.0
 RATE_OPTION = Option("--rate", type=float, help="sample rate, Hz (default: 48000)")
 CHANNELS = ("left", "right")
 CHANNEL_OPTION = Option("--channel", choices=CHANNELS, help="channel to convert (default: left)")
+TOLERANCE_DB = 0.1
+TOLERANCE_OPTION = Option("--tolerance-db", type=float,
+                          help=f"largest deviation from the curve, dB (default: {TOLERANCE_DB:g})")
 SPEAKER_OPTION = Option("--speaker",
                         help="speaker, case-insensitive, as named by inspect, e.g. Left, "
                              "Subwoofer, Center (default: Left)")
@@ -56,6 +59,16 @@ def stereo(paths: tuple[Path, ...], column: str) -> list[tuple[str, list]]:
     """Left and Right; one input is both."""
     pair = curves(paths, column)
     return pair if len(pair) == 2 else [pair[0], ("Right", pair[0][1])]
+
+
+def simplified(points, tolerance_db: float) -> tuple[list[tuple[float, float]], float]:
+    """The fewest standard grid points of ``points`` whose log-frequency
+    interpolation follows them within ``tolerance_db``; and the largest error."""
+    grid = standard_grid()
+    on_grid = list(zip(grid, log_resample(points, grid)))
+    breakpoints = targetcurve.simplify(on_grid, tolerance_db)
+    error = max(abs(a - v) for a, (_, v) in zip(log_resample(breakpoints, grid), on_grid))
+    return breakpoints, error
 
 
 # ---------------------------------------------------------------------------

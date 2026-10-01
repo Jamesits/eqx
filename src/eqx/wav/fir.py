@@ -1,7 +1,10 @@
 """FIR filter WAV (``*.wav``): one impulse response per channel.
 
 Reader: PCM 16/24/32 bit, float 32/64 bit, ``WAVE_FORMAT_EXTENSIBLE``, any
-channel count.  Writer: float 32 bit.
+channel count.  Writer: float 32 bit, PCM 16/24/32 bit.
+
+Smaart's IR mode reads a WAV as 32-bit integers through JUCE: a float file
+comes in as its raw bits, so it needs PCM.  Smaart shows the first channel.
 """
 
 from __future__ import annotations
@@ -17,6 +20,9 @@ from ..model import standard_grid
 from ..report import Section, Table
 
 PCM, IEEE_FLOAT, EXTENSIBLE = 1, 3, 0xFFFE
+# Written encodings: name -> bits.  Smaart's IR mode reads integer PCM only.
+FLOAT32 = "float32"
+ENCODINGS = {FLOAT32: 32, "pcm16": 16, "pcm24": 24, "pcm32": 32}
 CHANNEL_NAMES = ("Left", "Right")
 # Gain range and table of the inspection.
 BAND_HZ = (20.0, 20000.0)
@@ -87,15 +93,30 @@ def load(path) -> Fir:
 # --------------------------------------------------------------------------
 # writer
 # --------------------------------------------------------------------------
-def write(fir: Fir) -> bytes:
-    """Float 32-bit WAV; every channel has the same length."""
+def write(fir: Fir, encoding: str = FLOAT32) -> bytes:
+    """WAV of ``encoding`` (``ENCODINGS``); every channel has the same length.
+    PCM rejects samples beyond full scale."""
     count = len(fir.channels)
     if not count or len({len(c) for c in fir.channels}) != 1 or not fir.taps:
         raise ValueError("a FIR needs channels of one non-zero length")
+    if encoding not in ENCODINGS:
+        raise ValueError(f"encoding must be one of: {', '.join(ENCODINGS)}")
     rate = round(fir.sample_rate)
     frames = [v for frame in zip(*fir.channels) for v in frame]
-    data = struct.pack(f"<{len(frames)}f", *frames)
-    fmt = struct.pack("<HHIIHH", IEEE_FLOAT, count, rate, rate * 4 * count, 4 * count, 32)
+    if encoding == FLOAT32:
+        code, bits = IEEE_FLOAT, 32
+        data = struct.pack(f"<{len(frames)}f", *frames)
+    else:
+        code, bits = PCM, ENCODINGS[encoding]
+        peak = max(abs(v) for v in frames)
+        if peak > 1.0:
+            raise ValueError(f"samples reach {20 * math.log10(peak):+.2f} dB re full scale; "
+                             f"{encoding} would clip")
+        top = 2 ** (bits - 1) - 1
+        width = bits // 8
+        data = b"".join(round(v * top).to_bytes(width, "little", signed=True) for v in frames)
+    size = bits // 8
+    fmt = struct.pack("<HHIIHH", code, count, rate, rate * size * count, size * count, bits)
     return (b"RIFF" + struct.pack("<I", 4 + 8 + len(fmt) + 8 + len(data)) + b"WAVE"
             + b"fmt " + struct.pack("<I", len(fmt)) + fmt
             + b"data" + struct.pack("<I", len(data)) + data)
