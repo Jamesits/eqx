@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Iterable
 
-from . import convert, formats
+from . import convert, formats, graph
 from .options import Option
 from .report import Section
 from .soundid import computerid
@@ -18,6 +19,8 @@ PROG = "eqx"
 PREVIEW_HEAD = 3
 PREVIEW_TAIL = 2
 PREVIEW_WIDTH = 100
+GRAPH_HEIGHT = 14
+GRAPH_MAX_WIDTH = 120
 
 
 # --------------------------------------------------------------------------
@@ -70,7 +73,8 @@ def _clip(text: str, full: bool) -> str:
     return text[:PREVIEW_WIDTH - 3] + "..."
 
 
-def render(sections: list[Section], full: bool = False) -> str:
+def render(sections: list[Section], full: bool = False, graphs: bool = False,
+           color: bool = False, graph_width: int = 80) -> str:
     out: list[str] = []
     for section in sections:
         out.append(f"== {section.title}")
@@ -91,6 +95,12 @@ def render(sections: list[Section], full: bool = False) -> str:
             out += [line(r) for r in rows]
             if hidden:
                 out.append(f"  ({hidden} of {len(table.rows)} rows hidden; --full shows all)")
+        curve = section.curve or table
+        if graphs and curve is not None:
+            for name, points in graph.curves(curve):
+                out.append(f"  -- graph: {name}")
+                text = graph.plot(points, graph_width - 2, GRAPH_HEIGHT, color)
+                out += [f"  {line}".rstrip() for line in text.splitlines()]
         if full and section.raw:
             out.append("  -- raw")
             out += [f"  {line}" for line in section.raw.splitlines()]
@@ -102,7 +112,14 @@ def cmd_inspect(args) -> int:
     kind = args.format or formats.detect(args.file)
     cls = formats.FORMATS[kind].inspector
     inspector = cls(**_class_options(args, args.option_dests, cls, kind))
-    sys.stdout.write(render(inspector.inspect(args.file), args.full))
+    tty = sys.stdout.isatty()
+    supported = graph.supported(sys.stdout.encoding)
+    graphs = {"on": True, "off": False}.get(args.graph, tty and supported)
+    if graphs and not supported and hasattr(sys.stdout, "reconfigure"):
+        # Forced on: a pipe on Windows defaults to the ANSI code page.
+        sys.stdout.reconfigure(encoding="utf-8")
+    width = min(shutil.get_terminal_size().columns, GRAPH_MAX_WIDTH)
+    sys.stdout.write(render(inspector.inspect(args.file), args.full, graphs, tty, width))
     return 0
 
 
@@ -184,6 +201,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--format", choices=formats.FORMATS, help="file format (default: by extension)")
     p.add_argument("--full", action="store_true",
                    help="print every value and the raw data, not a preview")
+    p.add_argument("--graph", choices=("auto", "on", "off"), default="auto",
+                   help="draw each curve (default: auto, on a terminal that can show it)")
     dests = _add_options(p, ((f"{f.id} options", f.inspector.options)
                              for f in formats.FORMATS.values()))
     p.set_defaults(func=cmd_inspect, option_dests=dests)

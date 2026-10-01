@@ -184,6 +184,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
+    { name = "plotext" },
 ]
 
 [package.dev-dependencies]
@@ -192,7 +193,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cryptography", specifier = ">=42" }]
+requires-dist = [
+    { name = "cryptography", specifier = ">=42" },
+    { name = "plotext", specifier = ">=6" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8" }]
@@ -225,6 +229,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/7d/fa/3944b40b07da9ce895c0e6303a5ab7d53da063554f534556b134a54d6093/packaging-26.3.tar.gz", hash = "sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79", size = 313412, upload-time = "2026-08-04T18:15:28.737Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl", hash = "sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c", size = 129956, upload-time = "2026-08-04T18:15:27.159Z" },
+]
+
+[[package]]
+name = "plotext"
+version = "6.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/67/8e27c8a72e5f70026644e5b8d2f0f2b0915abcee973734c64ca0ec299ad8/plotext-6.1.0.tar.gz", hash = "sha256:6b729ce6376c5c1c2152fe85e0449dcc54879d0923b3c6c8d1670108245c6f84", size = 291326, upload-time = "2026-09-07T22:22:11.473Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/1c/9cf958b92e41e027c3a1a25cc95b9e09584936ab50adfa2b8a2e19f580d3/plotext-6.1.0-py3-none-macosx_10_13_x86_64.whl", hash = "sha256:4fec26b86ad32b3597de5861cfbf0023bb5ae02250f0ca940b12b069bccf43e6", size = 423804, upload-time = "2026-09-07T22:22:04.469Z" },
+    { url = "https://files.pythonhosted.org/packages/38/38/fe4741eda3dc845695cd142b0bbbb91ffb07baf61dae55f3278997920c9e/plotext-6.1.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:bfafad58a20da6c279e722481b5c3e67a9c8c54bde722d414c5ceffe71b7c652", size = 417645, upload-time = "2026-09-07T22:22:05.872Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/48/a74491726361a8fd73cccdf961ce36336dbb3a010ae5e92df4ddd6f9c0f0/plotext-6.1.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6c035440296be20e539ee70d4de07290d84bb0c9017bb3bc5867a8b3f9cead56", size = 474593, upload-time = "2026-09-07T22:22:07.327Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/8d/c55ff1348ebaf319d63b6c71455b02c5e02b58211bbc5216d833b200735e/plotext-6.1.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:e59f54cedfb56129e2aec1f885869fe13903fdd4e6f18a10301e71a7d5b9851c", size = 475814, upload-time = "2026-09-07T22:22:08.702Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/7c/62fcce32e391cdd80b6af9b703d90119603920b726a7372b8826831e0d27/plotext-6.1.0-py3-none-win_amd64.whl", hash = "sha256:60c85326da5454db482c9b1357c9ba385bae4a05c9dd498ff604e80458e03e3b", size = 1010518, upload-time = "2026-09-07T22:22:10.117Z" },
 ]
 
 [[package]]

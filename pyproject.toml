@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Inspect and convert euqalizer and audio correction files"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["cryptography>=42"]
+dependencies = [
+    "cryptography>=42",
+    "plotext>=6",
+]
 
 [project.scripts]
 eqx = "eqx.cli:main"

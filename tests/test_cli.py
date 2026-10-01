@@ -5,8 +5,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from eqx import cli, convert, formats
+from eqx import cli, convert, formats, graph
 from eqx.fileformat import Format, Inspector
+from eqx.report import Table
 from eqx.rew import cal
 from eqx.soundid import swmicpkg, swproj
 
@@ -111,6 +112,37 @@ class InspectTests(unittest.TestCase):
         _, full = run("inspect", SAMPLES["swproj"], "--full")
         self.assertNotIn("-- raw", preview)
         self.assertIn("<ProjectHeader", full)
+
+    def test_graph(self):
+        _, auto = run("inspect", PACKAGE)
+        _, off = run("inspect", PACKAGE, "--graph", "off")
+        _, on = run("inspect", PACKAGE, "--graph", "on")
+        self.assertNotIn("-- graph", auto)
+        self.assertEqual(auto, off)
+        self.assertEqual(on.count("-- graph: gain dB"), 3)
+        self.assertIn("1k", on)
+        self.assertNotIn("\x1b[", on)
+
+    def test_graph_of_filters(self):
+        # A filter table is drawn as its response; a biquad table too.
+        for kind in ("tmreq", "soundid-export-biquad-json"):
+            with self.subTest(kind=kind):
+                _, out = run("inspect", SAMPLES[kind], "--graph", "on")
+                self.assertIn("-- graph: gain dB", out)
+
+    def test_graph_curves(self):
+        table = Table(["frequency Hz", "dB", "group delay s"],
+                      [(0.0, 1.0, 0.0), (20.0, 2.0, 0.0), (None, None, 0.0),
+                       (100.0, float("nan"), 0.0), (1000.0, 3.0, 0.0)])
+        self.assertEqual(graph.curves(table), [("dB", [(20.0, 2.0), (1000.0, 3.0)])])
+        self.assertEqual(graph.curves(Table(["type", "frequency Hz", "gain dB"],
+                                            [("bell", 100.0, 1.0)] * 2)), [])
+        self.assertEqual(graph.curves(Table(["frequency Hz", "name"], [(1.0, "a")] * 2)), [])
+
+    def test_graph_flat(self):
+        text = graph.plot([(20.0, 0.0), (20000.0, 0.0)], 60, 10)
+        self.assertIn("1.0", text)
+        self.assertIn("-1.0", text)
 
     def test_format_override(self):
         with tempfile.TemporaryDirectory() as tmp:

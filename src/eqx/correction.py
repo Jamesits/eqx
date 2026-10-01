@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from .fileformat import Inspector, file_section
-from .model import Correction
+from .model import Correction, standard_grid
 from .report import Section, Table
 
 
@@ -65,7 +65,12 @@ def correction_sections(corrections: list[Correction]) -> list[Section]:
             fields.append(("points", len(c.points)))
             table = Table(["frequency Hz", "gain dB"], c.points)
         fields.append(("gain at 1 kHz dB", c.response([1000.0])[0]))
-        sections.append(Section(f"channel {title}", fields, table))
+        curve = None
+        if c.biquads or c.peqs:
+            nyquist = (c.sample_rate or float("inf")) / 2
+            grid = [f for f in standard_grid() if f < nyquist]
+            curve = Table(["frequency Hz", "gain dB"], list(zip(grid, c.response(grid))))
+        sections.append(Section(f"channel {title}", fields, table, curve=curve))
     return sections
 
 

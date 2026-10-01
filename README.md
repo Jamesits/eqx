@@ -58,7 +58,7 @@ Options are per-format; use `--help` to list them. Ask your AI friends for help 
 
 Inspect a file:
 ```shell
-uv run eqx inspect <file> [--format <format>] [--full] [...options]
+uv run eqx inspect <file> [--format <format>] [--full] [--graph auto|on|off] [...options]
 ```
 
 List available conversion paths:
