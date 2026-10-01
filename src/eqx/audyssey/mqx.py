@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .. import impulse
+from .. import fmath, impulse
 from ..fileformat import Format, Inspector, file_section, response_section
 from ..model import Measurement
 from ..options import Option
@@ -161,7 +161,7 @@ class TargetItem:
     def points(self) -> list[tuple[float, float]]:
         """(Hz, dB) of a custom curve; its Y values are linear gains."""
         return [
-            (p["X"], 20 * math.log10(p["Y"]) if p["Y"] > 0 else -math.inf)
+            (p["X"], 20 * fmath.log10(p["Y"]) if p["Y"] > 0 else -math.inf)
             for p in self.value.get("Points") or []
         ]
 

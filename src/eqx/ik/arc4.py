@@ -118,11 +118,11 @@ def _version(text: str) -> tuple[int, ...]:
 # --------------------------------------------------------------------------
 def power(spectrum: list[float]) -> list[float]:
     """Power of FFT bins 0 .. n/2 of a packed real FFT."""
-    n = len(spectrum)
+    n, s = len(spectrum), spectrum
     return (
-        [spectrum[0] ** 2]
-        + [spectrum[2 * k] ** 2 + spectrum[2 * k + 1] ** 2 for k in range(1, n // 2)]
-        + [spectrum[1] ** 2]
+        [s[0] * s[0]]
+        + [s[2 * k] * s[2 * k] + s[2 * k + 1] * s[2 * k + 1] for k in range(1, n // 2)]
+        + [s[1] * s[1]]
     )
 
 

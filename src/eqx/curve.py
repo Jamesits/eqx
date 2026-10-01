@@ -5,6 +5,8 @@ from __future__ import annotations
 import bisect
 import math
 
+from . import fmath
+
 
 def interp(xs: list[float], ys: list[float], x: float) -> float:
     """Linear interpolation, clamped to the end values."""
@@ -29,9 +31,9 @@ def log_resample(points, frequencies) -> list[float]:
     """(frequency, value) ``points`` at ``frequencies``: linear in log frequency,
     clamped to the end values."""
     return resample(
-        [math.log(f) for f, _ in points],
+        [fmath.log(f) for f, _ in points],
         [v for _, v in points],
-        [math.log(f) for f in frequencies],
+        [fmath.log(f) for f in frequencies],
     )
 
 

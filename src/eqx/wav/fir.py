@@ -14,7 +14,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import dsp, impulse
+from .. import dsp, fmath, impulse
 from ..fileformat import Format, Inspector, file_section
 from ..model import standard_grid
 from ..report import Section, Table
@@ -117,7 +117,7 @@ def write(fir: Fir, encoding: str = FLOAT32) -> bytes:
         peak = max(abs(v) for v in frames)
         if peak > 1.0:
             raise ValueError(
-                f"samples reach {20 * math.log10(peak):+.2f} dB re full scale; "
+                f"samples reach {20 * fmath.log10(peak):+.2f} dB re full scale; "
                 f"{encoding} would clip"
             )
         top = 2 ** (bits - 1) - 1

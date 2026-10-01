@@ -29,6 +29,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import fmath
 from ..curve import log_resample
 from ..fileformat import Format, Inspector, file_section, frequency_range
 from ..report import Section, Table
@@ -186,7 +187,7 @@ def simplify(
     ``tolerance_db`` of ``points`` (Ramer-Douglas-Peucker on dB)."""
     if len(points) <= 2:
         return list(points)
-    xs = [math.log(f) for f, _ in points]
+    xs = [fmath.log(f) for f, _ in points]
     keep = {0, len(points) - 1}
     stack = [(0, len(points) - 1)]
     while stack:

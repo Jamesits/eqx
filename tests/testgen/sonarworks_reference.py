@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import struct
 
+from eqx import fmath
 from eqx.model import EPOCH, standard_grid
 from eqx.soundid import crypto, peqb, swproj
 
@@ -229,7 +230,7 @@ def _spot_settings() -> bytes:
     spot = SONARWORKS_REFERENCE_SPOT
     return struct.pack(
         "<4d",
-        *(100 * 10 ** (spot[s][1] / 20) for s in SIDES),
+        *(100 * fmath.pow(10, spot[s][1] / 20) for s in SIDES),
         *(spot[s][0] for s in SIDES),
     )
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from eqx import fmath
+
 from .common import high_cut, hp2, peak, response
 
 UMIK_DIR = "minidsp/umik"
 # The UMIK grid: 615 log-spaced points, 10.054-20016.816 Hz.
-UMIK_GRID = [10.054 * (20016.816 / 10.054) ** (i / 614) for i in range(615)]
+UMIK_GRID = [10.054 * fmath.pow(20016.816 / 10.054, i / 614) for i in range(615)]
 UMIK_SECTIONS = {
     "degrees_0": [hp2(14, 0.6), peak(9000, 1.5, 1.2)],
     "degrees_90": [hp2(14, 0.6), peak(9000, 1.5, 1.2), high_cut(6000, -6)],

@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import cmath
 import math
 from pathlib import Path
 
-from eqx import dsp
+from eqx import dsp, fmath
 from eqx.model import standard_grid
 
 ROOT = Path(__file__).resolve().parent.parent.parent / "testdata"
@@ -29,11 +28,14 @@ FIR_DIR = "fir/wav"
 # A section is (numerator, denominator): polynomial coefficients in s,
 # lowest power first.  Products of sections are minimum phase.
 def _poly(c, s):
-    return sum(a * s**i for i, a in enumerate(c))
+    out = 0j
+    for a in reversed(c):
+        out = out * s + a
+    return out
 
 
 def _dpoly(c, s):
-    return sum(i * a * s ** (i - 1) for i, a in enumerate(c) if i)
+    return _poly([i * a for i, a in enumerate(c)][1:], s)
 
 
 def hp2(f0, q):
@@ -52,13 +54,13 @@ def hp1(f0):
 
 
 def peak(f0, gain_db, q):
-    w, a = 2 * math.pi * f0, 10 ** (gain_db / 40)
+    w, a = 2 * math.pi * f0, fmath.pow(10, gain_db / 40)
     return [w * w, w * a / q, 1], [w * w, w / (a * q), 1]
 
 
 def high_cut(f0, gain_db):
     """First order: 0 dB at low frequencies, ``gain_db`` at high frequencies."""
-    w, g = 2 * math.pi * f0, 10 ** (gain_db / 20)
+    w, g = 2 * math.pi * f0, fmath.pow(10, gain_db / 20)
     return [w, g], [w, 1]
 
 
@@ -70,7 +72,7 @@ def response(sections, f):
         h *= _poly(num, s) / _poly(den, s)
         # d(arg H)/dw = Re(H'(s)/H(s)); group delay is its negative.
         gd -= (_dpoly(num, s) / _poly(num, s) - _dpoly(den, s) / _poly(den, s)).real
-    return 20 * math.log10(abs(h)), math.degrees(cmath.phase(h)), gd
+    return 20 * fmath.log10(fmath.cabs(h)), math.degrees(fmath.phase(h)), gd
 
 
 def rounded_points(sections, grid=None) -> list[tuple[float, float, float]]:
@@ -131,5 +133,5 @@ def filtered(x: list[float], biquads) -> list[float]:
 def impulse_response(length: int, delay: int, gain_db: float, biquads) -> list[float]:
     """An impulse of ``gain_db`` at sample ``delay``, through the biquads."""
     x = [0.0] * length
-    x[delay] = 10 ** (gain_db / 20)
+    x[delay] = fmath.pow(10, gain_db / 20)
     return filtered(x, biquads)

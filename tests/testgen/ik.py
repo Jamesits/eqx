@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from eqx import dsp
+import math
+
+from eqx import dsp, fmath
 from eqx.ik import arcx, pak
 from eqx.wav import fir
 
@@ -77,11 +79,15 @@ def arc4_spectrum(side: str, rate: float) -> list[float]:
     half = ARC4_FFT_SIZE // 2
     filters = bells(side, rate)
     magnitude = [
-        10 ** (dsp.cascade_db(filters, max(k, 1e-3) * rate / ARC4_FFT_SIZE, rate) / 20)
+        fmath.pow(
+            10, dsp.cascade_db(filters, max(k, 1e-3) * rate / ARC4_FFT_SIZE, rate) / 20
+        )
         for k in range(half + 1)
     ]
     low, high = int(40 * ARC4_FFT_SIZE / rate), int(10000 * ARC4_FFT_SIZE / rate)
-    scale = (sum(m * m for m in magnitude[low : high + 1]) / (high - low + 1)) ** -0.5
+    scale = 1 / math.sqrt(
+        math.fsum(m * m for m in magnitude[low : high + 1]) / (high - low + 1)
+    )
     packed = [magnitude[0] * scale, magnitude[half] * scale]
     for k in range(1, half):
         packed += [magnitude[k] * scale, 0.0]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from ..autoeq import response
@@ -83,7 +84,7 @@ class AutoeqToPeqb(Converter):
         }
         reference = self.reference_db
         if reference is None:
-            reference = sum(
+            reference = math.fsum(
                 interp(grid, v, REFERENCE_HZ) for v in deviation.values()
             ) / len(deviation)
         # One reference for both sides keeps their balance.

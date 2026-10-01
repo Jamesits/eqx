@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import struct
 
-from eqx import dsp
+from eqx import dsp, fmath
 from eqx.rationalacoustics import trace
 
 from .common import bells, high_cut, hp2, peak, response
@@ -22,14 +22,14 @@ THRESHOLD = 0.5
 MIC_SECTIONS = [hp2(14, 0.6), peak(9000, 1.5, 1.2)]
 LIR_LENGTH = 256
 # MTW frequencies: 1/24 octave, 20 Hz-20 kHz; index 0 is DC.
-MTW_FREQUENCIES = [0.0] + [20 * 2 ** (k / 24) for k in range(240)]
+MTW_FREQUENCIES = [0.0] + [20 * fmath.pow(2, k / 24) for k in range(240)]
 # Spectrum level: -3 dB per octave from 1 kHz plus the Left bells, dB re
 # full scale; peak hold 3 dB above.
 RTA_DB_1K, RTA_PEAK_DB, RTA_CALIBRATION_DB = -20.0, 3.0, 100.0
 
 
 def coherence(f: float) -> float:
-    return 1.0 if f <= 0 else 1 - 0.9 * math.exp(-f / 100)
+    return 1.0 if f <= 0 else 1 - 0.9 * fmath.exp(-f / 100)
 
 
 def tf_point(side: str, f: float, rate: int) -> complex:
@@ -56,7 +56,7 @@ def tf_data(
     mic_db = [response(MIC_SECTIONS, f)[0] if f > 0 else 0.0 for f in frequencies]
     return trace.DataSet(
         frequencies,
-        [20 * math.log10(abs(v)) for v in h],
+        [20 * fmath.log10(fmath.cabs(v)) for v in h],
         real,
         [v.imag for v in h],
         coh,
@@ -67,7 +67,7 @@ def tf_data(
 def rta_db(f: float, rate: int) -> float:
     return (
         RTA_DB_1K
-        - 3 * math.log2(f / 1000)
+        - 3 * fmath.log2(f / 1000)
         + dsp.cascade_db(bells("Left", rate), f, rate)
     )
 
@@ -76,7 +76,7 @@ def write_tf_left() -> bytes:
     """48 kHz, FFT 4096, coherence, an MTW data set, mic correction, Live IR."""
     rate, fft = 48000, 4096
     frequencies = [i * rate / fft for i in range(fft // 2 + 1)]
-    lir = [math.exp(-i / 20) * math.cos(i / 3) for i in range(LIR_LENGTH)]
+    lir = [fmath.exp(-i / 20) * fmath.cos(i / 3) for i in range(LIR_LENGTH)]
     return trace.write(
         trace.Trace(
             trace.TRANSFER_FUNCTION,
@@ -126,14 +126,16 @@ def write_rta() -> bytes:
     """44.1 kHz, FFT 4096, peak hold, a calibration offset."""
     rate, fft = 44100, 4096
     frequencies = [i * rate / fft for i in range(fft // 2 + 1)]
-    power = [0.0] + [10 ** (rta_db(f, rate) / 10) for f in frequencies[1:]]
+    power = [0.0] + [fmath.pow(10, rta_db(f, rate) / 10) for f in frequencies[1:]]
     return trace.write(
         trace.Trace(
             trace.SPECTRUM,
             rate,
             fft,
             trace.DataSet(
-                frequencies, power, peak=[p * 10 ** (RTA_PEAK_DB / 10) for p in power]
+                frequencies,
+                power,
+                peak=[p * fmath.pow(10, RTA_PEAK_DB / 10) for p in power],
             ),
             name="Rta",
             time_ms=TIME_MS,
@@ -187,7 +189,9 @@ def write_ref_left() -> bytes:
     frequencies = [i * rate / fft for i in range(fft // 2 + 1)]
     h = [tf_point("Left", f, rate) for f in frequencies]
     db = [
-        20 * math.log10(abs(v)) if coherence(f) >= THRESHOLD else trace.LEGACY_BLANK
+        20 * fmath.log10(fmath.cabs(v))
+        if coherence(f) >= THRESHOLD
+        else trace.LEGACY_BLANK
         for f, v in zip(frequencies, h)
     ]
     return _ref(
@@ -199,7 +203,7 @@ def write_ref_left() -> bytes:
         "Left, Smaart 6",
         [
             (b"NOTE", b"abcdef"),
-            (b"4.5P", _floats([math.degrees(math.atan2(v.imag, v.real)) for v in h])),
+            (b"4.5P", _floats([math.degrees(fmath.atan2(v.imag, v.real)) for v in h])),
             (b"REFD", _floats(db)),
             (b"5.0E", _floats([coherence(f) for f in frequencies])),
         ],
@@ -244,8 +248,8 @@ def write_tf_export() -> bytes:
                 row += "\t*\t*\t*"
             else:
                 row += (
-                    f"\t{20 * math.log10(abs(h)):.2f}"
-                    f"\t{math.degrees(math.atan2(h.imag, h.real)):.2f}\t{c:.2f}"
+                    f"\t{20 * fmath.log10(fmath.cabs(h)):.2f}"
+                    f"\t{math.degrees(fmath.atan2(h.imag, h.real)):.2f}\t{c:.2f}"
                 )
         lines.append(row)
     return ("\r\n".join(lines) + "\r\n").encode()
@@ -282,7 +286,7 @@ def write_house() -> bytes:
 
 def write_mic() -> bytes:
     """A microphone correction curve: an imported REW-style file, comma rows."""
-    grid = [10 * 2 ** (k / 6) for k in range(62)]
+    grid = [10 * fmath.pow(2, k / 6) for k in range(62)]
     lines = ["* Mic TILT03", '"Sens Factor =-12dB, SERNO: TILT03"']
     lines += [
         f"{f:.3f},{response(MIC_SECTIONS + [high_cut(6000, -3)], f)[0]:.4f}"

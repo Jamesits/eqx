@@ -143,7 +143,9 @@ def target_response(preset: TargetPreset, frequencies) -> list[float]:
     The cutoff band limits the correction, not the target, so it is not applied.
     """
     filters = [f for g in preset.filter_groups for f in g.filters if f.enabled]
-    return [sum(filter_response(f, x) for f in filters) + 0.0 for x in frequencies]
+    return [
+        math.fsum(filter_response(f, x) for f in filters) + 0.0 for x in frequencies
+    ]
 
 
 # --------------------------------------------------------------------------

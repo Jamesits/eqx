@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .. import dsp
+from .. import dsp, fmath
 from ..curve import log_resample
 from ..fileformat import Format, Inspector, file_section, frequency_range
 from ..options import Option
@@ -368,7 +368,7 @@ def read_reference(data: bytes, name: str = "") -> Trace:
         "averaging": str(averages) if averages > 1 else "None",
     }
     if kind != LEGACY_TRANSFER_FUNCTION:
-        power = [10 ** (v / 10) for v in db]
+        power = [fmath.pow(10, v / 10) for v in db]
         return Trace(
             LIVE_SPECTRUM if live else SPECTRUM,
             data=DataSet(frequencies, power),
@@ -382,9 +382,9 @@ def read_reference(data: bytes, name: str = "") -> Trace:
     # phase of those is shown.
     real, imag = [], []
     for v, p in zip(db, phase):
-        g = 10 ** (v / 20) if v != LEGACY_BLANK else 0.0
-        real.append(g * math.cos(math.radians(p)) if v != LEGACY_BLANK else BLANK)
-        imag.append(g * math.sin(math.radians(p)))
+        g = fmath.pow(10, v / 20) if v != LEGACY_BLANK else 0.0
+        real.append(g * fmath.cos(math.radians(p)) if v != LEGACY_BLANK else BLANK)
+        imag.append(g * fmath.sin(math.radians(p)))
     return Trace(
         LIVE_TRANSFER_FUNCTION if live else TRANSFER_FUNCTION,
         data=DataSet(frequencies, db, real, imag, coherence),
@@ -442,7 +442,7 @@ def _chunks(data: bytes, offset: int, where: str) -> dict:
 # curves
 # --------------------------------------------------------------------------
 def power_db(power: float) -> float | None:
-    return 10 * math.log10(power) if power > 0 else None
+    return 10 * fmath.log10(power) if power > 0 else None
 
 
 def rows(trace: Trace, mtw: bool = False) -> tuple[list[str], list[tuple]]:
@@ -460,7 +460,7 @@ def rows(trace: Trace, mtw: bool = False) -> tuple[list[str], list[tuple]]:
             row = (
                 d.frequencies[i],
                 d.magnitude[i],
-                math.degrees(math.atan2(d.imag[i], d.real[i])),
+                math.degrees(fmath.atan2(d.imag[i], d.real[i])),
             )
             out.append(row + ((d.coherence[i],) if d.coherence is not None else ()))
         return columns, out
@@ -504,7 +504,7 @@ def transfer_function(points, sample_rate: int, fft: int) -> DataSet:
     bins of ``fft``; coherence 1."""
     frequencies, db = _bins(points, sample_rate, fft)
     n = len(frequencies)
-    spectrum = dsp.fft(dsp.minimum_phase([10 ** (g / 20) for g in db]))[:n]
+    spectrum = dsp.fft(dsp.minimum_phase([fmath.pow(10, g / 20) for g in db]))[:n]
     return DataSet(
         frequencies,
         db,
@@ -517,7 +517,7 @@ def transfer_function(points, sample_rate: int, fft: int) -> DataSet:
 def spectrum(points, sample_rate: int, fft: int, offset_db: float = 0.0) -> DataSet:
     """The power of (frequency, dB) ``points`` less ``offset_db`` on the bins of ``fft``."""
     frequencies, db = _bins(points, sample_rate, fft)
-    return DataSet(frequencies, [10 ** ((g - offset_db) / 10) for g in db])
+    return DataSet(frequencies, [fmath.pow(10, (g - offset_db) / 10) for g in db])
 
 
 def write(trace: Trace) -> bytes:

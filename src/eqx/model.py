@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from . import fmath
 from .curve import interp
 from .dsp import (
     PEQ_SAMPLE_RATE,
@@ -22,7 +23,7 @@ EPOCH = "1970-01-01T00:00:00.000000Z"
 
 def standard_grid() -> list[float]:
     """SoundID's frequency grid: 355 log-spaced points, 20 Hz-22 kHz."""
-    return [20.0 * (22000.0 / 20.0) ** (i / 354.0) for i in range(355)]
+    return [20.0 * fmath.pow(22000.0 / 20.0, i / 354.0) for i in range(355)]
 
 
 @dataclass
@@ -83,7 +84,7 @@ class Correction:
         if self.biquads and not self.sample_rate:
             raise ValueError(f"{self.channel}: biquads without a sample rate")
         peqs = [p.biquad() for p in self.peqs]
-        logs = [math.log(f) for f, _ in self.points]
+        logs = [fmath.log(f) for f, _ in self.points]
         gains = [g for _, g in self.points]
         out = []
         for f in frequencies:
@@ -93,7 +94,7 @@ class Correction:
             if peqs:
                 db += cascade_db(peqs, f, PEQ_SAMPLE_RATE)
             if self.points:
-                db += interp(logs, gains, math.log(f))
+                db += interp(logs, gains, fmath.log(f))
             out.append(db + 0.0)
         return out
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 
-from eqx import dsp
+from eqx import dsp, fmath
 from eqx.sennheiser import hpc
 
 from .common import bells, impulse_response
@@ -33,7 +33,7 @@ def impulse(sides: tuple, phase: str, rate: int) -> list[list[float]]:
         if phase == "minimum":
             out.append(impulse_response(TAPS[phase], 0, 0.0, biquads))
         else:
-            grid = [20 * 1000 ** (i / 199) for i in range(200)]
+            grid = [20 * fmath.pow(1000, i / 199) for i in range(200)]
             points = [(f, dsp.cascade_db(biquads, f, rate)) for f in grid]
             out.append(dsp.design_fir_points(points, rate, phase, TAPS[phase]))
     return out

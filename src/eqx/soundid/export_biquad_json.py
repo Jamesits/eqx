@@ -7,6 +7,7 @@ holds the biquads of every channel.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 from ..correction import Export, ExportInspector, number
@@ -43,7 +44,7 @@ def read(data: bytes, serial: str | None = None) -> Export:
                             f"{where}: a biquad has {len(coefs)} coefficients"
                         )
                     biquads.append(Biquad(*(number(c, where) for c in coefs)))
-                gain = sum(
+                gain = math.fsum(
                     number(ch[k], where)
                     for k in ("balance_gain", "pre_gain", "post_gain")
                 )

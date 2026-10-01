@@ -12,7 +12,7 @@ import json
 import math
 from dataclasses import dataclass
 
-from .. import dsp
+from .. import dsp, fmath
 from ..curve import log_resample
 from . import swproj
 from .peqb import Peqb
@@ -65,7 +65,7 @@ def headphone_fir(
     """([left, right] impulse responses, gain dB) of the filter SoundID plays."""
     curves = headphone_curves(p)
     gain = safe_headroom_db(curves) if safe_headroom else 0.0
-    scale = 10 ** (gain / 20)
+    scale = fmath.pow(10, gain / 20)
     channels = [
         [
             v * scale
@@ -213,11 +213,11 @@ def speaker_channels(project: swproj.SwProj) -> list[SpeakerChannel]:
 
 def level_db(points, band: tuple[float, float]) -> float:
     """Power average of the points in ``band``, dB."""
-    powers = [10 ** (g / 10) for f, g in points if band[0] <= f <= band[1]]
+    powers = [fmath.pow(10, g / 10) for f, g in points if band[0] <= f <= band[1]]
     if not powers:
         return 0.0
-    mean = sum(powers) / len(powers)
-    return 10 * math.log10(mean) if mean > 1e-12 else -120.0
+    mean = math.fsum(powers) / len(powers)
+    return 10 * fmath.log10(mean) if mean > 1e-12 else -120.0
 
 
 def low_rolloff(points, level: float, search_hz: float) -> float:
@@ -229,7 +229,7 @@ def low_rolloff(points, level: float, search_hz: float) -> float:
         if f > search_hz:
             break
         if g > level + ROLLOFF_DB:
-            return max(LIMIT_MIN_HZ, f * 2 ** ((level - g) / LOW_SLOPE))
+            return max(LIMIT_MIN_HZ, f * fmath.pow(2, (level - g) / LOW_SLOPE))
     return LIMIT_MIN_HZ
 
 
@@ -243,7 +243,7 @@ def high_rolloff(
         if f < search_hz[0]:
             break
         if g > level + ROLLOFF_DB:
-            return min(search_hz[1], f * 2 ** ((g - level) / slope))
+            return min(search_hz[1], f * fmath.pow(2, (g - level) / slope))
     return search_hz[1]
 
 
@@ -256,19 +256,19 @@ def limit_points(
     high_shift: float = 0.0,
 ) -> list[tuple[float, float]]:
     """SoundID's boost limit: 0 dB beyond the roll-offs, ``top_db`` between."""
-    low = low_hz * 2 ** (-low_shift / LOW_SLOPE)
-    high = high_hz * 2 ** (high_shift / high_slope)
+    low = low_hz * fmath.pow(2, -low_shift / LOW_SLOPE)
+    high = high_hz * fmath.pow(2, high_shift / high_slope)
     points: dict[float, float] = {}
     if low > LIMIT_MIN_HZ:
         points[LIMIT_MIN_HZ] = 0.0
     points[low] = 0.0
     if top_db > 3:
-        points[low * 2 ** (top_db / LOW_SLOPE)] = top_db - 1
-    points[low * 2 ** (top_db / LOW_SLOPE) * 1.1] = top_db
+        points[low * fmath.pow(2, top_db / LOW_SLOPE)] = top_db - 1
+    points[low * fmath.pow(2, top_db / LOW_SLOPE) * 1.1] = top_db
     points[math.sqrt(low * high)] = top_db
-    points[high * 2 ** (-top_db / high_slope) / 1.1] = top_db
+    points[high * fmath.pow(2, -top_db / high_slope) / 1.1] = top_db
     if top_db > 3:
-        points[high * 2 ** (-top_db / high_slope)] = top_db - 1
+        points[high * fmath.pow(2, -top_db / high_slope)] = top_db - 1
     points[high] = 0.0
     if LIMIT_MAX_HZ > high:
         points[LIMIT_MAX_HZ] = 0.0
@@ -302,7 +302,7 @@ def speaker_curves(
     for members in groups.values():
         rule = LFE_RULE if any(c.lfe for c in members) else SPEAKER_RULE
         grid = [f for f, _ in members[0].correction]
-        logs = [math.log(f) for f in grid]
+        logs = [fmath.log(f) for f in grid]
         meas, corr, levels, lows, highs = {}, {}, {}, {}, {}
         for c in members:
             meas[c.index] = log_resample(c.measurement, grid)
@@ -321,13 +321,15 @@ def speaker_curves(
         limit = [
             max(0.0, v)
             for v in dsp.hermite(
-                [math.log(f) for f, _ in pts], [v for _, v in pts], logs
+                [fmath.log(f) for f, _ in pts], [v for _, v in pts], logs
             )
         ]
         for c in members:
             corr[c.index] = [min(g, lim) for g, lim in zip(corr[c.index], limit)]
-        low_top = low * 2 ** ((limit_correction_db - low_shift) / LOW_SLOPE)
-        high_top = high * 2 ** ((high_shift - limit_correction_db) / rule.high_slope)
+        low_top = low * fmath.pow(2, (limit_correction_db - low_shift) / LOW_SLOPE)
+        high_top = high * fmath.pow(
+            2, (high_shift - limit_correction_db) / rule.high_slope
+        )
         low_ref = max(lows, key=lambda i: (lows[i], -i))
         high_ref = min(highs, key=lambda i: (highs[i], i))
         for c in members:
@@ -378,5 +380,5 @@ def speaker_fir(
             spot_samples(c.delay_ms - first_delay, sample_rate) if listening_spot else 0
         )
         ir = dsp.design_fir_points(points, sample_rate, phase, taps, EDGE_DB)
-        irs.append([0.0] * delay + [v * 10 ** (g / 20) for v in ir])
+        irs.append([0.0] * delay + [v * fmath.pow(10, g / 20) for v in ir])
     return channels, dsp.padded(irs), gain

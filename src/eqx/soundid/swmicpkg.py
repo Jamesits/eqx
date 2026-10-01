@@ -14,6 +14,7 @@ import base64
 import json
 from pathlib import Path
 
+from .. import fmath
 from ..fileformat import Format, Inspector, file_section, frequency_range
 from ..model import MicProfile
 from ..report import Section, Table
@@ -30,7 +31,7 @@ GRID_POINTS, GRID_LOW_HZ, GRID_HIGH_HZ = 300, 20.0, 20000.0
 
 def grid() -> list[float]:
     return [
-        GRID_LOW_HZ * (GRID_HIGH_HZ / GRID_LOW_HZ) ** (i / (GRID_POINTS - 1))
+        GRID_LOW_HZ * fmath.pow(GRID_HIGH_HZ / GRID_LOW_HZ, i / (GRID_POINTS - 1))
         for i in range(GRID_POINTS)
     ]
 

@@ -17,6 +17,7 @@ import math
 import re
 from pathlib import Path
 
+from .. import fmath
 from ..correction import Export, ExportInspector
 from ..fileformat import Format, fixed, head_text
 from ..model import Correction, Peq
@@ -67,8 +68,8 @@ def _slope_q(gain_db: float, slope_db: float) -> float:
     SoundSource uses the cookbook shelf slope S = 10^(max(dB, 3) / 40), not
     the dB per octave the token names.
     """
-    a = 10 ** (gain_db / 40)
-    s = 10 ** (max(slope_db, 3.0) / 40)
+    a = fmath.pow(10, gain_db / 40)
+    s = fmath.pow(10, max(slope_db, 3.0) / 40)
     root = (a + 1 / a) * (1 / s - 1) + 2
     if root <= 0:
         raise ValueError(

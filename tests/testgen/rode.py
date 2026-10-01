@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import struct
 
-from eqx import dsp, keyedarchive
+from eqx import dsp, fmath, keyedarchive
 from eqx.keyedarchive import Instance, Ref
 from eqx.rode import fuzzmeasure
 
@@ -45,7 +45,7 @@ def fm_ir(
 def fm_calibration(rate: float) -> fuzzmeasure.Calibration:
     """The microphone's response, 1/6 octave from 10 Hz to 21 kHz."""
     serial = FM_MIC[0]
-    grid = [10 * 2 ** (k / 6) for k in range(67)]
+    grid = [10 * fmath.pow(2, k / 6) for k in range(67)]
     return fuzzmeasure.Calibration(
         f"{serial} mic",
         [(f, dsp.cascade_db(fm_mic(rate), f, rate)) for f in grid],

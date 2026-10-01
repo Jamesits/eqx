@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .. import caf, impulse, keyedarchive
+from .. import caf, fmath, impulse, keyedarchive
 from ..fileformat import Format, Inspector, frequency_range, response_section
 from ..keyedarchive import Instance, Ref
 from ..options import Option
@@ -299,7 +299,7 @@ def _record(r: Instance, files: dict[str, bytes], index: int) -> Record:
     else:
         # Stored as a linear gain; 0 is no reference.
         linear = _number(r.get("SPLReferenceLevel"), 0.0)
-        spl = 20 * math.log10(linear) if linear > 0 else 0.0
+        spl = 20 * fmath.log10(linear) if linear > 0 else 0.0
         use_spl = False
     calibration = get("correctionRecord", "CorrectionRecord")
     sweep = get("logSweepSettings", "LogSweepSettings")
@@ -440,7 +440,7 @@ def spline(xs: list[float], ys: list[float], queries) -> list[float | None]:
         out.append(
             a * ys[lo]
             + b * ys[lo + 1]
-            + ((a**3 - a) * y2[lo] + (b**3 - b) * y2[lo + 1]) * h * h / 6
+            + ((a * a * a - a) * y2[lo] + (b * b * b - b) * y2[lo + 1]) * h * h / 6
         )
     return out
 
@@ -472,13 +472,13 @@ def shape_window(x: list[float], shape: int) -> list[float]:
     if shape in (1, 3):
         a = HAMMING if shape == 1 else HANN
         w = [
-            a - (1 - a) * math.cos(2 * math.pi * i / (n - 1)) if n > 1 else 1.0
+            a - (1 - a) * fmath.cos(2 * math.pi * i / (n - 1)) if n > 1 else 1.0
             for i in range(n)
         ]
     elif shape in (2, 4):
         a = HAMMING if shape == 2 else HANN
         w = [
-            a - (1 - a) * math.cos(2 * math.pi * (n + i) / (2 * n - 1))
+            a - (1 - a) * fmath.cos(2 * math.pi * (n + i) / (2 * n - 1))
             for i in range(n)
         ]
     elif shape == 5:
@@ -487,14 +487,14 @@ def shape_window(x: list[float], shape: int) -> list[float]:
         w = [1.0] * n
         width = (n + 1) * BINGHAM_TAPER
         for i in range(m):
-            w[i] = 0.5 * (1 - math.cos(2 * math.pi * (i + 1) / width))
-            w[n - m + i] = 0.5 * (1 - math.cos(2 * math.pi * (m - i) / width))
+            w[i] = 0.5 * (1 - fmath.cos(2 * math.pi * (i + 1) / width))
+            w[n - m + i] = 0.5 * (1 - fmath.cos(2 * math.pi * (m - i) / width))
     elif shape == 6:
         m = math.floor(0.5 * BINGHAM_TAPER * 2 * n)
         w = [1.0] * n
         width = (2 * n + 1) * BINGHAM_TAPER
         for i in range(m):
-            w[n - m + i] = 0.5 * (1 - math.cos(2 * math.pi * (m - i) / width))
+            w[n - m + i] = 0.5 * (1 - fmath.cos(2 * math.pi * (m - i) / width))
     else:
         return list(x)
     return [v * g for v, g in zip(x, w)]

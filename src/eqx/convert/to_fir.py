@@ -4,10 +4,9 @@ compensation -> FIR filter WAV."""
 from __future__ import annotations
 
 import argparse
-import math
 from pathlib import Path
 
-from .. import dsp
+from .. import dsp, fmath
 from ..autoeq import response
 from ..dirac import filterslot
 from ..dirac import playback as dirac_playback
@@ -68,7 +67,7 @@ def _result(
         if peak > 1.0:
             channels = [[v / peak for v in c] for c in channels]
             notes = notes + [
-                f"scaled by {-20 * math.log10(peak):.2f} dB to fit {encoding}"
+                f"scaled by {-20 * fmath.log10(peak):.2f} dB to fit {encoding}"
             ]
     return Result(fir.write(fir.Fir(rate, channels), encoding), name, notes)
 

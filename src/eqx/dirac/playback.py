@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from .. import fmath
 from .filterslot import FILTER_TYPES, LIVE
 
 # The rates a slot holds.
@@ -280,7 +281,7 @@ def impulse_response(slot: dict, output: int, rate: int) -> tuple[list[float], i
     gain_delay = slot.get("gain_delay", [])
     if output < len(gain_delay):
         g = gain_delay[output]
-        gain = 10 ** (g.get("gain_db", 0.0) / 20)
+        gain = fmath.pow(10, g.get("gain_db", 0.0) / 20)
         # The processor ignores gains outside 0-10.
         gain = gain if gain <= 10 else 1.0
         delay = max(0, int(rate * g.get("delay_ms", 0.0) / 1000))
@@ -303,15 +304,15 @@ def _lowpass() -> list[float]:
     """Blackman-windowed sinc, unit DC gain; index LOWPASS_HALF is the center."""
     w = 2 * math.pi * LOWPASS_CUTOFF
     h = [
-        (math.sin(w * n) / (math.pi * n) if n else 2 * LOWPASS_CUTOFF)
+        (fmath.sin(w * n) / (math.pi * n) if n else 2 * LOWPASS_CUTOFF)
         * (
             0.42
-            + 0.5 * math.cos(math.pi * n / (LOWPASS_HALF + 1))
-            + 0.08 * math.cos(2 * math.pi * n / (LOWPASS_HALF + 1))
+            + 0.5 * fmath.cos(math.pi * n / (LOWPASS_HALF + 1))
+            + 0.08 * fmath.cos(2 * math.pi * n / (LOWPASS_HALF + 1))
         )
         for n in range(-LOWPASS_HALF, LOWPASS_HALF + 1)
     ]
-    total = sum(h)
+    total = math.fsum(h)
     return [v / total for v in h]
 
 
@@ -348,13 +349,13 @@ def design(target: list[float], rate: int) -> Design:
     residual = [w - v for w, v in zip(want, low)]
     energy = [v * v for v in residual] + [0.0] * TAPS
     last = min(int(rate * MAX_DELAY_MS / 1000), size)
-    window = sum(energy[:TAPS])
+    window = math.fsum(energy[:TAPS])
     best, start = window, 0
     for s in range(1, last + 1):
         window += energy[s + TAPS - 1] - energy[s - 1]
         if window > best:
             best, start = window, s
-    total = sum(energy)
+    total = math.fsum(energy)
     fir_hi = residual[start : start + TAPS]
     fir_hi += [0.0] * (TAPS - len(fir_hi))
     return Design(

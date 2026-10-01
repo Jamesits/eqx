@@ -25,6 +25,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .. import fmath
 from ..fileformat import Format, Inspector, file_section, frequency_range
 from ..options import Option
 from ..report import Section, Table
@@ -247,7 +248,7 @@ def parse_body_v2(body: bytes) -> tuple[list, dict, bytes]:
 
 def _gain_db(percent: float) -> float:
     """A legacy linear gain, 100 = 0 dB, in dB."""
-    return 20 * math.log10(percent / 100) if percent > 1e-5 else -100.0
+    return 20 * fmath.log10(percent / 100) if percent > 1e-5 else -100.0
 
 
 def _corrections(left: list, right: list, gains: tuple, delays: tuple) -> list[Curve]:
@@ -284,7 +285,7 @@ LEGACY_SETTINGS_SIZE = 10 * 8 + 8
 
 def legacy_grid(n: int) -> list[float]:
     """The frequencies of an unversioned ``PEQB``: quadratic from 20 Hz to 22 kHz."""
-    return [20 + 21980 * ((i + 1) / (n + 2)) ** 2 for i in range(n)]
+    return [20 + 21980 * ((i + 1) / (n + 2)) * ((i + 1) / (n + 2)) for i in range(n)]
 
 
 def parse_body_legacy(body: bytes) -> tuple[list, dict, bytes]:
@@ -459,8 +460,8 @@ def frame_response(frequency: float) -> float:
         0.0,
         min(
             1.0,
-            math.log(frequency / 20) / math.log(2),
-            math.log(22000 / frequency) / math.log(22000 / 19000),
+            fmath.log(frequency / 20) / fmath.log(2),
+            fmath.log(22000 / frequency) / fmath.log(22000 / 19000),
         ),
     )
 

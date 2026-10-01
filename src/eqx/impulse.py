@@ -5,20 +5,24 @@ from __future__ import annotations
 
 import math
 
-from . import dsp
+from . import dsp, fmath
 
 GRID_LOW_HZ, GRID_HIGH_HZ, GRID_STEPS_PER_OCTAVE = 20.0, 20000.0, 48
 
 
 def power_db(power: float) -> float:
-    return 10 * math.log10(max(power, 1e-30))
+    return 10 * fmath.log10(max(power, 1e-30))
 
 
 def log_grid(sample_rate: float) -> list[float]:
     """1/48 octave from 20 Hz up to 20 kHz, below Nyquist."""
-    top = min(GRID_HIGH_HZ, sample_rate / 2 * 2 ** (-1 / (2 * GRID_STEPS_PER_OCTAVE)))
-    steps = math.floor(GRID_STEPS_PER_OCTAVE * math.log2(top / GRID_LOW_HZ) + 1e-9)
-    return [GRID_LOW_HZ * 2 ** (k / GRID_STEPS_PER_OCTAVE) for k in range(steps + 1)]
+    top = min(
+        GRID_HIGH_HZ, sample_rate / 2 * fmath.pow(2, -1 / (2 * GRID_STEPS_PER_OCTAVE))
+    )
+    steps = math.floor(GRID_STEPS_PER_OCTAVE * fmath.log2(top / GRID_LOW_HZ) + 1e-9)
+    return [
+        GRID_LOW_HZ * fmath.pow(2, k / GRID_STEPS_PER_OCTAVE) for k in range(steps + 1)
+    ]
 
 
 def peak_index(ir: list[float]) -> int:
@@ -38,12 +42,12 @@ def point_bands(
     peak = peak_index(padded)
     spectrum = dsp.fft(padded[peak:] + padded[:peak])[: n // 2 + 1]
     step = sample_rate / n
-    power = [abs(x) ** 2 for x in spectrum]
+    power = [x.real * x.real + x.imag * x.imag for x in spectrum]
     # Central phase difference; its angle stays in (-pi, pi] without unwrapping.
     delay = [0.0] * len(spectrum)
     for k in range(1, len(spectrum) - 1):
         d = spectrum[k + 1] * spectrum[k - 1].conjugate()
-        delay[k] = -math.atan2(d.imag, d.real) / (2 * math.pi * 2 * step) if d else 0.0
+        delay[k] = -fmath.atan2(d.imag, d.real) / (2 * math.pi * 2 * step) if d else 0.0
     delay[0], delay[-1] = delay[1], delay[-2]
     return spectrum_bands(power, delay, step, frequencies)
 
@@ -56,17 +60,17 @@ def spectrum_bands(
     Bin k is at k * ``step`` Hz.  A band with no bin interpolates the two
     nearest bins.
     """
-    half = 2 ** (1 / (2 * GRID_STEPS_PER_OCTAVE))
+    half = fmath.pow(2, 1 / (2 * GRID_STEPS_PER_OCTAVE))
     out = []
     for f in frequencies:
         first = math.ceil(f / half / step)
         last = min(math.ceil(f * half / step) - 1, len(power) - 1)
         if last >= first:
-            p = sum(power[first : last + 1])
+            p = math.fsum(power[first : last + 1])
             gd = (
-                sum(power[k] * delay[k] for k in range(first, last + 1)) / p
+                math.fsum(power[k] * delay[k] for k in range(first, last + 1)) / p
                 if p
-                else sum(delay[first : last + 1]) / (last - first + 1)
+                else math.fsum(delay[first : last + 1]) / (last - first + 1)
             )
             out.append((p / (last - first + 1), gd))
         else:
@@ -89,11 +93,11 @@ def average(
     db, gd = [], []
     for i in range(len(frequencies)):
         powers = [b[i][0] for b in bands]
-        total = sum(powers)
+        total = math.fsum(powers)
         db.append(power_db(total / len(bands)))
         gd.append(
-            sum(p * b[i][1] for p, b in zip(powers, bands)) / total
+            math.fsum(p * b[i][1] for p, b in zip(powers, bands)) / total
             if total
-            else sum(b[i][1] for b in bands) / len(bands)
+            else math.fsum(b[i][1] for b in bands) / len(bands)
         )
     return db, gd
