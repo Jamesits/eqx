@@ -14,6 +14,7 @@ from .mdat_swproj import MdatToSwproj
 from .mqx_swproj import MqxToSwproj
 from .rewcal_swmicpkg import RewcalToSwmicpkg
 from .swmicpkg_rewcal import SwmicpkgToRewcal
+from .umik_swmicpkg import UmikToSwmicpkg
 from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, FuzzmeasureToAutoeq, MdatToAutoeq,
                         MqxToAutoeq, PeqbToAutoeq, SoundidExportBiquadJsonToAutoeq,
                         SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq,
@@ -27,7 +28,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         MdatToAutoeq, SwprojToAutoeq, PeqbToAutoeq, TargetpresetToAutoeq,
         AutoeqToRewcal, AutoeqToSwproj, AutoeqToPeqb, AutoeqToMdat, AutoeqToTmreq, AutoeqToArcx,
         AutoeqToSoundsource,
-        RewcalToSwmicpkg,
+        RewcalToSwmicpkg, UmikToSwmicpkg,
         SoundidExportBiquadJsonToAutoeq, SoundidExportPeqJsonToAutoeq,
         SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq, SoundidExportTxtToAutoeq,
         TmreqToAutoeq, SoundsourceToAutoeq,

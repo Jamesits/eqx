@@ -27,6 +27,7 @@ DO check the output levels on all frequencies before playing any audio.
 | [IK Multimedia ARC X 2.x](https://www.ikmultimedia.com/products/arcx/) | Session | `.arcXs` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | IK Multimedia ARC 4 | Analysis | `.arc4a` | `arc4` | ✓ | | Untested: no hardware |
+| [miniDSP UMIK Series](https://www.minidsp.com/products/acoustic-measurement) | Microphone calibration | `.txt` | `umik` | ✓ | | |
 | [REW](https://www.roomeqwizard.com/) | Measurement | `.mdat` | `mdat` | ✓ | ✓ | |
 | | Microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ | |
 | [RME TotalMix FX](https://rme-audio.de/totalmix-fx.html) | [Room EQ preset](https://rme-audio.de/totalmix-fx-room-eq.html) | `.tmreq` | `tmreq` | ✓ | ✓ | Untested: no hardware |
@@ -115,6 +116,12 @@ uv run python -m pytest
 - Only the measured left and right responses are converted; the ARC 4 plug-in computes its correction when it loads the file
 - Response levels are relative (dB re the 40 Hz-10 kHz mean), not SPL; the response is already compensated for the microphone, so use a flat `--mic-profile` for `.swproj`
 - Analyses older than version 4.0.0 are not supported
+
+### miniDSP UMIK
+
+- Converts to `.swmicpkg` (`-i <serial>.txt [-i <serial>_90deg.txt]`); the 30 degree table is a copy of the 0 degree table
+- Usable as `--mic-profile` of `.swproj` conversions; pass the `_90deg` file for the 90 degree table, without `--mic-angle`
+- The sensitivity (`Sens Factor`) is shown by `inspect`, not converted
 
 ### SoundID Reference 5.x
 

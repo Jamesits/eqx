@@ -10,7 +10,7 @@ Writers for formats that ``eqx`` only reads live here, not in the library:
 encrypted PEQb, PEQb 2.x and ``PEQB``, Custom Target Presets, a REW ``.cal``
 with a sensitivity line, the SoundID device exports, Sonarworks Reference 3
 and Sonarworks Reference 4 Measure projects, ARC 4 files, FuzzMeasure 3 and 2
-documents.  A package (directory) is a dict of its files.
+documents, miniDSP UMIK calibration files.  A package (directory) is a dict of its files.
 """
 
 from __future__ import annotations
@@ -159,6 +159,39 @@ def write_cal_with_sensitivity(sections) -> bytes:
     lines = ['"Sens Factor =-1.5dB, SERNO: TILT01"']
     lines += [f"{f:.3f} {response(sections, f)[0]:.3f} 0.000" for f in swmicpkg.grid()]
     return ("\r\n".join(lines) + "\r\n").encode()
+
+
+# ---------------------------------------------------------------------------
+# miniDSP UMIK calibration
+# ---------------------------------------------------------------------------
+UMIK_DIR = "minidsp/umik"
+# The UMIK grid: 615 log-spaced points, 10.054-20016.816 Hz.
+UMIK_GRID = [10.054 * (20016.816 / 10.054) ** (i / 614) for i in range(615)]
+UMIK_SECTIONS = {
+    "degrees_0": [hp2(14, 0.6), peak(9000, 1.5, 1.2)],
+    "degrees_90": [hp2(14, 0.6), peak(9000, 1.5, 1.2), high_cut(6000, -6)],
+}
+UMIK = {
+    # serial: (header, row format, trailing empty line) of the 0 degree file
+    "7000042": ('"Sens Factor =-5.5dB, SERNO: 7000042"', "{:.3f}\t{:.4f}", False),
+    "8100042": ('"Sens Factor =-14.5dB, AGain =18dB, SERNO: 8100042"', "{:.6g}\t{:.6g}", True),
+}
+
+
+def write_umik(serial: str, angle: str) -> bytes:
+    """The 90 degree file has a second header line and 3/4 decimals."""
+    header, row, empty_line = UMIK[serial]
+    lines = [header]
+    if angle == "degrees_90":
+        lines.append('"Auto-generated 90-degree calibration file"')
+        row, empty_line = "{:.3f}\t{:.4f}", False
+    lines += [row.format(f, response(UMIK_SECTIONS[angle], f)[0]) for f in UMIK_GRID]
+    return ("\r\n".join(lines) + "\r\n" + ("\r\n" if empty_line else "")).encode()
+
+
+def umik_files() -> dict[str, bytes]:
+    return {f"{UMIK_DIR}/{serial}{suffix}.txt": write_umik(serial, angle)
+            for serial in UMIK for angle, suffix in (("degrees_0", ""), ("degrees_90", "_90deg"))}
 
 
 # ---------------------------------------------------------------------------
@@ -981,6 +1014,8 @@ CONVERSIONS = [
      {"computer_id": COMPUTER_ID}),
     (f"{PRESET_DIR}/Bass and treble.json", f"{CSV_DIR}/Bass and treble.csv", {}),
     (f"{CSV_DIR}/Bass and treble.csv", f"{CAL_DIR}/Bass and treble.txt", {"to": "rewcal"}),
+    ((f"{UMIK_DIR}/8100042_90deg.txt", f"{UMIK_DIR}/8100042.txt"), f"{MIC_DIR}/8100042.swmicpkg",
+     {}),
     ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{PROJ_DIR}/Room Left.swproj",
      {"mic_profile": f"{MIC_DIR}/TILT01.swmicpkg"}),
     (f"{CSV_DIR}/Tilt Tilt Wired Average Left.csv", f"{PEQB_DIR}/Tilt Tilt Wired Average Left.swhp",
@@ -1073,6 +1108,7 @@ def generate(root: Path = ROOT) -> list[Path]:
     files[f"{ARC4_DIR}/Arc4.arc4a"] = write_arc4()
     files[f"{MQX_DIR}/Mqx 5.1.mqx"] = write_mqx()
     files.update(fuzzmeasure_files())
+    files.update(umik_files())
 
     written = []
     for rel, data in files.items():

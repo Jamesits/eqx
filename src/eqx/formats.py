@@ -10,6 +10,7 @@ from .autoeq import response
 from .dirac import filterslot, targetcurve
 from .fileformat import Format
 from .ik import arc4, arcx
+from .minidsp import umik
 from .rew import cal, mdat
 from .rme import tmreq
 from .rode import fuzzmeasure
@@ -19,7 +20,8 @@ from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export
 from .wav import fir
 
 FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
-    swproj, peqb, swmicpkg, targetpreset, mdat, cal, response,
+    # umik before cal: a UMIK file is also a REW calibration file.
+    swproj, peqb, swmicpkg, targetpreset, mdat, umik, cal, response,
     # Content checks run in this order: the cheap magics before the
     # MERGING key search of an encrypted export.
     filterslot, export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt,

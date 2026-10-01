@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .. import formats
+from ..minidsp import umik
 from ..model import EPOCH, Measurement, MicProfile, standard_grid
 from ..options import Option
 from ..rew import cal, mdat
@@ -597,21 +598,45 @@ def convert(
     return Conversion(data, grid, corrected, reference_spl)
 
 
-MIC_PROFILE_FORMATS = ("swmicpkg", "swproj")
+MIC_PROFILE_FORMATS = ("swmicpkg", "swproj", "umik")
 
 
-def load_mic_profile(path: Path, angle: str = swmicpkg.PLAIN_ANGLE,
+def load_mic_profile(path: Path, angle: str | None = None,
                      kind: str | None = None) -> MicProfile:
-    """One microphone table from a ``.swmicpkg``, or from a ``.swproj`` measured with it.
+    """One microphone table from a ``.swmicpkg``, a ``.swproj`` measured with it,
+    or a UMIK file.
 
+    ``angle`` selects the table of a profile with several (default
+    ``degrees_0``); a profile with one table rejects it and gives that table.
     ``kind`` None detects the format by extension.
     """
+    path = Path(path)
     kind = kind or formats.detect(path, MIC_PROFILE_FORMATS)
     if kind == "swmicpkg":
-        return swmicpkg.load(path, angle)
-    if kind == "swproj":
-        return swproj.mic_profile(swproj.SwProj.open(path), angle)
-    raise ValueError(f"{Path(path).name}: a microphone profile must be .swmicpkg or .swproj")
+        text = path.read_text(encoding="utf-8")
+        available = swmicpkg.angles(text)
+        read = lambda a: swmicpkg.read(text, a, path.stem)
+    elif kind == "swproj":
+        profiles = {p.angle: p for p in swproj.mic_profiles(swproj.SwProj.open(path))}
+        available, read = list(profiles), profiles.__getitem__
+    elif kind == "umik":
+        profile = umik.load(path).profile
+        available, read = [profile.angle], lambda a: profile
+    else:
+        raise ValueError(f"{path.name}: a microphone profile must be .swmicpkg, .swproj "
+                         "or a UMIK .txt")
+    if not available:
+        raise ValueError(f"{path.name} holds no microphone table")
+    if len(available) == 1:
+        if angle is not None:
+            raise ValueError(f"{path.name} holds one microphone table ({available[0]}); "
+                             "--mic-angle applies only to profiles with several tables")
+        return read(available[0])
+    angle = angle or swmicpkg.PLAIN_ANGLE
+    if angle not in available:
+        raise ValueError(f"{path.name} has no microphone {angle!r} table; "
+                         f"available: {', '.join(available)}")
+    return read(angle)
 
 
 def mic_response_db(path: Path, frequencies: list[float]) -> list[float]:
@@ -649,13 +674,14 @@ class SpeakerProjectConverter(Converter):
     target = "swproj"
     options = (
         Option("--mic-profile", type=Path,
-               help="required: SoundID microphone package (.swmicpkg), or a .swproj "
-                    "measured with the microphone"),
+               help="required: SoundID microphone package (.swmicpkg), a .swproj "
+                    "measured with the microphone, or a UMIK calibration file (.txt)"),
         Option("--mic-profile-format", choices=MIC_PROFILE_FORMATS,
                help="format of --mic-profile (default: by extension)"),
         Option("--mic-angle",
-               help="angle between mic axis and speaker: degrees_0, degrees_30 or "
-                    f"degrees_90 (default: {swmicpkg.PLAIN_ANGLE})"),
+               help="table of a --mic-profile with several tables, by the angle between "
+                    "mic axis and speaker: degrees_0, degrees_30 or degrees_90 "
+                    f"(default: {swmicpkg.PLAIN_ANGLE}); a profile with one table uses it"),
         Option("--reference-spl", type=float,
                help="calibrated SPL mapped to 0 dB for all channels "
                     "(default: estimated from the 200 Hz-10 kHz level)"),
@@ -687,7 +713,7 @@ class SpeakerProjectConverter(Converter):
         self,
         mic_profile: Path | None = None,
         mic_profile_format: str | None = None,
-        mic_angle: str = swmicpkg.PLAIN_ANGLE,
+        mic_angle: str | None = None,
         reference_spl: float | None = None,
         low_cutoff_hz: float = DEFAULT_LOW_CUTOFF_HZ,
         high_cutoff_hz: float = DEFAULT_HIGH_CUTOFF_HZ,

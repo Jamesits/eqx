@@ -35,7 +35,7 @@ class PackageTests(unittest.TestCase):
     def test_encrypted_table_matches_project(self):
         # The project holds the table decrypted from this package.
         self.assertEqual(swmicpkg.load(PACKAGE, "degrees_30").points,
-                         load_mic_profile(PROJECT, "degrees_30").points)
+                         load_mic_profile(PROJECT).points)
 
     def test_all_tables(self):
         for path in sorted((TESTDATA / "soundid/swmicpkg").glob("*.swmicpkg")):
@@ -58,14 +58,24 @@ class PackageTests(unittest.TestCase):
 
 class ProjectTests(unittest.TestCase):
     def test_tables_from_project(self):
-        profile = load_mic_profile(PROJECT, "degrees_30")
+        # The project holds one table; it needs no angle.
+        profile = load_mic_profile(PROJECT)
         self.assertEqual((profile.name, profile.angle, len(profile.points)),
                          ("TILT01", "degrees_30", 300))
         self.assertEqual(profile.points[-1], (20000.0, 0.96))
 
-    def test_missing_angle(self):
-        with self.assertRaisesRegex(ValueError, "available: degrees_30$"):
-            load_mic_profile(PROJECT, "degrees_0")
+    def test_angle_of_single_table(self):
+        with self.assertRaisesRegex(ValueError, r"one microphone table \(degrees_30\); "
+                                                "--mic-angle applies only"):
+            load_mic_profile(PROJECT, "degrees_30")
+
+    def test_angle_of_several_tables(self):
+        self.assertEqual(load_mic_profile(PACKAGE).angle, "degrees_0")
+        self.assertEqual(load_mic_profile(PACKAGE, "degrees_90").points,
+                         swmicpkg.load(PACKAGE, "degrees_90").points)
+        with self.assertRaisesRegex(ValueError, "no microphone 'degrees_45' table; "
+                                                "available: degrees_0, degrees_30, degrees_90$"):
+            load_mic_profile(PACKAGE, "degrees_45")
 
     def test_tables_are_mic_response(self):
         # Off axis a microphone loses treble; an inverse table would rise instead.
@@ -79,7 +89,7 @@ class RewTests(unittest.TestCase):
         for angle, path in (("degrees_0", PACKAGE), ("degrees_30", PROJECT),
                             ("degrees_90", PACKAGE)):
             with self.subTest(angle=angle):
-                profile = load_mic_profile(path, angle)
+                profile = load_mic_profile(path, None if path == PROJECT else angle)
                 text = cal.write(profile, "SoundID")
                 self.assertTrue(text.startswith(f"* SoundID microphone TILT01 {angle}\n"))
                 self.assertEqual(parse_rew(text), profile.points)
