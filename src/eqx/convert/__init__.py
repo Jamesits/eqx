@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from .arc4_swproj import Arc4ToSwproj
 from .arcx_swproj import ArcxToSwproj
 from .base import Converter, Result
 from .fir import AutoeqToFir, FirToAutoeq, PeqbToFir, SwprojToFir
 from .from_autoeq import AutoeqToPeqb, AutoeqToRewcal, AutoeqToSwproj
 from .mdat_swproj import MdatToSwproj
 from .swmicpkg_rewcal import SwmicpkgToRewcal
-from .to_autoeq import (ArcxToAutoeq, MdatToAutoeq, PeqbToAutoeq,
+from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, MdatToAutoeq, PeqbToAutoeq,
                         SoundidExportBiquadJsonToAutoeq, SoundidExportBiquadXmlToAutoeq,
                         SoundidExportLvndToAutoeq,
                         SoundidExportPeqJsonToAutoeq, SoundidExportTxtToAutoeq, SwprojToAutoeq,
@@ -22,7 +23,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         SoundidExportBiquadJsonToAutoeq, SoundidExportPeqJsonToAutoeq,
         SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq, SoundidExportTxtToAutoeq,
         TmreqToAutoeq,
-        ArcxToAutoeq, ArcxToSwproj,
+        ArcxToAutoeq, ArcxToSwproj, Arc4ToAutoeq, Arc4ToSwproj,
         PeqbToFir, SwprojToFir, AutoeqToFir, FirToAutoeq,
     )
 }

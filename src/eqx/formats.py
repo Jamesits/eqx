@@ -7,7 +7,7 @@ from typing import Iterable
 
 from .autoeq import response
 from .fileformat import Format
-from .ik import arcx
+from .ik import arc4, arcx
 from .rew import cal, mdat
 from .rme import tmreq
 from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
@@ -19,7 +19,7 @@ FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
     # Content checks run in this order: the cheap LVND magic before the
     # MERGING key search of an encrypted export.
     export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt, tmreq,
-    arcx, fir,
+    arcx, arc4, fir,
 )}
 
 

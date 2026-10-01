@@ -21,6 +21,8 @@ DO check the output levels on all frequencies before playing any audio.
 - IK Multimedia ARC X 2.x
     - Session `.arcXs`
     - Analysis `.arcXa`
+- IK Multimedia ARC 4
+    - Analysis `.arc4a`
 - REW
     - `.mdat`
     - `.cal`/`.txt`
@@ -89,3 +91,9 @@ uv run python -m pytest
 
 - Only the measured speaker responses are converted; ARC X computes its correction when it loads the file
 - Response levels are relative (dB re full scale), not SPL
+
+### IK Multimedia ARC 4
+
+- Only the measured left and right responses are converted; the ARC 4 plug-in computes its correction when it loads the file
+- Response levels are relative (dB re the 40 Hz-10 kHz mean), not SPL; the response is already compensated for the microphone, so use a flat `--mic-profile` for `.swproj`
+- Analyses older than version 4.0.0 are not supported

@@ -12,7 +12,7 @@ from typing import Callable
 from .. import correction
 from ..autoeq import response
 from ..fileformat import frequency_range
-from ..ik import arcx
+from ..ik import arc4, arcx
 from ..model import Correction
 from ..options import Option
 from ..rew import mdat
@@ -87,6 +87,23 @@ class ArcxToAutoeq(Converter):
         points = "all points" if self.point is None else f"point {self.point}"
         return _result(list(zip(frequencies, db)), f"{path.stem} {a.speakers[c]}.csv",
                        f"{a.speakers[c]} response, {points}, dB re full scale")
+
+
+class Arc4ToAutoeq(Converter):
+    source = "arc4"
+    target = "autoeq"
+    description = "the measured response of one channel of an ARC 4 analysis"
+    options = (CHANNEL_OPTION,)
+
+    def __init__(self, channel: str = "left"):
+        self.channel = _channel_name(channel)
+
+    def convert(self, path: Path) -> Result:
+        path = Path(path)
+        a = arc4.load(path)
+        frequencies, db = arc4.response(a, a.channel(self.channel))
+        return _result(list(zip(frequencies, db)), f"{path.stem} {self.channel}.csv",
+                       f"{self.channel} response, dB re the 40 Hz-10 kHz mean")
 
 
 class SwprojToAutoeq(Converter):

@@ -233,19 +233,28 @@ def point_bands(ir: list[float], sample_rate: float,
         d = spectrum[k + 1] * spectrum[k - 1].conjugate()
         delay[k] = -math.atan2(d.imag, d.real) / (2 * math.pi * 2 * step) if d else 0.0
     delay[0], delay[-1] = delay[1], delay[-2]
+    return spectrum_bands(power, delay, step, frequencies)
 
+
+def spectrum_bands(power: list[float], delay: list[float], step: float,
+                   frequencies: list[float]) -> list[tuple[float, float]]:
+    """(mean power, power-weighted delay) of the FFT bins within +-1/96 octave.
+
+    Bin k is at k * ``step`` Hz.  A band with no bin interpolates the two
+    nearest bins.
+    """
     half = 2 ** (1 / (2 * GRID_STEPS_PER_OCTAVE))
     out = []
     for f in frequencies:
         first = math.ceil(f / half / step)
-        last = min(math.ceil(f * half / step) - 1, len(spectrum) - 1)
+        last = min(math.ceil(f * half / step) - 1, len(power) - 1)
         if last >= first:
             p = sum(power[first:last + 1])
             gd = (sum(power[k] * delay[k] for k in range(first, last + 1)) / p if p
                   else sum(delay[first:last + 1]) / (last - first + 1))
             out.append((p / (last - first + 1), gd))
         else:
-            k = min(int(f / step), len(spectrum) - 2)
+            k = min(int(f / step), len(power) - 2)
             t = f / step - k
             out.append((power[k] + t * (power[k + 1] - power[k]),
                         delay[k] + t * (delay[k + 1] - delay[k])))
