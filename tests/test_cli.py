@@ -27,6 +27,7 @@ SAMPLES = {
     "soundid-export-lvnd": TESTDATA / "soundid/soundid-export-lvnd/Tilt_192000_Left.bin",
     "soundid-export-txt": TESTDATA / "soundid/soundid-export-txt/Tilt - Flat.txt",
     "tmreq": TESTDATA / "rme/tmreq/Tilt - Flat.tmreq",
+    "soundsource": TESTDATA / "rogueamoeba/soundsource/Tilt - Flat.txt",
     "arcx": TESTDATA / "ik/arcx/Arc.arcXs",
     "fir": TESTDATA / "fir/wav/Tilt Tilt Wired Average.wav",
 }
@@ -65,8 +66,8 @@ class FormatTests(unittest.TestCase):
 
     def test_detect_shared_extension(self):
         with with_other_txt():
-            with self.assertRaisesRegex(ValueError,
-                                        "ambiguous.*rewcal, soundid-export-txt, othertxt"):
+            with self.assertRaisesRegex(
+                    ValueError, "ambiguous.*rewcal, soundid-export-txt, soundsource, othertxt"):
                 formats.detect(Path("a.txt"))
             self.assertEqual(formats.detect(Path("a.txt"), ("rewcal", "swproj")), "rewcal")
             self.assertEqual(formats.detect(Path("a.cal")), "rewcal")
@@ -183,7 +184,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", "-i", csv)
-        self.assertIn("7 converters from autoeq", err)
+        self.assertIn("8 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
             self.assertEqual(code, 0)
@@ -203,6 +204,14 @@ class ConvertTests(unittest.TestCase):
                     self.assertEqual(code, 0)
                     self.assertEqual(formats.detect(Path(tmp) / name), want)
                     self.assertEqual(run("inspect", Path(tmp) / name)[0], 0)
+            # .txt is rewcal or soundsource; --to picks one, an existing file its content.
+            out = Path(tmp) / "x.txt"
+            code, err = run_error("convert", "-i", csv, "-o", out)
+            self.assertIn("ambiguous", err)
+            self.assertEqual(run("convert", "-i", csv, "-o", out, "--to", "soundsource")[0], 0)
+            self.assertEqual(formats.detect(out), "soundsource")
+            self.assertEqual(run("convert", "-i", csv, "-o", out)[0], 0)
+            self.assertEqual(formats.detect(out), "soundsource")
             # The only conversion of rewcal; the default name is the serial.
             table = Path(tmp) / "t.cal"
             table.write_bytes(SAMPLES["rewcal"].read_bytes())

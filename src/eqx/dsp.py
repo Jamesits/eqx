@@ -92,6 +92,20 @@ def pass_filter(high: bool, frequency: float, q: float,
     return Biquad(abs(b1) / 2, b1, abs(b1) / 2, 1 + alpha, -2 * cos, 1 - alpha)
 
 
+def notch(frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
+    w0 = 2 * math.pi * frequency / sample_rate
+    cos = math.cos(w0)
+    alpha = math.sin(w0) / (2 * q)
+    return Biquad(1, -2 * cos, 1, 1 + alpha, -2 * cos, 1 - alpha)
+
+
+def all_pass(frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
+    w0 = 2 * math.pi * frequency / sample_rate
+    cos = math.cos(w0)
+    alpha = math.sin(w0) / (2 * q)
+    return Biquad(1 - alpha, -2 * cos, 1 + alpha, 1 + alpha, -2 * cos, 1 - alpha)
+
+
 _TWIDDLES: dict[int, list[complex]] = {}
 
 

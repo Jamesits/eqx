@@ -28,6 +28,7 @@ from eqx.ik import arcx, pak
 from eqx.model import EPOCH, Correction, Measurement, MicProfile, Peq
 from eqx.rew import mdat
 from eqx.rme import tmreq
+from eqx.rogueamoeba import soundsource
 from eqx.soundid import crypto, peqb, swmicpkg, swproj
 from eqx.soundid import export_lvnd, export_partners
 from eqx.wav import fir
@@ -575,6 +576,10 @@ def write_tmreq() -> bytes:
                         for side, filters in SPEAKER.items()]).encode()
 
 
+def write_soundsource() -> bytes:
+    return soundsource.write(Correction(soundsource.CHANNEL, -1.5, peqs=[
+        Peq(f, g, q) for f, g, q in SPEAKER["Left"]])).encode()
+
 
 # ---------------------------------------------------------------------------
 # IK Multimedia ARC X
@@ -684,6 +689,7 @@ def export_files() -> dict[str, bytes]:
         f"{EXPORT_TXT_DIR}/Tilt - Flat.txt": write_graphic_text(),
         f"{EXPORT_TXT_DIR}/Tilt - Flat - 8 - PEQ.txt": write_peq_text(),
         f"{TMREQ_DIR}/Tilt - Flat.tmreq": write_tmreq(),
+        f"{SOUNDSOURCE_DIR}/Tilt - Flat.txt": write_soundsource(),
     }
 
 
@@ -699,10 +705,12 @@ BIQUAD_XML_DIR = "soundid/soundid-export-biquad-xml"
 LVND_DIR = "soundid/soundid-export-lvnd"
 EXPORT_TXT_DIR = "soundid/soundid-export-txt"
 TMREQ_DIR = "rme/tmreq"
+SOUNDSOURCE_DIR = "rogueamoeba/soundsource"
 FIR_DIR = "fir/wav"
 
 # (input or tuple of inputs, output, converter options); paths relative to
 # the root.  In dependency order: a later input may be an earlier output.
+# Option "to": the output format, where the extension is shared.
 CONVERSIONS = [
     *((f"{MIC_DIR}/{serial}.swmicpkg", f"{CAL_DIR}/{serial} {angle}.txt", {"angle": angle})
       for serial in MICS for angle in ANGLES),
@@ -721,7 +729,7 @@ CONVERSIONS = [
     (f"{PEQB_DIR}/Tilt Tilt Wired Average.swhp", f"{CSV_DIR}/Tilt Tilt Wired Average Left.csv",
      {"computer_id": COMPUTER_ID}),
     (f"{PRESET_DIR}/Bass and treble.json", f"{CSV_DIR}/Bass and treble.csv", {}),
-    (f"{CSV_DIR}/Bass and treble.csv", f"{CAL_DIR}/Bass and treble.txt", {}),
+    (f"{CSV_DIR}/Bass and treble.csv", f"{CAL_DIR}/Bass and treble.txt", {"to": "rewcal"}),
     ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{PROJ_DIR}/Room Left.swproj",
      {"mic_profile": f"{MIC_DIR}/TILT01.swmicpkg"}),
     (f"{CSV_DIR}/Tilt Tilt Wired Average Left.csv", f"{PEQB_DIR}/Tilt Tilt Wired Average Left.swhp",
@@ -752,6 +760,9 @@ CONVERSIONS = [
     (f"{SONARWORKS_PROJ_DIR}/Bandpass.swproj", f"{FIR_DIR}/Bandpass.wav", {}),
     ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{MDAT_DIR}/Room Left.mdat", {}),
     (f"{CSV_DIR}/Bass and treble.csv", f"{TMREQ_DIR}/Bass and treble.tmreq", {}),
+    (f"{CSV_DIR}/Bass and treble.csv", f"{SOUNDSOURCE_DIR}/Bass and treble.txt",
+     {"to": "soundsource"}),
+    (f"{SOUNDSOURCE_DIR}/Tilt - Flat.txt", f"{CSV_DIR}/Tilt - Flat.csv", {}),
     ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{ARCX_DIR}/Room Left.arcXs", {}),
     (tuple(f"{CAL_DIR}/TILT01 {angle}.txt" for angle in ANGLES), f"{MIC_DIR}/TILT02.swmicpkg",
      {"serial": "TILT02"}),
@@ -762,10 +773,11 @@ PATH_OPTIONS = ("mic_profile", "target_curve")
 def run_conversion(root: Path, source: str | tuple[str, ...], target: str,
                    options: dict) -> convert.Result:
     options = {k: root / v if k in PATH_OPTIONS else v for k, v in options.items()}
+    to = options.pop("to", None)
     paths = [root / s for s in ((source,) if isinstance(source, str) else source)]
     kind = formats.detect(paths[0])
-    pair = convert.find(kind, formats.detect(Path(target), (t for s, t in convert.CONVERTERS
-                                                             if s == kind)))
+    pair = convert.find(kind, to or formats.detect(Path(target), (t for s, t in convert.CONVERTERS
+                                                                   if s == kind)))
     return pair(**options).convert(paths)
 
 

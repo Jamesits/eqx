@@ -17,6 +17,7 @@ from ..model import Correction
 from ..options import Option
 from ..rew import mdat
 from ..rme import tmreq
+from ..rogueamoeba import soundsource
 from ..soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                        export_txt, peqb, swproj, targetpreset)
 from .base import Converter, Result
@@ -257,6 +258,21 @@ class SoundidExportLvndToAutoeq(ExportToAutoeq):
     source = "soundid-export-lvnd"
     options = ()
     loader = export_lvnd.load
+
+    def correction(self, export: correction.Export) -> Correction:
+        return export.corrections[0]
+
+    def output_name(self, path: Path, side: str) -> str:
+        return f"{path.stem}.csv"
+
+
+class SoundsourceToAutoeq(ExportToAutoeq):
+    """One profile applies to both channels, so there is no channel option."""
+
+    source = "soundsource"
+    description = "the EQ curve of a SoundSource Headphone EQ profile"
+    options = ()
+    loader = soundsource.load
 
     def correction(self, export: correction.Export) -> Correction:
         return export.corrections[0]

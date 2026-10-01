@@ -6,7 +6,7 @@ import bisect
 import math
 from dataclasses import dataclass, field
 
-from .dsp import PEQ_SAMPLE_RATE, Biquad, bell, cascade_db, pass_filter, shelf_q
+from .dsp import PEQ_SAMPLE_RATE, Biquad, all_pass, bell, cascade_db, notch, pass_filter, shelf_q
 
 EPOCH = "1970-01-01T00:00:00.000000Z"
 
@@ -88,12 +88,12 @@ class Correction:
         return out
 
 
-PEQ_KINDS = ("bell", "low-shelf", "high-shelf", "low-pass", "high-pass")
+PEQ_KINDS = ("bell", "low-shelf", "high-shelf", "low-pass", "high-pass", "notch", "all-pass")
 
 
 @dataclass(frozen=True)
 class Peq:
-    """A parametric filter.  Shelves take Q; pass filters ignore the gain."""
+    """A parametric filter.  Shelves take Q; pass, notch and all-pass filters ignore the gain."""
 
     frequency: float                        # Hz
     gain_db: float
@@ -107,6 +107,10 @@ class Peq:
             return shelf_q(self.kind == "high-shelf", self.frequency, self.gain_db, self.q)
         if self.kind in ("low-pass", "high-pass"):
             return pass_filter(self.kind == "high-pass", self.frequency, self.q)
+        if self.kind == "notch":
+            return notch(self.frequency, self.q)
+        if self.kind == "all-pass":
+            return all_pass(self.frequency, self.q)
         raise ValueError(f"unsupported filter type {self.kind!r}")
 
 

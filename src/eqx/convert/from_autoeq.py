@@ -1,5 +1,5 @@
 """AutoEq frequency response CSV -> REW calibration and measurement, SoundID project and
-headphone profile, TotalMix Room EQ, ARC X session."""
+headphone profile, TotalMix Room EQ, ARC X session, SoundSource Headphone EQ profile."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from ..model import Correction, Measurement, MicProfile, Peq
 from ..options import Option
 from ..rew import cal, mdat
 from ..rme import tmreq
+from ..rogueamoeba import soundsource
 from ..soundid import layout, peqb
 from .base import Converter, Result
 from .mdat_swproj import (LEVEL_HIGH_HZ, LEVEL_LOW_HZ, SpeakerProjectConverter, interp, resample,
@@ -23,6 +24,11 @@ from .mdat_swproj import (LEVEL_HIGH_HZ, LEVEL_LOW_HZ, SpeakerProjectConverter, 
 COLUMN_OPTION = Option("--column", help=f"AutoEq CSV column to read (default: {response.RAW})")
 DEFAULT_RATE = 48000.0
 RATE_OPTION = Option("--rate", type=float, help="sample rate, Hz (default: 48000)")
+
+# AutoEq's parametric EQ uses ten filters.
+SOUNDSOURCE_FILTERS = 10
+# SoundSource has no upper Q limit; this one keeps each bell several grid points wide.
+SOUNDSOURCE_MAX_Q = 9.9
 
 # Downloaded average profiles use this error band.
 ERROR_BAND_DB = 3.0
@@ -216,6 +222,43 @@ class AutoeqToTmreq(Converter):
             notes.append(f"{channel}: gain {fit.gain_db:+.2f} dB, {len(fit.bells)} bells; "
                          f"error {fit.rms_db:.2f} dB RMS, {fit.max_db:.2f} dB max")
         return Result(tmreq.write(corrections).encode("utf-8"), f"{paths[0].stem}.tmreq", notes)
+
+
+class AutoeqToSoundsource(Converter):
+    """The column is the EQ gain; bells and the preamp are fitted to it.
+
+    The fit runs on the standard grid within SoundSource's frequency range.
+    One profile applies to both channels, so there is one input.
+    """
+
+    source = "autoeq"
+    target = "soundsource"
+    description = "an EQ curve as a SoundSource Headphone EQ profile of bells"
+    options = (
+        COLUMN_OPTION,
+        Option("--filters", type=int,
+               help=f"maximum number of bells, 1-{soundsource.MAX_FILTERS} "
+                    f"(default: {SOUNDSOURCE_FILTERS})"),
+    )
+
+    def __init__(self, column: str = response.RAW, filters: int = SOUNDSOURCE_FILTERS):
+        if not 1 <= filters <= soundsource.MAX_FILTERS:
+            raise ValueError(f"--filters must be 1-{soundsource.MAX_FILTERS}")
+        self.column = column
+        self.filters = filters
+
+    def _convert(self, path: Path) -> Result:
+        low, high = soundsource.FREQUENCY_HZ
+        grid = [f for f in standard_grid() if low <= f <= high]
+        points = response.load(path).curve(self.column)
+        fit = dsp.fit_bells(grid, _log_resample(points, grid), self.filters,
+                            frequency_hz=soundsource.FREQUENCY_HZ,
+                            q=(soundsource.MIN_Q, SOUNDSOURCE_MAX_Q))
+        c = Correction(soundsource.CHANNEL, fit.gain_db,
+                       peqs=[Peq(f, g, q) for f, g, q in fit.bells])
+        return Result(soundsource.write(c).encode("utf-8"), f"{path.stem}.txt",
+                      [f"preamp {fit.gain_db:+.2f} dB, {len(fit.bells)} bells; "
+                       f"error {fit.rms_db:.2f} dB RMS, {fit.max_db:.2f} dB max"])
 
 
 # The impulse starts this many samples into the impulse response, as after a

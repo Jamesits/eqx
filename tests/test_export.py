@@ -190,8 +190,8 @@ class SelectTests(unittest.TestCase):
     def test_correction_sum(self):
         c = Correction("x", gain_db=1.0, peqs=[Peq(1000, 3, 1)], points=[(100, 2), (10000, 4)])
         self.assertAlmostEqual(c.response([1000])[0], 1 + 3 + 3)
-        with self.assertRaisesRegex(ValueError, "unsupported filter type 'notch'"):
-            Correction("x", peqs=[Peq(1000, 3, 1, "notch")]).response([1000])
+        with self.assertRaisesRegex(ValueError, "unsupported filter type 'band-pass'"):
+            Correction("x", peqs=[Peq(1000, 3, 1, "band-pass")]).response([1000])
 
 
 class DetectTests(unittest.TestCase):

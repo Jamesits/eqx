@@ -24,6 +24,7 @@ DO check the output levels on all frequencies before playing any audio.
 | REW measurement | `.mdat` | `mdat` | ✓ | ✓ |
 | REW microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ |
 | RME TotalMix FX Room EQ preset | `.tmreq` | `tmreq` | ✓ | ✓ |
+| Rogue Amoeba SoundSource Headphone EQ custom profile | `.txt` | `soundsource` | ✓ | ✓ |
 | SoundID Reference 5.x headphone profile | `.swhp` | `peqb` | ✓ | ✓ |
 | SoundID Reference 5.x project | `.swproj` | `swproj` | ✓ | ✓ |
 | SoundID Reference 5.x microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ |

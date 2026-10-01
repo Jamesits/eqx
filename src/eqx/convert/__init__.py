@@ -6,26 +6,27 @@ from .arc4_swproj import Arc4ToSwproj
 from .arcx_swproj import ArcxToSwproj
 from .base import Converter, Result
 from .fir import AutoeqToFir, FirToAutoeq, PeqbToFir, SwprojToFir
-from .from_autoeq import (AutoeqToArcx, AutoeqToMdat, AutoeqToPeqb, AutoeqToRewcal, AutoeqToSwproj,
-                          AutoeqToTmreq)
+from .from_autoeq import (AutoeqToArcx, AutoeqToMdat, AutoeqToPeqb, AutoeqToRewcal,
+                          AutoeqToSoundsource, AutoeqToSwproj, AutoeqToTmreq)
 from .mdat_swproj import MdatToSwproj
 from .rewcal_swmicpkg import RewcalToSwmicpkg
 from .swmicpkg_rewcal import SwmicpkgToRewcal
 from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, MdatToAutoeq, PeqbToAutoeq,
                         SoundidExportBiquadJsonToAutoeq, SoundidExportBiquadXmlToAutoeq,
                         SoundidExportLvndToAutoeq,
-                        SoundidExportPeqJsonToAutoeq, SoundidExportTxtToAutoeq, SwprojToAutoeq,
-                        TargetpresetToAutoeq, TmreqToAutoeq)
+                        SoundidExportPeqJsonToAutoeq, SoundidExportTxtToAutoeq,
+                        SoundsourceToAutoeq, SwprojToAutoeq, TargetpresetToAutoeq, TmreqToAutoeq)
 
 CONVERTERS: dict[tuple[str, str], type[Converter]] = {
     (c.source, c.target): c for c in (
         MdatToSwproj, SwmicpkgToRewcal,
         MdatToAutoeq, SwprojToAutoeq, PeqbToAutoeq, TargetpresetToAutoeq,
         AutoeqToRewcal, AutoeqToSwproj, AutoeqToPeqb, AutoeqToMdat, AutoeqToTmreq, AutoeqToArcx,
+        AutoeqToSoundsource,
         RewcalToSwmicpkg,
         SoundidExportBiquadJsonToAutoeq, SoundidExportPeqJsonToAutoeq,
         SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq, SoundidExportTxtToAutoeq,
-        TmreqToAutoeq,
+        TmreqToAutoeq, SoundsourceToAutoeq,
         ArcxToAutoeq, ArcxToSwproj, Arc4ToAutoeq, Arc4ToSwproj,
         PeqbToFir, SwprojToFir, AutoeqToFir, FirToAutoeq,
     )
