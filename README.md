@@ -15,7 +15,7 @@ DO check the output levels on all frequencies before playing any audio.
 ## Supported File Formats
 
 | Format | Extension | `--format` | Read | Write |
-|---|---|---|:-:|:-:|
+|:---|:---|:---|:-:|:-:|
 | AutoEq | `.csv` | `autoeq` | ✓ | ✓ |
 | FIR filter (Equalizer APO, CamillaDSP, Roon, ...) | `.wav` | `fir` | ✓ | ✓ |
 | IK Multimedia ARC X 2.x session | `.arcXs` | `arcx` | ✓ | |
