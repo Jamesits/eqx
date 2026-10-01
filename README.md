@@ -60,6 +60,8 @@ Capabilities:
 - Read: `inspect` and `convert` input
 - Write: `convert` output
 
+For use with other applications, try convert with [AutoEq](https://github.com/jaakkopasanen/AutoEq/wiki/Choosing-an-Equalizer-App).
+
 ## Usage
 
 Options are per-format; use `--help` to list them. Ask your AI friends for help if you don't know how to use it.
