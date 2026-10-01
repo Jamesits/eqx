@@ -13,7 +13,10 @@ dependencies = [
 eqx = "eqx.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.16.9",
+]
 
 [build-system]
 requires = ["uv_build>=0.8,<0.13"]
