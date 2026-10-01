@@ -138,14 +138,11 @@ def cmd_convert(args) -> int:
 # --------------------------------------------------------------------------
 def cmd_computer_id(args) -> int:
     cid = computerid.local()
-    print(f"cpu          : {cid.cpu.decode('latin-1')}")
-    print(f"disk serial  : {cid.disk_serial.decode('latin-1')!r}")
-    print(f"board serial : {cid.board_serial.decode('latin-1')!r}")
-    print(f"volume serial: {cid.volume_serial.decode('latin-1')!r}")
-    print(f"dynamic disk : {cid.dynamic_disk}")
-    print(f"computer id  : {cid.value}")
+    for label, value in cid.parts():
+        print(f"{label:<13}: {value}")
+    print(f"{'computer id':<13}: {cid.value}")
     for app, value in cid.values().items():
-        print(f"  {app + ':':<24}{value}")
+        print(f"  {app + ':':<30}{value}")
     return 0
 
 

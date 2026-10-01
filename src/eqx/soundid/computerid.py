@@ -15,6 +15,23 @@ Sonarworks Reference 3:
 
 ``volume`` is the decimal volume serial number of the Windows drive.  Each byte
 is widened to one UTF-16 unit, not decoded.
+
+SoundID Reference on macOS:
+
+    id = "g" + hex(SHA1(UTF-32LE(cpu + "2\\n" + serial + "3\\n")))
+
+``serial`` is ``IOPlatformSerialNumber``.  Each byte is sign-extended to one
+UTF-32 unit.  An empty part is left out with its suffix.  ``cpu`` differs
+between the arm64 and the x86_64 build; see ``mac_cpu_string`` and
+``mac_x86_cpu_string``.
+
+Sonarworks Reference 4 and 3 on macOS (x86_64 and i386 builds only):
+
+    id = "g" + hex(SHA1(UTF-32LE(cpu + "2\\n" + serial + "3\\n")))     # 4
+    id =       hex(SHA1(UTF-32LE(cpu + "2\\n" + serial + "3\\n")))     # 3
+
+``cpu`` always comes from CPUID (``mac_cpuid_string``); on Apple silicon it is
+what Rosetta reports.
 """
 
 from __future__ import annotations
@@ -85,6 +102,109 @@ class ComputerId:
                 pass
         return out
 
+    def parts(self) -> list[tuple[str, str]]:
+        return [("cpu", self.cpu.decode("latin-1")),
+                ("disk serial", repr(self.disk_serial.decode("latin-1"))),
+                ("board serial", repr(self.board_serial.decode("latin-1"))),
+                ("volume serial", repr(self.volume_serial.decode("latin-1"))),
+                ("dynamic disk", str(self.dynamic_disk))]
+
+
+# What the x86_64 build assumes for hw.cpufamily, by brand string.
+_MAC_X86_FAMILIES = (
+    (b"Apple M1", 0x1B588BB3, 0x1B588BB3, 0x1B588BB3),     # base, Pro, Max
+    (b"Apple M2", 0xDA33D83D, 0xDA33D83D, 0xDA33D83D),
+    (b"Apple M3", 0xFA33415E, 0x5F4DEA93, 0x72015832),
+    (b"Apple M4", 0x6F5129AC, 0x17D5B93A, 0x17D5B93A),
+)
+_CPU_TYPE_ARM64, _CPU_SUBTYPE_ARM64E = 0x100000C, 2
+
+
+@dataclass
+class MacComputerId:
+    cpu: bytes
+    serial: bytes
+    rosetta_cpu: bytes = b""            # cpu part of the x86_64 build on Apple silicon
+    cpuid_cpu: bytes = b""              # cpu part of Sonarworks Reference 3 / 4
+
+    @staticmethod
+    def _value(cpu: bytes, serial: bytes) -> str:
+        return "g" + _mac_hash(cpu, serial)
+
+    @property
+    def value(self) -> str:
+        """The SoundID Reference ID."""
+        return self._value(self.cpu, self.serial)
+
+    def values(self) -> dict[str, str]:
+        out = {"SoundID Reference": self.value}
+        if self.rosetta_cpu:
+            out["SoundID Reference (Rosetta)"] = self._value(self.rosetta_cpu, self.serial)
+        if self.cpuid_cpu:
+            out["Sonarworks Reference 4"] = self._value(self.cpuid_cpu, self.serial)
+            # Sonarworks Reference 3 reads the serial into a 32-byte C string.
+            out["Sonarworks Reference 3"] = _mac_hash(
+                self.cpuid_cpu, self.serial if len(self.serial) < 32 else b"")
+        return out
+
+    def parts(self) -> list[tuple[str, str]]:
+        out = [("cpu", repr(self.cpu.rstrip(b"\0").decode("latin-1"))),
+               ("serial", repr(self.serial.decode("latin-1")))]
+        if self.rosetta_cpu:
+            out.append(("rosetta cpu", repr(self.rosetta_cpu.rstrip(b"\0").decode("latin-1"))))
+        if self.cpuid_cpu and self.cpuid_cpu != self.cpu:
+            out.append(("cpuid cpu", repr(self.cpuid_cpu.decode("latin-1"))))
+        return out
+
+
+def _mac_hash(cpu: bytes, serial: bytes) -> str:
+    s = (cpu + b"2\n" if cpu else b"") + (serial + b"3\n" if serial else b"")
+    units = struct.pack(f"<{len(s)}i", *(b - 256 if b >= 0x80 else b for b in s))
+    return hashlib.sha1(units).hexdigest()
+
+
+def _mac_brand(brand: bytes | None) -> bytes:
+    """``machdep.cpu.brand_string`` as SoundID holds it; None if sysctl failed.
+
+    SoundID keeps the whole zeroed 1024-byte buffer, NULs included.
+    """
+    return b"Unknown" if brand is None else brand[:1023].ljust(1024, b"\0")
+
+
+def mac_cpu_string(brand: bytes | None, family: int, subfamily: int,
+                   cputype: int, cpusubtype: int) -> bytes:
+    """cpu part of the arm64 build from the brand string and the ``hw.cpu*`` sysctls.
+
+    A brand with "Apple M" but not "Apple M1" to "Apple M4" is used as is.
+    """
+    s = _mac_brand(brand)
+    if b"Apple M" in s and not any(b"Apple M%d" % n in s for n in range(1, 5)):
+        return s
+    return f"{family}{subfamily}{cputype}{cpusubtype}".encode()
+
+
+def mac_x86_cpu_string(brand: bytes | None, signature: int = 0) -> bytes:
+    """cpu part of the x86_64 build (Intel Macs and Rosetta).
+
+    ``signature`` is CPUID leaf 1 EAX (``machdep.cpu.signature``).  On Apple
+    silicon the build fakes the arm64 sysctls from the brand string.
+    """
+    s = _mac_brand(brand)
+    variant = 5 if b"Max" in s else 4 if b"Pro" in s else 2
+    for name, base, pro, max_ in _MAC_X86_FAMILIES:
+        if name in s:
+            family = pro if b"Pro" in s else max_ if b"Max" in s else base
+            return f"{family}{variant}{_CPU_TYPE_ARM64}{_CPU_SUBTYPE_ARM64E}".encode()
+    if b"Apple M" in s:
+        return s
+    return mac_cpuid_string(signature)
+
+
+def mac_cpuid_string(signature: int) -> bytes:
+    """cpu part from CPUID leaf 1 EAX: family, model, stepping, EAX, cut to 10 characters."""
+    eax = signature & 0xFFFFFFFF
+    return f"{(eax >> 8) & 0xF}{(eax >> 4) & 0xF}{eax & 0xF}{eax}"[:10].encode()
+
 
 def cpu_string(arch: int, level: int, revision: int) -> bytes:
     """Decimal concatenation of the ``SYSTEM_INFO`` processor fields.
@@ -128,10 +248,12 @@ def smbios_board_serial(table: bytes) -> bytes:
     raise ValueError("motherboard serial not found in the SMBIOS table")
 
 
-def local() -> ComputerId:
-    """Collect the ID parts of this machine (Windows only)."""
+def local() -> ComputerId | MacComputerId:
+    """Collect the ID parts of this machine (Windows or macOS)."""
+    if sys.platform == "darwin":
+        return _local_mac()
     if sys.platform != "win32":
-        raise OSError("the computer ID can only be read on Windows")
+        raise OSError("the computer ID can only be read on Windows or macOS")
     import ctypes
     from ctypes import wintypes as w
 
@@ -213,3 +335,70 @@ def _disk_serial(ioctl, handle) -> tuple[bytes, bool]:
     if not offset:
         return b"", False
     return desc[offset:desc.index(b"\0", offset)], False
+
+
+def _local_mac() -> MacComputerId:
+    import ctypes
+    import re
+    import subprocess
+
+    libc = ctypes.CDLL(None)
+    libc.sysctlbyname.argtypes = [ctypes.c_char_p, ctypes.c_void_p,
+                                  ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t]
+
+    def sysctl(name: str, size: int) -> bytes | None:
+        buf = ctypes.create_string_buffer(size + 1)
+        n = ctypes.c_size_t(size)
+        if libc.sysctlbyname(name.encode(), buf, ctypes.byref(n), None, 0):
+            return None
+        return buf.raw[:n.value]
+
+    def u32(name: str) -> int:
+        v = sysctl(name, 4)
+        return struct.unpack("<I", v)[0] if v and len(v) == 4 else 0
+
+    brand = sysctl("machdep.cpu.brand_string", 1023)
+    if brand is not None:
+        brand = brand.split(b"\0", 1)[0]
+    if not u32("hw.optional.arm64"):
+        signature = u32("machdep.cpu.signature")
+        cpu, rosetta = mac_x86_cpu_string(brand, signature), b""
+        cpuid = mac_cpuid_string(signature)
+    else:
+        rosetta = mac_x86_cpu_string(brand)
+        # Under Rosetta the hw.cpu* sysctls describe the emulated x86 CPU; the
+        # x86_64 build's guess from the brand string is the best available.
+        translated = u32("sysctl.proc_translated")
+        cpu = rosetta if translated else mac_cpu_string(
+            brand, u32("hw.cpufamily"), u32("hw.cpusubfamily"),
+            u32("hw.cputype"), u32("hw.cpusubtype"))
+        cpuid = _rosetta_cpuid(u32("machdep.cpu.signature") if translated else 0)
+
+    serial = b""
+    try:
+        out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                             capture_output=True, check=True).stdout
+        m = re.search(rb'"IOPlatformSerialNumber" = "([^"]*)"', out)
+        if m and m.group(1).isascii():
+            serial = m.group(1)
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    return MacComputerId(cpu, serial, rosetta, cpuid)
+
+
+def _rosetta_cpuid(signature: int) -> bytes:
+    """CPUID cpu part an x86_64 process sees under Rosetta; empty if unknown.
+
+    A native process asks an x86_64 ``sysctl`` for the signature.
+    """
+    import subprocess
+
+    if not signature:
+        try:
+            out = subprocess.run(["arch", "-x86_64", "/usr/sbin/sysctl", "-n",
+                                  "machdep.cpu.signature"],
+                                 capture_output=True, check=True).stdout
+            signature = int(out)
+        except (OSError, ValueError, subprocess.CalledProcessError):
+            return b""
+    return mac_cpuid_string(signature)
