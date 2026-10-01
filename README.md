@@ -7,7 +7,7 @@ Inspect and convert equalizer and audio correction files.
 
 ## WARNINGS
 
-**!!! Use at your own risk !!!**
+**!!! Use at your OWN RISK !!!**
 
 Loading audio correction / calibration curves might fry your soundcards, speakers / headphones and ears.
 DO check the output levels on all frequencies before playing any audio.
@@ -16,32 +16,34 @@ DO check the output levels on all frequencies before playing any audio.
 
 | Software | Format | Extension | `--format` | Read | Write | Notes |
 |:---|:---|:---|:---|:-:|:-:|:---|
-| AutoEq | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
-| Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | Equalizer APO, CamillaDSP, Roon, ... |
-| IK Multimedia ARC X 2.x | Session | `.arcXs` | `arcx` | ✓ | ✓ | Untested: no hardware |
-| IK Multimedia ARC X 2.x | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
+| [AutoEq](https://autoeq.app/) | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
+| Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), [CamillaDSP](https://github.com/HEnquist/camilladsp), [Roon](https://help.roonlabs.com/portal/en/kb/articles/dsp-engine-convolution#Introduction), ... |
+| [IK Multimedia ARC X 2.x](https://www.ikmultimedia.com/products/arcx/) | Session | `.arcXs` | `arcx` | ✓ | ✓ | Untested: no hardware |
+| | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | IK Multimedia ARC 4 | Analysis | `.arc4a` | `arc4` | ✓ | | Untested: no hardware |
-| REW | Measurement | `.mdat` | `mdat` | ✓ | ✓ | |
-| REW | Microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ | |
-| RME TotalMix FX | Room EQ preset | `.tmreq` | `tmreq` | ✓ | ✓ | Untested: no hardware |
-| Rogue Amoeba SoundSource | Headphone EQ custom profile | `.txt` | `soundsource` | ✓ | ✓ | |
-| SoundID Reference 5.x | Headphone profile | `.swhp` | `peqb` | ✓ | ✓ | |
-| SoundID Reference 5.x | Project | `.swproj` | `swproj` | ✓ | ✓ | |
-| SoundID Reference 5.x | Microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ | |
-| SoundID Reference 5.x | Target preset | `.json` | `targetpreset` | ✓ | | |
-| SoundID Reference 5.x | Export: ADAM Audio A Series | `.adam` | `soundid-export-biquad-xml` | ✓ | | Untested: no hardware |
-| SoundID Reference 5.x | Export: Dolby Atmos Renderer | `.txt` | `soundid-export-txt` | ✓ | | Untested: no license |
-| SoundID Reference 5.x | Export: Fluid Audio | `.bin` | `soundid-export-biquad-json` | ✓ | | Untested: no hardware |
-| SoundID Reference 5.x | Export: Grace Design m908 | `.bin` | `soundid-export-peq-json` | ✓ | | Untested: no hardware |
-| SoundID Reference 5.x | Export: Lynx Aurora | `.bin` | `soundid-export-peq-json` | ✓ | | Untested: no hardware |
-| SoundID Reference 5.x | Export: MERGING+ANUBIS | `.bin` | `soundid-export-biquad-json` | ✓ | | Untested: no hardware |
-| SoundID Reference 5.x | Export: SPQ DSP (AVID MTRX, DAD) | `.txt` | `soundid-export-txt` | ✓ | | Untested: no hardware |
-| SoundID Reference 5.x | Export: Wayne Jones AUDIO | `.bin` | `soundid-export-lvnd` | ✓ | | Untested: no hardware |
+| [REW](https://www.roomeqwizard.com/) | Measurement | `.mdat` | `mdat` | ✓ | ✓ | |
+| | Microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ | |
+| [RME TotalMix FX](https://rme-audio.de/totalmix-fx.html) | [Room EQ preset](https://rme-audio.de/totalmix-fx-room-eq.html) | `.tmreq` | `tmreq` | ✓ | ✓ | Untested: no hardware |
+| [Rogue Amoeba SoundSource](https://rogueamoeba.com/soundsource/) | [Headphone EQ custom profile](https://rogueamoeba.com/support/knowledgebase/?showArticle=SoundSource-Custom-HPEQ) | `.txt` | `soundsource` | ✓ | ✓ | |
+| [SoundID Reference 5.x](https://www.sonarworks.com/soundid-reference) | Headphone profile | `.swhp` | `peqb` | ✓ | ✓ | |
+| | Project | `.swproj` | `swproj` | ✓ | ✓ | |
+| | Microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ | |
+| | Target preset | `.json` | `targetpreset` | ✓ | | |
+| | Export: ADAM Audio A Series | `.adam` | `soundid-export-biquad-xml` | ✓ | | Untested: no hardware |
+| | Export: Dolby Atmos Renderer | `.txt` | `soundid-export-txt` | ✓ | | Untested: no license |
+| | Export: Fluid Audio | `.bin` | `soundid-export-biquad-json` | ✓ | | Untested: no hardware |
+| | Export: Grace Design m908 | `.bin` | `soundid-export-peq-json` | ✓ | | Untested: no hardware |
+| | Export: Lynx Aurora | `.bin` | `soundid-export-peq-json` | ✓ | | Untested: no hardware |
+| | Export: MERGING+ANUBIS | `.bin` | `soundid-export-biquad-json` | ✓ | | Untested: no hardware |
+| | Export: SPQ DSP (AVID MTRX, DAD) | `.txt` | `soundid-export-txt` | ✓ | | Untested: no hardware |
+| | Export: Wayne Jones AUDIO | `.bin` | `soundid-export-lvnd` | ✓ | | Untested: no hardware |
 | Sonarworks Reference 3.x, 4.x | Headphone profile | `.swhp` | `peqb` | ✓ | | Untested: no license |
-| Sonarworks Reference 3.x, 4.x | Project | `.swproj` | `swproj` | ✓ | ✓ | Untested: no license |
-| Sonarworks Reference 3.x, 4.x | Export (including the PEQb 2.x and `PEQB` versions) | `.eqb` | `peqb` | ✓ | | Untested: no license |
+| | Project | `.swproj` | `swproj` | ✓ | ✓ | Untested: no license |
+| | Export (including the PEQb 2.x and `PEQB` versions) | `.eqb` | `peqb` | ✓ | | Untested: no license |
 
-Read: `inspect` and `convert` input. Write: `convert` output. `convert` takes the same values in `--from` / `--to`; `uv run eqx convert --help` lists the conversions.
+Capabilities:
+- Read: `inspect` and `convert` input
+- Write: `convert` output
 
 ## Usage
 
@@ -50,6 +52,11 @@ Options are per-format; use `--help` to list them. Ask your AI friends for help 
 Inspect a file:
 ```shell
 uv run eqx inspect <file> [--format <format>] [--full] [...options]
+```
+
+List available conversion paths:
+```shell
+uv run eqx convert --help
 ```
 
 Convert files (`-i` is repeatable, e.g. left then right):
