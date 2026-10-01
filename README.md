@@ -19,7 +19,7 @@ DO check the output levels on all frequencies before playing any audio.
 | [AutoEq](https://autoeq.app/) | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
 | [Dirac Live 3.x](https://www.dirac.com/live/) | Target curve | `.targetcurve` | `targetcurve` | ✓ | ✓ | Untested: no license |
 | [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license |
-| Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), [CamillaDSP](https://github.com/HEnquist/camilladsp), [Roon](https://help.roonlabs.com/portal/en/kb/articles/dsp-engine-convolution#Introduction), ... |
+| Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), [CamillaDSP](https://github.com/HEnquist/camilladsp), [Audio Hijack](https://rogueamoeba.com/support/manuals/audiohijack/?page=advancedblocks#fir-filter), [Roon](https://help.roonlabs.com/portal/en/kb/articles/dsp-engine-convolution#Introduction), ... |
 | [IK Multimedia ARC X 2.x](https://www.ikmultimedia.com/products/arcx/) | Session | `.arcXs` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | IK Multimedia ARC 4 | Analysis | `.arc4a` | `arc4` | ✓ | | Untested: no hardware |
