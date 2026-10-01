@@ -2,8 +2,9 @@
 
 ![Works - On My Machine](https://img.shields.io/badge/Works-On_My_Machine-2ea44f)
 ![100% Written by AI](https://img.shields.io/badge/Written_by_AI-100%25-blue)
+![Project Status - Feature Complete](https://img.shields.io/badge/Project_Status-Feature_Complete-2ea44f)
 
-Inspect and convert equalizer, mic and room correction files.
+Inspect and convert equalizer, mic and room correction files. Calibrate in any software, apply correction to every software.
 
 ## WARNINGS
 
@@ -28,9 +29,9 @@ DO check the output levels on all frequencies before playing any audio.
 | | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | IK Multimedia ARC 4 | Analysis | `.arc4a` | `arc4` | ✓ | | Untested: no hardware |
 | [miniDSP UMIK Series](https://www.minidsp.com/products/acoustic-measurement) | Microphone calibration | `.txt` | `umik` | ✓ | | |
-| [Rational Acoustics Smaart 9](https://www.rationalacoustics.com/pages/smaart) | Transfer function trace | `.trf` | `smaart-trf` | ✓ | ✓ | Not yet checked in Smaart |
-| | Spectrum trace | `.srf` | `smaart-srf` | ✓ | ✓ | Not yet checked in Smaart |
-| | ASCII export, Import ASCII | `.txt` | `smaart-ascii` | ✓ | ✓ | Not yet checked in Smaart |
+| [Rational Acoustics Smaart 9](https://www.rationalacoustics.com/pages/smaart) | Transfer function trace | `.trf` | `smaart-trf` | ✓ | ✓ | |
+| | Spectrum trace | `.srf` | `smaart-srf` | ✓ | ✓ | |
+| | ASCII export, Import ASCII | `.txt` | `smaart-ascii` | ✓ | ✓ | |
 | | Target curve | `.crv` | `smaart-curve` | ✓ | ✓ | |
 | | Microphone correction curve | `.crv` | `smaart-curve` | ✓ | | |
 | Rational Acoustics Smaart 7 and older | Reference file | `.ref` | `smaart-ref` | ✓ | | Untested: software unavailable |
@@ -77,6 +78,8 @@ Convert files (`-i` is repeatable, e.g. left then right):
 ```shell
 uv run eqx convert -i <in-file> [-i <in-file>] -o <out-file> [--from <format>] [--to <format>] [...options]
 ```
+
+You can use it as a Python library too.
 
 ## Development
 
