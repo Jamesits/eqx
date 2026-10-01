@@ -3,20 +3,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import gen_testdata
+from helpers import csv_points
+from testgen import common, dirac
 from eqx import dsp, formats, protobuf
 from eqx.autoeq import response
-from eqx.convert.dirac import DiracFilterToAutoeq, DiracFilterToFir, FirToDiracFilter
-from eqx.convert.mdat_swproj import resample
+from eqx.convert import DiracFilterToAutoeq, DiracFilterToFir, FirToDiracFilter
+from eqx.curve import resample
 from eqx.dirac import filterslot, playback
 from eqx.wav import fir
 
-ROOT = gen_testdata.ROOT
-DIR = ROOT / gen_testdata.DIRAC_FILTER_DIR
+ROOT = common.ROOT
+DIR = ROOT / dirac.DIRAC_FILTER_DIR
 FIIR = DIR / "FIIR.bin"
 SIGNED = DIR / "FIIR signed.bin"
 DRFIR = DIR / "Bass and treble.bin"
-CSV = ROOT / gen_testdata.CSV_DIR / "Bass and treble.csv"
+CSV = ROOT / common.CSV_DIR / "Bass and treble.csv"
 
 
 def encoded(slot: dict) -> bytes:
@@ -25,7 +26,7 @@ def encoded(slot: dict) -> bytes:
 
 
 def section_ir(n: int) -> list[float]:
-    s = gen_testdata.FIIR_SECTION
+    s = dirac.FIIR_SECTION
     y = []
     for i in range(n):
         x = s["b0"] if i == 0 else s["b1"] if i == 1 else 0.0
@@ -76,17 +77,17 @@ class ContainerTests(unittest.TestCase):
         data = FIIR.read_bytes()
         f = filterslot.read(data)
         self.assertEqual((f.version, f.signature), (2, None))
-        self.assertEqual(encoded(f.slot), encoded(gen_testdata.fiir_slot()))
+        self.assertEqual(encoded(f.slot), encoded(dirac.fiir_slot()))
         self.assertEqual(filterslot.write(f.slot), data)
 
     def test_version_1(self):
         data = FIIR.read_bytes()
         f = filterslot.read(data[:8] + struct.pack("<I", 1) + data[16:])
-        self.assertEqual((f.version, encoded(f.slot)), (1, encoded(gen_testdata.fiir_slot())))
+        self.assertEqual((f.version, encoded(f.slot)), (1, encoded(dirac.fiir_slot())))
 
     def test_signed(self):
         f = filterslot.read(SIGNED.read_bytes())
-        self.assertEqual(encoded(f.slot), encoded(gen_testdata.fiir_slot()))
+        self.assertEqual(encoded(f.slot), encoded(dirac.fiir_slot()))
         self.assertEqual(f.signature.key_id, 1)
         self.assertEqual(f.signature.signed[:4], struct.pack(">I", 1))
         self.assertFalse(f.signature.verify())
@@ -109,7 +110,7 @@ class ContainerTests(unittest.TestCase):
 
 class PlaybackTests(unittest.TestCase):
     def test_fiir(self):
-        slot = gen_testdata.fiir_slot()
+        slot = dirac.fiir_slot()
         ir, cross = playback.impulse_response(slot, 0, 48000)
         tail = section_ir(len(ir) - 3)
         want = [1.0, 0.5, 0.25] + tail
@@ -119,7 +120,7 @@ class PlaybackTests(unittest.TestCase):
         self.assertLess(abs(ir[-1]), 1e-9 * max(map(abs, tail)) * 2)
 
     def test_gain_delay_and_cross_terms(self):
-        slot = gen_testdata.fiir_slot()
+        slot = dirac.fiir_slot()
         ir, cross = playback.impulse_response(slot, 1, 48000)
         gain = 10 ** (-6 / 20)
         self.assertEqual(cross, 1)
@@ -129,7 +130,7 @@ class PlaybackTests(unittest.TestCase):
             self.assertAlmostEqual(got, w, places=12)
 
     def test_unsupported(self):
-        slot = gen_testdata.fiir_slot()
+        slot = dirac.fiir_slot()
         with self.assertRaisesRegex(ValueError, "no 44100 Hz filter; available: 48000"):
             playback.impulse_response(slot, 0, 44100)
         slot["sections"][0]["filter_type"] = filterslot.FILTER_TYPES.index("MULTI_RATE_FILTER")
@@ -175,7 +176,7 @@ class ConversionTests(unittest.TestCase):
     def test_to_autoeq_follows_source(self):
         result = DiracFilterToAutoeq(speaker="right", rate=44100).convert([DRFIR])
         self.assertEqual(result.name, "Bass and treble Right.csv")
-        got = response.read(result.data.decode()).curve()
+        got = csv_points(result)
         source = response.load(CSV).curve()
         want = resample([f for f, _ in source], [v for _, v in source], [f for f, _ in got])
         self.assertLess(max(abs(g - w) for (_, g), w in zip(got, want)), 0.05)
@@ -183,7 +184,7 @@ class ConversionTests(unittest.TestCase):
     def test_to_fir(self):
         f = fir.read(DiracFilterToFir().convert([FIIR]).data)
         self.assertEqual((f.sample_rate, len(f.channels)), (48000, 2))
-        ir, _ = playback.impulse_response(gen_testdata.fiir_slot(), 1, 48000)
+        ir, _ = playback.impulse_response(dirac.fiir_slot(), 1, 48000)
         for got, w in zip(f.channels[1], ir):
             self.assertAlmostEqual(got, w, places=6)
 
@@ -194,7 +195,7 @@ class ConversionTests(unittest.TestCase):
             DiracFilterToAutoeq(rate=96000)
 
     def test_from_fir(self):
-        wav = ROOT / gen_testdata.FIR_DIR / "Room.wav"
+        wav = ROOT / common.FIR_DIR / "Room.wav"
         source = fir.load(wav)
         slot = filterslot.read(FirToDiracFilter().convert([wav]).data).slot
         self.assertEqual(sorted(playback.live_section(slot)["rates"]), list(playback.RATES))

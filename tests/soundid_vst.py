@@ -32,7 +32,7 @@ from pathlib import Path
 import numpy as np
 import pedalboard
 
-from eqx.convert.fir import PeqbToFir, SwprojToFir
+from eqx.convert.to_fir import PeqbToFir, SwprojToFir
 from eqx.soundid import playback
 from eqx.wav import fir
 

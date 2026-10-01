@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 from ..correction import Export, ExportInspector
-from ..fileformat import Format
+from ..fileformat import Format, fixed, head_text
 from ..model import Correction, Peq
 
 MAX_FILTERS = 32
@@ -111,13 +111,12 @@ def load(path) -> Export:
 
 def sniff(data: bytes) -> bool:
     """A filter line among the first lines."""
-    text = data[:4096].decode("utf-8", errors="replace")
+    text = head_text(data)
     return any(is_filter_line(line) and _FILTER.search(line) for line in text.split("\n"))
 
 
 def _fixed(value: float, digits: int) -> str:
-    text = f"{value:.{digits}f}".rstrip("0").rstrip(".")
-    return "0" if text == "-0" else text
+    return fixed(value, digits).rstrip("0").rstrip(".")
 
 
 TOKENS = {kind: tokens[0] for kind, tokens in KINDS.items()}

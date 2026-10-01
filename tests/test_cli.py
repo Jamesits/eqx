@@ -5,13 +5,14 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from testgen import common
 from eqx import cli, convert, formats, graph
 from eqx.fileformat import Format, Inspector
 from eqx.report import Table
 from eqx.rew import cal
 from eqx.soundid import swmicpkg, swproj
 
-TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
+TESTDATA = common.ROOT
 PACKAGE = TESTDATA / "soundid/swmicpkg/TILT01.swmicpkg"
 MDAT = TESTDATA / "rew/mdat/Room.mdat"
 SAMPLES = {

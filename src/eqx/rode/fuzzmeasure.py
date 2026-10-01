@@ -29,9 +29,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .. import caf, keyedarchive
-from ..fileformat import Format, Inspector, frequency_range
-from ..ik import arcx
+from .. import caf, impulse, keyedarchive
+from ..fileformat import Format, Inspector, frequency_range, response_section
 from ..keyedarchive import Instance, Ref
 from ..options import Option
 from ..report import Section, Table
@@ -136,7 +135,7 @@ class Record:
 
     def peak_index(self) -> int:
         """Sample of the impulse peak, from -n/2 to n/2."""
-        peak = arcx.peak_index(self.ir)
+        peak = impulse.peak_index(self.ir)
         return peak - len(self.ir) if peak >= len(self.ir) // 2 else peak
 
     def peak_ms(self) -> float:
@@ -422,12 +421,12 @@ def response(record: Record, frequencies: list[float] | None = None, calibration
              spl: bool = False) -> tuple[list[float], list[float], list[float]]:
     """(frequencies, dB, group delay s) of the analysis window.
 
-    The grid is ``arcx.log_grid`` within the record's frequency range.
+    The grid is ``impulse.log_grid`` within the record's frequency range.
     ``calibration`` subtracts the stored microphone calibration where the
     record applies it; ``spl`` adds FuzzMeasure's SPL offset.
     """
     if frequencies is None:
-        frequencies = arcx.log_grid(record.sample_rate)
+        frequencies = impulse.log_grid(record.sample_rate)
         if record.end_hz > record.start_hz:
             frequencies = [f for f in frequencies if record.start_hz <= f <= record.end_hz]
         if not frequencies:
@@ -435,8 +434,8 @@ def response(record: Record, frequencies: list[float] | None = None, calibration
                              f"{record.start_hz:g}-{record.end_hz:g} Hz")
     x = windowed(record)
     x += [0.0] * (record.fft_length - len(x))
-    bands = arcx.point_bands(x, record.sample_rate, frequencies)
-    db = [10 * math.log10(max(p, 1e-30)) for p, _ in bands]
+    bands = impulse.point_bands(x, record.sample_rate, frequencies)
+    db = [impulse.power_db(p) for p, _ in bands]
     if calibration and record.use_calibration and record.calibration is not None:
         db = [v - (c or 0.0) for v, c in zip(db, record.calibration.db(frequencies))]
     if spl:
@@ -599,15 +598,8 @@ class FuzzmeasureInspector(Inspector):
                 ("audio device", r.device),
                 *((f"sweep {k}", v) for k, v in r.sweep.items() if not isinstance(v, Instance)),
             ]
-            table = None
-            try:
-                frequencies, db, gd = response(r)
-                fields.append(("range", frequency_range(list(zip(frequencies, db)))))
-                table = Table(["frequency Hz", "dB", "group delay s"],
-                              list(zip(frequencies, db, gd)))
-            except ValueError as exc:
-                fields.append(("response", str(exc)))
-            sections.append(Section(f"measurement {i} {r.title}", fields, table))
+            sections.append(response_section(f"measurement {i} {r.title}", fields,
+                                             lambda: response(r)))
         for i, r in enumerate(d.records):
             c = r.calibration
             if c is not None:

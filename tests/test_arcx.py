@@ -6,20 +6,21 @@ import unittest
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-import gen_testdata
-from eqx import dsp
+from helpers import assert_filters
+from testgen import common, ik, soundid
+from eqx import dsp, impulse
 from eqx.autoeq import response
-from eqx.convert import arcx_swproj
-from eqx.convert.from_autoeq import AutoeqToArcx
+from eqx.convert import to_swproj
+from eqx.convert.to_arcx import AutoeqToArcx
 from eqx.ik import arcx, pak
 from eqx.soundid import layout
 
-ARCX_DIR = gen_testdata.ROOT / gen_testdata.ARCX_DIR
+ARCX_DIR = common.ROOT / ik.ARCX_DIR
 SESSION = ARCX_DIR / "Arc.arcXs"
 ANALYSIS = ARCX_DIR / "Arc.arcXa"
 SUB = ARCX_DIR / "Arc Sub.arcXs"
 SURROUND = ARCX_DIR / "Arc 5.1.arcXs"
-MIC = gen_testdata.ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
+MIC = common.ROOT / soundid.MIC_DIR / "FLAT01.swmicpkg"
 
 
 def _pak(version: int, entries: dict[str, bytes]) -> bytes:
@@ -104,32 +105,28 @@ class ResponseTests(unittest.TestCase):
     def test_pure_delay(self):
         ir = [0.0] * 4096
         ir[100] = 0.5
-        for power, delay in arcx.point_bands(ir, 48000, arcx.log_grid(48000)):
+        for power, delay in impulse.point_bands(ir, 48000, impulse.log_grid(48000)):
             self.assertAlmostEqual(10 * math.log10(power), 20 * math.log10(0.5), places=6)
             self.assertAlmostEqual(delay, 0, places=9)
 
     def test_grid(self):
-        grid = arcx.log_grid(48000)
+        grid = impulse.log_grid(48000)
         self.assertEqual((len(grid), grid[0]), (479, 20.0))
         self.assertLessEqual(grid[-1], 20000)
-        self.assertLess(arcx.log_grid(16000)[-1], 8000)
+        self.assertLess(impulse.log_grid(16000)[-1], 8000)
 
     def assert_analytic(self, a, speaker, gains, low, high, delta=0.1):
-        c = a.channel(speaker)
-        mean = 10 * math.log10(sum(10 ** (g / 10) for g in gains) / len(gains))
-        point = None if len(gains) > 1 else gen_testdata.ARCX_POINT_GAINS.index(gains[0])
-        filters = gen_testdata.arcx_filters(speaker, a.sample_rate)
-        for f, db, _ in zip(*arcx.response(a, c, point)):
-            if low <= f <= high:
-                self.assertAlmostEqual(db, dsp.cascade_db(filters, f, a.sample_rate) + mean,
-                                       delta=delta, msg=f"{speaker} {f:g} Hz")
+        point = None if len(gains) > 1 else ik.ARCX_POINT_GAINS.index(gains[0])
+        assert_filters(self, arcx.response(a, a.channel(speaker), point),
+                       ik.arcx_filters(speaker, a.sample_rate), a.sample_rate, gains, low, high,
+                       delta, speaker)
 
     def test_generated(self):
         a = arcx.load(SESSION)
         for speaker in ("Left", "Right"):
             with self.subTest(speaker):
-                self.assert_analytic(a, speaker, gen_testdata.ARCX_POINT_GAINS, 30, 16000)
-                self.assert_analytic(a, speaker, [gen_testdata.ARCX_POINT_GAINS[2]], 30, 16000)
+                self.assert_analytic(a, speaker, ik.ARCX_POINT_GAINS, 30, 16000)
+                self.assert_analytic(a, speaker, [ik.ARCX_POINT_GAINS[2]], 30, 16000)
         sub = arcx.load(SUB)
         self.assertEqual(sub.sample_rate, 44100)
         # The low-pass slope bends between the 5.4 Hz bins that are interpolated.
@@ -190,14 +187,14 @@ class ReaderTests(unittest.TestCase):
 class SwprojTests(unittest.TestCase):
     def test_layouts(self):
         # Every ARC X layout maps to a SoundID layout with the same speakers.
-        for arc_id, (target_id, shorts) in arcx_swproj.LAYOUTS.items():
+        for arc_id, (target_id, shorts) in to_swproj.ARCX_LAYOUTS.items():
             with self.subTest(arcx.LAYOUTS[arc_id][0]):
                 target = layout.LAYOUTS[target_id]
                 self.assertEqual(len(shorts), len(arcx.LAYOUTS[arc_id][1]))
                 self.assertEqual(sorted(shorts), sorted(c.short for c in target.channels))
 
     def test_surround(self):
-        target, measurements = arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(SURROUND)
+        target, measurements = to_swproj.ArcxToSwproj(mic_profile=MIC).measurements(SURROUND)
         self.assertEqual(target.name, "5.1")
         self.assertEqual([(m.index, m.channel) for m in measurements],
                          list(enumerate(["Left", "Right", "Center", "Low freq. effects",
@@ -209,8 +206,8 @@ class SwprojTests(unittest.TestCase):
         # the surrounds.
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "Arc 9.1.6.arcXs"
-            path.write_bytes(gen_testdata.write_arcx(8, 1, 48000, True))
-            target, measurements = arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
+            path.write_bytes(ik.write_arcx(8, 1, 48000, True))
+            target, measurements = to_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
         self.assertEqual(target.name, "9.1.6 Overhead")
         self.assertEqual([m.channel for m in measurements], [c.name for c in target.channels])
         self.assertEqual(measurements[4].name, "LeftWide Arc 9.1.6")
@@ -223,7 +220,7 @@ class SwprojTests(unittest.TestCase):
             path = Path(tmp) / "x.arcXa"
             path.write_bytes(pak.write(entries))
             with self.assertRaisesRegex(ValueError, "unknown ARC X layout of 3 channels"):
-                arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
+                to_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
 
 
 class WriterTests(unittest.TestCase):
@@ -242,14 +239,14 @@ class WriterTests(unittest.TestCase):
                 arcx.write(*args)
 
     def test_from_autoeq(self):
-        csv = gen_testdata.ROOT / gen_testdata.CSV_DIR
+        csv = common.ROOT / common.CSV_DIR
         left, right = csv / "Bandpass Left.csv", csv / "Bandpass Right.csv"
         result = AutoeqToArcx().convert([left, right])
         self.assertEqual(result.name, "Bandpass Left.arcXs")
         a = arcx.read(result.data)
         self.assertEqual((a.sample_rate, a.speakers, len(a.channels[0])),
                          (48000.0, ["Left", "Right"], 1))
-        self.assertEqual(arcx.peak_index(a.channels[0][0].cc), 150)
+        self.assertEqual(impulse.peak_index(a.channels[0][0].cc), 150)
         offsets = []
         for c, path in enumerate((left, right)):
             points = [(f, v) for f, v in response.load(path).curve() if 30 <= f <= 16000]

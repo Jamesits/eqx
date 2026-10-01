@@ -5,21 +5,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import gen_testdata
-from eqx import dsp
+from helpers import assert_filters
+from testgen import audyssey, common, rew, soundid
+from eqx import impulse
 from eqx.audyssey import mqx
 from eqx.autoeq import response
-from eqx.convert import mqx_swproj
-from eqx.convert.from_autoeq import MQX_FLIGHT, AutoeqToMqx
-from eqx.convert.mdat_swproj import mic_response_db
+from eqx.convert import to_mqx, to_swproj
+from eqx.convert.common import mic_response_db
 from eqx.convert.to_autoeq import MqxToAutoeq
-from eqx.ik import arcx
+from eqx.convert.to_mqx import AutoeqToMqx
 
-MQX_DIR = gen_testdata.ROOT / gen_testdata.MQX_DIR
+MQX_DIR = common.ROOT / audyssey.MQX_DIR
 PROJECT = MQX_DIR / "Mqx 5.1.mqx"
-MIC = gen_testdata.ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
-MIC_RESPONSE = gen_testdata.ROOT / gen_testdata.CAL_DIR / "TILT01 degrees_0.txt"
-CSV = gen_testdata.ROOT / gen_testdata.CSV_DIR
+MIC = common.ROOT / soundid.MIC_DIR / "FLAT01.swmicpkg"
+MIC_RESPONSE = common.ROOT / rew.CAL_DIR / "TILT01 degrees_0.txt"
+CSV = common.ROOT / common.CSV_DIR
 
 
 def _json(path=PROJECT) -> dict:
@@ -36,7 +36,7 @@ class ReaderTests(unittest.TestCase):
         self.assertEqual({len(r.ir) for r in m.recordings}, {mqx.IR_LENGTH})
         disabled = [(m.designation(r.channel), m.positions.index(r.position))
                     for r in m.recordings if not r.enabled]
-        self.assertEqual(disabled, [gen_testdata.MQX_DISABLED])
+        self.assertEqual(disabled, [audyssey.MQX_DISABLED])
         for name, index in (("FL", 0), ("front right", 1), ("Left", 0), ("RIGHT", 1),
                             ("Subwoofer 1", 5)):
             self.assertEqual(m.channel(name), index)
@@ -49,7 +49,7 @@ class ReaderTests(unittest.TestCase):
             designation = m.designation(r.channel)
             if designation != "SW1":
                 self.assertAlmostEqual(mqx.delay_ms(r),
-                                       gen_testdata.MQX_FLIGHT[designation] / 48, places=9)
+                                       audyssey.MQX_FLIGHT[designation] / 48, places=9)
 
     def test_targets(self):
         targets = mqx.load(PROJECT).targets
@@ -79,7 +79,7 @@ class ReaderTests(unittest.TestCase):
         for key in ("OrderedChannelGuids", "TargetCurveSet", "CalibrationSettings"):
             del data[key]
         m = mqx.read(json.dumps(data).encode("utf-8-sig"))
-        self.assertEqual({c.designation for c in m.channels}, set(gen_testdata.MQX_FLIGHT))
+        self.assertEqual({c.designation for c in m.channels}, set(audyssey.MQX_FLIGHT))
         self.assertEqual(m.targets, [])
 
     def test_rejected(self):
@@ -102,17 +102,13 @@ class ReaderTests(unittest.TestCase):
 
 class ResponseTests(unittest.TestCase):
     def assert_analytic(self, m, designation, gains, low, high, position=None, delta=0.1):
-        c = m.channel(designation)
-        mean = 10 * math.log10(sum(10 ** (g / 10) for g in gains) / len(gains))
-        filters = gen_testdata.mqx_filters(designation)
-        for f, db, _ in zip(*mqx.response(m, c, position)):
-            if low <= f <= high:
-                self.assertAlmostEqual(db, dsp.cascade_db(filters, f, mqx.SAMPLE_RATE) + mean,
-                                       delta=delta, msg=f"{designation} {f:g} Hz")
+        assert_filters(self, mqx.response(m, m.channel(designation), position),
+                       audyssey.mqx_filters(designation), mqx.SAMPLE_RATE, gains, low, high,
+                       delta, designation)
 
     def test_generated(self):
         m = mqx.load(PROJECT)
-        gains = gen_testdata.MQX_POSITION_GAINS
+        gains = audyssey.MQX_POSITION_GAINS
         for designation in ("FL", "FR", "SLA"):
             with self.subTest(designation):
                 self.assert_analytic(m, designation, gains, 30, 16000)
@@ -141,7 +137,7 @@ class ResponseTests(unittest.TestCase):
 
 class SwprojTests(unittest.TestCase):
     def test_surround(self):
-        target, measurements = mqx_swproj.MqxToSwproj(mic_profile=MIC).measurements(PROJECT)
+        target, measurements = to_swproj.MqxToSwproj(mic_profile=MIC).measurements(PROJECT)
         self.assertEqual(target.name, "5.1")
         self.assertEqual([(m.index, m.channel) for m in measurements],
                          list(enumerate(["Left", "Right", "Center", "Low freq. effects",
@@ -149,15 +145,15 @@ class SwprojTests(unittest.TestCase):
         self.assertEqual(measurements[3].name, "SW1 Mqx 5.1")
 
     def test_layouts(self):
-        self.assertEqual(mqx_swproj.soundid_layout(["FL", "FR"]).name, "2.0 (Stereo)")
-        self.assertEqual(mqx_swproj.soundid_layout(
+        self.assertEqual(to_swproj.mqx_layout(["FL", "FR"]).name, "2.0 (Stereo)")
+        self.assertEqual(to_swproj.mqx_layout(
             ["FL", "C", "FR", "SW1", "SLA", "SRA", "SBL", "SBR", "FHL", "FHR", "RHL", "RHR"]).name,
             "7.1.4")
         for designations, message in ((["FL", "FR", "CH"], "no SoundID channel for CH"),
                                       (["FL", "FR", "FHL", "TFL"], "same SoundID channel twice"),
                                       (["FL", "FR", "SB"], "no SoundID layout")):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
-                mqx_swproj.soundid_layout(designations)
+                to_swproj.mqx_layout(designations)
 
     def test_disabled_channel(self):
         data = _json()
@@ -165,7 +161,7 @@ class SwprojTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "x.mqx"
             path.write_bytes(json.dumps(data).encode())
-            target, _ = mqx_swproj.MqxToSwproj(mic_profile=MIC).measurements(path)
+            target, _ = to_swproj.MqxToSwproj(mic_profile=MIC).measurements(path)
         self.assertEqual(target.name, "5.0")
 
 
@@ -206,8 +202,8 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(([c.designation for c in m.channels], len(m.positions)),
                          (["FL", "FR"], 1))
         self.assertEqual(m.channels[0].data["Calibration"]["SpeakerSize"], "Large")
-        lead = mqx.SYSTEM_DELAY + MQX_FLIGHT
-        self.assertEqual(arcx.peak_index(m.recordings[0].ir), lead)
+        lead = mqx.SYSTEM_DELAY + to_mqx.FLIGHT
+        self.assertEqual(impulse.peak_index(m.recordings[0].ir), lead)
         self.assertEqual(m.recordings[0].ir[:lead], [0.0] * lead)
         self.assertEqual(m.targets, list(mqx.DEFAULT_TARGETS))
         offsets = []
@@ -226,7 +222,7 @@ class WriterTests(unittest.TestCase):
         m = mqx.load(path)
         plain = mqx.read(AutoeqToMqx().convert([CSV / "Room Left.csv",
                                                 CSV / "Room Right.csv"]).data)
-        frequencies = [f for f in arcx.log_grid(mqx.SAMPLE_RATE) if 30 <= f <= 16000]
+        frequencies = [f for f in impulse.log_grid(mqx.SAMPLE_RATE) if 30 <= f <= 16000]
         mic = mic_response_db(MIC_RESPONSE, frequencies)
         self.assertGreater(max(mic) - min(mic), 3)
         _, raw, _ = mqx.response(m, 0, frequencies=frequencies)

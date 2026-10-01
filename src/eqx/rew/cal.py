@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..fileformat import Format, Inspector, file_section, frequency_range
+from ..fileformat import Format, Inspector, file_section, frequency_range, head_text
 from ..model import MicProfile
 from ..report import Section, Table
 
@@ -65,7 +65,7 @@ class RewcalInspector(Inspector):
 
 def sniff(data: bytes) -> bool:
     """A numeric row among the first lines."""
-    for line in data[:4096].decode("utf-8", errors="replace").splitlines():
+    for line in head_text(data).splitlines():
         try:
             float(line.replace(",", " ").split()[0])
             return True

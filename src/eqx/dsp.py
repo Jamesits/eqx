@@ -42,12 +42,16 @@ def cascade_db(biquads, frequency: float, sample_rate: float) -> float:
     return 20 * math.log10(abs(h))
 
 
+def _cookbook(frequency: float, q: float, sample_rate: float) -> tuple[float, float]:
+    """(cos w0, alpha) of the Audio EQ Cookbook."""
+    w0 = 2 * math.pi * frequency / sample_rate
+    return math.cos(w0), math.sin(w0) / (2 * q)
+
+
 def bell(frequency: float, gain_db: float, q: float,
          sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
     a = 10 ** (gain_db / 40)
-    w0 = 2 * math.pi * frequency / sample_rate
-    cos = math.cos(w0)
-    alpha = math.sin(w0) / (2 * q)
+    cos, alpha = _cookbook(frequency, q, sample_rate)
     return Biquad(1 + alpha * a, -2 * cos, 1 - alpha * a, 1 + alpha / a, -2 * cos, 1 - alpha / a)
 
 
@@ -85,24 +89,18 @@ def _shelf(high: bool, frequency: float, a: float, alpha_factor: float,
 def pass_filter(high: bool, frequency: float, q: float,
                 sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
     """Cookbook second-order high pass (``high``) or low pass."""
-    w0 = 2 * math.pi * frequency / sample_rate
-    cos = math.cos(w0)
-    alpha = math.sin(w0) / (2 * q)
+    cos, alpha = _cookbook(frequency, q, sample_rate)
     b1 = -(1 + cos) if high else 1 - cos
     return Biquad(abs(b1) / 2, b1, abs(b1) / 2, 1 + alpha, -2 * cos, 1 - alpha)
 
 
 def notch(frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
-    w0 = 2 * math.pi * frequency / sample_rate
-    cos = math.cos(w0)
-    alpha = math.sin(w0) / (2 * q)
+    cos, alpha = _cookbook(frequency, q, sample_rate)
     return Biquad(1, -2 * cos, 1, 1 + alpha, -2 * cos, 1 - alpha)
 
 
 def all_pass(frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
-    w0 = 2 * math.pi * frequency / sample_rate
-    cos = math.cos(w0)
-    alpha = math.sin(w0) / (2 * q)
+    cos, alpha = _cookbook(frequency, q, sample_rate)
     return Biquad(1 - alpha, -2 * cos, 1 + alpha, 1 + alpha, -2 * cos, 1 - alpha)
 
 
@@ -248,6 +246,20 @@ def design_fir(frequencies: list[float], gains_db: list[float], sample_rate: flo
     width = LINEAR_TAPER_WIDTH * half
     return [ir[i % n] * (0.54 + 0.46 * math.cos(math.pi * i / width))
             for i in range(-half, half + 1)]
+
+
+def design_fir_points(points, sample_rate: float, phase: str = "minimum",
+                      taps: int | None = None, edge_db: float | None = None,
+                      level_db: float = 0.0) -> list[float]:
+    """``design_fir`` of (frequency, gain dB) ``points``, less ``level_db``."""
+    return design_fir([f for f, _ in points], [g - level_db for _, g in points], sample_rate,
+                      phase, taps, edge_db)
+
+
+def padded(irs: list[list[float]]) -> list[list[float]]:
+    """The impulse responses, zero padded to the longest."""
+    length = max(len(ir) for ir in irs)
+    return [ir + [0.0] * (length - len(ir)) for ir in irs]
 
 
 def fir_gain_db(ir: list[float], sample_rate: float, frequencies) -> list[float]:

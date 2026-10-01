@@ -24,7 +24,7 @@ import re
 from pathlib import Path
 
 from ..correction import Export, ExportInspector, number
-from ..fileformat import Format
+from ..fileformat import Format, fixed
 from ..model import Correction, Peq
 
 BANDS = 9
@@ -81,11 +81,6 @@ def load(path) -> Export:
     return read(Path(path).read_text(encoding="utf-8-sig"))
 
 
-def _fixed(value: float) -> str:
-    text = f"{value:.2f}"
-    return "0.00" if text == "-0.00" else text
-
-
 def _code(band: int, kind: str) -> int:
     codes = {"bell": BELL, "low-pass": LOW_PASS, "high-pass": HIGH_PASS,
              "low-shelf" if band == 1 else "high-shelf": SHELF}
@@ -109,14 +104,14 @@ def write(corrections: list[Correction]) -> str:
         peqs = c.peqs + [Peq(1000.0 * (n + 1), 0.0, 1.0) for n in range(BANDS - len(c.peqs))]
         codes = {band: _code(band, p.kind) for band, p in enumerate(peqs, 1)}
         lines += [f"\t<Room EQ {c.channel}>", "\t\t<Params>",
-                  f'\t\t\t<val e="REQ Delay" v="{_fixed(c.delay_ms)},"/>']
+                  f'\t\t\t<val e="REQ Delay" v="{fixed(c.delay_ms)},"/>']
         for band, p in enumerate(peqs, 1):
-            lines += [f'\t\t\t<val e="REQ Band{band} Freq" v="{_fixed(p.frequency)},"/>',
-                      f'\t\t\t<val e="REQ Band{band} Q" v="{_fixed(p.q)},"/>',
-                      f'\t\t\t<val e="REQ Band{band} Gain" v="{_fixed(p.gain_db)},"/>']
-        lines += [f'\t\t\t<val e="{name}" v="{_fixed(codes[band])},"/>'
+            lines += [f'\t\t\t<val e="REQ Band{band} Freq" v="{fixed(p.frequency)},"/>',
+                      f'\t\t\t<val e="REQ Band{band} Q" v="{fixed(p.q)},"/>',
+                      f'\t\t\t<val e="REQ Band{band} Gain" v="{fixed(p.gain_db)},"/>']
+        lines += [f'\t\t\t<val e="{name}" v="{fixed(codes[band])},"/>'
                   for band, name in TYPE_NAMES.items()]
-        lines += [f'\t\t\t<val e="Chan Gain" v="{_fixed(c.gain_db)},"/>', "\t\t</Params>",
+        lines += [f'\t\t\t<val e="Chan Gain" v="{fixed(c.gain_db)},"/>', "\t\t</Params>",
                   f"\t</Room EQ {c.channel}>"]
     lines.append("</Preset>")
     return "\n".join(lines) + "\n"

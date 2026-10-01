@@ -1,20 +1,19 @@
-"""FIR filter WAV conversions: SoundID profiles and AutoEq CSV -> FIR; FIR -> AutoEq."""
+"""SoundID profiles, AutoEq CSV, Dirac Live Processor filter slot -> FIR filter WAV."""
 
 from __future__ import annotations
 
 import argparse
-import os
 from pathlib import Path
 
 from .. import dsp
 from ..autoeq import response
+from ..dirac import filterslot
+from ..dirac import playback as dirac_playback
 from ..options import Option
 from ..soundid import peqb, playback, swproj
 from ..wav import fir
 from .base import Converter, Result
-from .from_autoeq import COLUMN_OPTION, DEFAULT_RATE, RATE_OPTION, _curves
-from .to_autoeq import (CHANNEL_OPTION, COMPUTER_ID_OPTION, KEY_OPTION, PASSWORD_OPTION,
-                        _channel_name, _result)
+from .common import COLUMN_OPTION, DEFAULT_RATE, RATE_OPTION, curves, dirac_notes, dirac_rate
 
 PHASE_OPTION = Option("--phase", choices=dsp.PHASES,
                       help="minimum (SoundID Zero Latency) or linear (SoundID Linear Phase) "
@@ -50,7 +49,7 @@ class PeqbToFir(Converter):
     target = "fir"
     description = "the stereo filter SoundID Reference plays for a headphone profile"
     options = (
-        PHASE_OPTION, RATE_OPTION, TAPS_OPTION, COMPUTER_ID_OPTION, KEY_OPTION,
+        PHASE_OPTION, RATE_OPTION, TAPS_OPTION, peqb.COMPUTER_ID_OPTION, peqb.KEY_OPTION,
         SAFE_HEADROOM_OPTION,
     )
 
@@ -79,7 +78,7 @@ class SwprojToFir(Converter):
     target = "fir"
     description = "the filter SoundID Reference plays for a speaker project"
     options = (
-        PHASE_OPTION, RATE_OPTION, TAPS_OPTION, PASSWORD_OPTION, SAFE_HEADROOM_OPTION,
+        PHASE_OPTION, RATE_OPTION, TAPS_OPTION, swproj.PASSWORD_OPTION, SAFE_HEADROOM_OPTION,
         Option("--listening-spot", action=argparse.BooleanOptionalAction,
                help="apply the project's listening spot delay and gain, as SoundID's "
                     "Listening Spot (default: on)"),
@@ -102,8 +101,7 @@ class SwprojToFir(Converter):
             raise ValueError(f"--limit-low: one of {', '.join(playback.LIMIT_LOW)}; "
                              f"--limit-high: one of {', '.join(playback.LIMIT_HIGH)}")
         self.phase, self.rate, self.taps = phase, rate, taps
-        password = password or os.environ.get("SWPROJ_PASSWORD")
-        self.password = password.encode() if password else None
+        self.password = swproj.password_bytes(password)
         self.safe_headroom, self.listening_spot = safe_headroom, listening_spot
         self.limits = (limit_correction, limit_low, limit_high)
 
@@ -140,28 +138,29 @@ class AutoeqToFir(Converter):
         self.phase, self.rate, self.taps = phase, rate, taps
 
     def _convert(self, *paths: Path) -> Result:
-        channels = [dsp.design_fir([f for f, _ in points], [g for _, g in points], self.rate,
-                                   self.phase, self.taps)
-                    for _, points in _curves(paths, self.column)]
+        channels = [dsp.design_fir_points(points, self.rate, self.phase, self.taps)
+                    for _, points in curves(paths, self.column)]
         return Result(fir.write(fir.Fir(self.rate, channels)), f"{paths[0].stem}.wav",
                       _notes(channels, self.rate, self.phase, self.taps))
 
 
-class FirToAutoeq(Converter):
-    """A mono file is the left channel."""
+class DiracFilterToFir(Converter):
+    """One WAV channel per output, in output order."""
 
-    source = "fir"
-    target = "autoeq"
-    description = "the gain of one channel of a FIR filter, on the standard grid"
-    options = (CHANNEL_OPTION,)
+    source = "dirac-filter"
+    target = "fir"
+    description = "the impulse responses the Dirac Live Processor plays, as a FIR filter"
+    options = (RATE_OPTION,)
 
-    def __init__(self, channel: str = "left"):
-        self.channel = _channel_name(channel)
+    def __init__(self, rate: float = DEFAULT_RATE):
+        self.rate = dirac_rate(rate)
 
     def _convert(self, path: Path) -> Result:
-        f = fir.load(path)
-        index = fir.CHANNEL_NAMES.index(self.channel)
-        if index >= len(f.channels):
-            raise ValueError(f"no {self.channel} channel; the filter has {len(f.channels)}")
-        return _result(fir.response(f, index), f"{path.stem} {self.channel}.csv",
-                       f"{self.channel} gain of {f.taps} taps at {f.sample_rate:g} Hz, dB")
+        slot = filterslot.load(path).slot
+        names = dirac_playback.output_names(slot)
+        played = [dirac_playback.impulse_response(slot, i, self.rate) for i in range(len(names))]
+        channels = dsp.padded([ir for ir, _ in played])
+        return Result(fir.write(fir.Fir(self.rate, channels)), f"{path.stem}.wav",
+                      [f"{len(channels)} channel(s): {', '.join(names)}; {len(channels[0])} taps"]
+                      + dirac_notes(slot, self.rate,
+                                    [(n, c) for n, (_, c) in zip(names, played)]))

@@ -17,13 +17,13 @@ layout is taken from ARC 4 Analysis and the ARC 4 plug-in 1.x.
 
 from __future__ import annotations
 
-import math
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..fileformat import Format, Inspector, file_section, frequency_range
+from .. import impulse
+from ..fileformat import Format, Inspector, response_section
 from ..model import Measurement
 from ..report import Section, Table
 from . import arcx, pak
@@ -61,21 +61,13 @@ def read(data: bytes) -> Arc4:
     version, entries = pak.read(data)
     if INFO not in entries:
         raise ValueError("not an ARC 4 analysis: no info.xml")
-    try:
-        info_text = entries[INFO].decode("utf-8-sig")
-        info = ET.fromstring(info_text)
-    except (UnicodeDecodeError, ET.ParseError) as exc:
-        raise ValueError(f"cannot read {INFO}: {exc}") from None
-    if info.tag != "SerializedMeasure":
-        raise ValueError(f"{INFO}: root is {info.tag!r}, not 'SerializedMeasure'")
+    info_text = arcx.xml_text(entries[INFO], INFO)
+    info = arcx.xml_root(info_text, INFO, "SerializedMeasure")
     if _version(info.get("Version", "")) < MIN_VERSION or not info.get("SHA"):
         raise ValueError(f"ARC 4 analysis version {info.get('Version')!r} is older than "
                          "4.0.0 or has no SHA; ARC 4 rebuilds such an analysis from its "
                          "sweeps, which is not supported")
-    try:
-        sample_rate = float(info.get("SampleRate", ""))
-    except ValueError:
-        raise ValueError(f"{INFO}: SampleRate {info.get('SampleRate')!r} is not a number") from None
+    sample_rate = arcx.number_attribute(info, "SampleRate", INFO)
 
     spectra = []
     for c in range(len(CHANNELS)):
@@ -125,11 +117,11 @@ def response(arc4: Arc4, channel: int,
              frequencies: list[float] | None = None) -> tuple[list[float], list[float]]:
     """(frequencies, dB) of one channel; 0 dB is the mean power over 40 Hz-10 kHz."""
     if frequencies is None:
-        frequencies = arcx.log_grid(arc4.sample_rate)
+        frequencies = impulse.log_grid(arc4.sample_rate)
     p = power(arc4.spectra[channel])
-    bands = arcx.spectrum_bands(p, [0.0] * len(p), arc4.sample_rate / arc4.fft_size,
+    bands = impulse.spectrum_bands(p, [0.0] * len(p), arc4.sample_rate / arc4.fft_size,
                                 frequencies)
-    return frequencies, [10 * math.log10(max(b[0], 1e-30)) for b in bands]
+    return frequencies, [impulse.power_db(b[0]) for b in bands]
 
 
 def measurement(arc4: Arc4, channel: str, name: str = "") -> Measurement:
@@ -147,20 +139,15 @@ class Arc4Inspector(Inspector):
         path = Path(path)
         data = path.read_bytes()
         a = read(data)
-        sections = [file_section(path, data, ("pak version", a.pak_version),
-                                 ("entries", len(a.sizes)))]
-        sections[0].table = Table(["entry", "size"], sorted(a.sizes.items()))
+        sections = [pak.file_section(path, data, a.pak_version, a.sizes)]
         sections.append(Section("SerializedMeasure", list(a.info.attrib.items()),
                                 raw=a.info_text))
         sections.append(Section("measurement points", [("points", len(a.steps))], Table(
             ["point", "sweep files", "tail files"],
             [(s, sweeps, tails) for s, (sweeps, tails) in a.steps.items()])))
         for c, channel in enumerate(CHANNELS):
-            frequencies, db = response(a, c)
-            sections.append(Section(f"channel {c} {channel}", [
-                ("FFT size", a.fft_size),
-                ("range", frequency_range(list(zip(frequencies, db)))),
-            ], Table(["frequency Hz", "dB"], list(zip(frequencies, db)))))
+            sections.append(response_section(f"channel {c} {channel}", [("FFT size", a.fft_size)],
+                                             lambda: response(a, c)))
         return sections
 
 

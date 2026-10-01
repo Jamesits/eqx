@@ -12,6 +12,10 @@ Offsets are absolute; data is stored uncompressed.
 from __future__ import annotations
 
 import struct
+from pathlib import Path
+
+from ..fileformat import file_section as _file_section
+from ..report import Section, Table
 
 MAGIC = b"IKMPAK"
 VERSIONS = (1, 2, 3)
@@ -76,3 +80,12 @@ def _unpack(fmt: str, data: bytes, pos: int) -> tuple:
     if pos + struct.calcsize(fmt) > len(data):
         raise ValueError("pak header is truncated")
     return struct.unpack_from(fmt, data, pos)
+
+
+def file_section(path: Path, data: bytes, version: int, sizes: dict[str, int],
+                 *fields) -> Section:
+    """The inspector's file section of a pak: ``fields``, the version and the entry sizes."""
+    section = _file_section(path, data, *fields, ("pak version", version),
+                            ("entries", len(sizes)))
+    section.table = Table(["entry", "size"], sorted(sizes.items()))
+    return section

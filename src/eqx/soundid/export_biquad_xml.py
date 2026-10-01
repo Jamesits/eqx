@@ -25,9 +25,7 @@ def _attr(parent: ET.Element, child: str, name: str) -> str | None:
 
 
 def read(data: bytes) -> Export:
-    plain, partner, _key = export_partners.open_export(data, search=False)
-    if partner.format != ID:
-        raise ValueError(f"a {partner.name} export is not a biquad XML export")
+    plain, encryption = export_partners.open_as(data, ID, "biquad XML export", search=False)
     root = ET.fromstring(plain)
     if root.tag != "roomCorrection":
         raise ValueError(f"not a biquad XML export: root element {root.tag!r}")
@@ -49,7 +47,7 @@ def read(data: bytes) -> Export:
                   [("name", name), ("sample rates", " ".join(f"{r:g}" for r in rates)),
                    ("listening spot optimisation", spot.get("enabled") if spot is not None
                     else None)],
-                  f"AES-256-CBC, {partner.name} key", plain.decode("utf-8"))
+                  encryption, plain.decode("utf-8"))
 
 
 def load(path) -> Export:

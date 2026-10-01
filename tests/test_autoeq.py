@@ -3,26 +3,24 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import gen_testdata
+from helpers import csv_points
+from testgen import common, rew, soundid
 from eqx import convert
 from eqx.autoeq import response
-from eqx.convert.mdat_swproj import interp, standard_grid
+from eqx.curve import interp
+from eqx.model import standard_grid
 from eqx.rew import cal, mdat
 from eqx.soundid import crypto, peqb, swproj, targetpreset
 
-ROOT = gen_testdata.ROOT
-CSV = ROOT / gen_testdata.CSV_DIR
-PROFILE = ROOT / gen_testdata.PEQB_DIR / "Tilt Tilt Wired Average.swhp"
+ROOT = common.ROOT
+CSV = ROOT / common.CSV_DIR
+PROFILE = ROOT / soundid.PEQB_DIR / "Tilt Tilt Wired Average.swhp"
 TOLERANCE = 0.005 + 1e-9                    # two decimals
 
 
 def run(source, target, path, **options):
     paths = path if isinstance(path, list) else [path]
     return convert.CONVERTERS[source, target](**options).convert(paths)
-
-
-def points(result: convert.Result) -> list:
-    return response.read(result.data.decode()).curve()
 
 
 class ReaderTests(unittest.TestCase):
@@ -112,31 +110,31 @@ class FilterTests(unittest.TestCase):
 
 class ToAutoeqTests(unittest.TestCase):
     def test_mdat(self):
-        path = ROOT / gen_testdata.MDAT_DIR / "Room.mdat"
+        path = ROOT / rew.MDAT_DIR / "Room.mdat"
         right = mdat.load(path)[1]
-        got = points(run("mdat", "autoeq", path, channel="right"))
+        got = csv_points(run("mdat", "autoeq", path, channel="right"))
         self.assertEqual(len(got), len(right.frequencies))
         for (f, v), want in zip(got, right.response):
             self.assertLess(abs(v - want), TOLERANCE)
         with self.assertRaisesRegex(ValueError, "no Right channel; available: Left"):
-            run("mdat", "autoeq", ROOT / gen_testdata.MDAT_DIR / "Left only.mdat",
+            run("mdat", "autoeq", ROOT / rew.MDAT_DIR / "Left only.mdat",
                 channel="right")
 
     def test_swproj(self):
-        path = ROOT / gen_testdata.PROJ_DIR / "Bandpass.swproj"
+        path = ROOT / soundid.PROJ_DIR / "Bandpass.swproj"
         want = swproj.measurement_curves(swproj.SwProj.open(path))["Right"]
-        got = points(run("swproj", "autoeq", path, channel="right"))
+        got = csv_points(run("swproj", "autoeq", path, channel="right"))
         self.assertTrue(all(abs(v - w[1]) < TOLERANCE for (_, v), w in zip(got, want)))
 
     def test_headphone_response_is_negated_correction(self):
-        key = crypto.swhp_key(gen_testdata.COMPUTER_ID)
+        key = crypto.swhp_key(common.COMPUTER_ID)
         correction = peqb.read(PROFILE.read_bytes(), key).curves[0].points
-        got = points(run("peqb", "autoeq", PROFILE, computer_id=gen_testdata.COMPUTER_ID))
+        got = csv_points(run("peqb", "autoeq", PROFILE, computer_id=common.COMPUTER_ID))
         self.assertEqual(len(got), 355)
         self.assertTrue(all(abs(v + c[1]) < TOLERANCE for (_, v), c in zip(got, correction)))
 
     def test_project_export_uses_measurement(self):
-        eqb = ROOT / gen_testdata.PEQB_DIR / "Flat.eqb"
+        eqb = ROOT / soundid.PEQB_DIR / "Flat.eqb"
         result = run("peqb", "autoeq", eqb, channel="right")
         self.assertIn("Right measurement", result.notes[-1])
 
@@ -145,13 +143,13 @@ class ToAutoeqTests(unittest.TestCase):
             run("peqb", "autoeq", PROFILE, computer_id="g" + "1" * 40)
 
     def test_target_preset(self):
-        path = ROOT / gen_testdata.PRESET_DIR / "Bass and treble.json"
-        got = dict(points(run("targetpreset", "autoeq", path)))
+        path = ROOT / soundid.PRESET_DIR / "Bass and treble.json"
+        got = dict(csv_points(run("targetpreset", "autoeq", path)))
         # +4 dB low shelf, -2 dB high shelf; the disabled bell is left out.
         self.assertAlmostEqual(got[20.0], 4.0, delta=0.05)
         self.assertAlmostEqual(got[22000.0], -2.0, delta=0.05)
-        flat = run("targetpreset", "autoeq", ROOT / gen_testdata.PRESET_DIR / "Flat.json")
-        self.assertTrue(all(v == 0 for _, v in points(flat)))
+        flat = run("targetpreset", "autoeq", ROOT / soundid.PRESET_DIR / "Flat.json")
+        self.assertTrue(all(v == 0 for _, v in csv_points(flat)))
 
 
 class FromAutoeqTests(unittest.TestCase):
@@ -175,7 +173,7 @@ class FromAutoeqTests(unittest.TestCase):
                          ["CorrectionLeft", "CorrectionRight", "Frame", "LeftErrorBand",
                           "LeftErrorBand", "RightErrorBand", "RightErrorBand"])
         self.assertEqual(p.parameters["META_Model"], path.stem)
-        want = peqb.read(PROFILE.read_bytes(), crypto.swhp_key(gen_testdata.COMPUTER_ID))
+        want = peqb.read(PROFILE.read_bytes(), crypto.swhp_key(common.COMPUTER_ID))
         for got, orig in zip(p.curves[0].points, want.curves[0].points):
             self.assertAlmostEqual(got[0], orig[0])
             # Rounded values at rounded frequencies.
@@ -212,7 +210,7 @@ class FromAutoeqTests(unittest.TestCase):
 
     def test_speaker_project(self):
         left, right = CSV / "Room Left.csv", CSV / "Room Right.csv"
-        mic = ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
+        mic = ROOT / soundid.MIC_DIR / "FLAT01.swmicpkg"
         project = swproj.SwProj(run("autoeq", "swproj", [left, right], mic_profile=mic,
                                     reference_spl=80.0).data)
         curves = swproj.measurement_curves(project)

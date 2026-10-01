@@ -1,16 +1,16 @@
 import unittest
 
-import gen_testdata
+from testgen import common, dirac
 from eqx.autoeq import response
-from eqx.convert.from_autoeq import AutoeqToTargetcurve
-from eqx.convert.mdat_swproj import standard_grid
 from eqx.convert.to_autoeq import TargetcurveToAutoeq
+from eqx.convert.to_targetcurve import AutoeqToTargetcurve
+from eqx.model import standard_grid
 from eqx.dirac import targetcurve
 from eqx.dirac.targetcurve import TargetCurve
 
-ROOT = gen_testdata.ROOT
-TILT = ROOT / gen_testdata.TARGETCURVE_DIR / "Tilt.targetcurve"
-CSV = ROOT / gen_testdata.CSV_DIR / "Bass and treble.csv"
+ROOT = common.ROOT
+TILT = ROOT / dirac.TARGETCURVE_DIR / "Tilt.targetcurve"
+CSV = ROOT / common.CSV_DIR / "Bass and treble.csv"
 
 
 class ReaderTests(unittest.TestCase):

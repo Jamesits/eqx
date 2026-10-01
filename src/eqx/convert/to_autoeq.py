@@ -5,18 +5,15 @@ One file holds one curve, so stereo sources are converted one channel at a time.
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Callable
 
 from .. import correction
 from ..audyssey import mqx
-from ..autoeq import response
-from ..dirac import targetcurve
-from ..fileformat import frequency_range
+from ..dirac import filterslot, playback, targetcurve
 from ..ik import arc4, arcx
-from ..model import Correction
+from ..model import Correction, standard_grid
 from ..options import Option
 from ..rew import mdat
 from ..rme import tmreq
@@ -24,35 +21,11 @@ from ..rode import fuzzmeasure
 from ..rogueamoeba import soundsource
 from ..soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
                        export_txt, peqb, swproj, targetpreset)
+from ..wav import fir
 from .base import Converter, Result
-from .mdat_swproj import mic_response_db, standard_grid
-
-CHANNELS = ("left", "right")
-CHANNEL_OPTION = Option("--channel", choices=CHANNELS, help="channel to convert (default: left)")
-SPEAKER_OPTION = Option("--speaker",
-                        help="speaker, case-insensitive, as named by inspect, e.g. Left, "
-                             "Subwoofer, Center (default: Left)")
-COMPUTER_ID_OPTION = Option(
-    "--computer-id",
-    help="computer ID the profile was downloaded for (or SWHP_COMPUTER_ID; "
-         "default: this machine's ID)")
-KEY_OPTION = Option("--key", help="raw AES body key, hex")
-PASSWORD_OPTION = Option("--password", help="project password (or SWPROJ_PASSWORD)")
-
-
-def _channel_name(channel: str) -> str:
-    if channel not in CHANNELS:
-        raise ValueError(f"channel must be one of: {', '.join(CHANNELS)}")
-    return channel.capitalize()
-
-
-def _result(points, name: str, *notes: str) -> Result:
-    return Result(response.write(points).encode("utf-8"), name,
-                  [f"{len(points)} points, {frequency_range(points)}", *notes])
-
-
-def _missing(channel: str, available) -> ValueError:
-    return ValueError(f"no {channel} channel; available: {', '.join(available) or 'none'}")
+from .common import (CHANNEL_OPTION, DEFAULT_RATE, RATE_OPTION, SPEAKER_OPTION, channel_name,
+                     csv_result, dirac_notes, dirac_output, dirac_rate, mic_response_db,
+                     missing)
 
 
 class MdatToAutoeq(Converter):
@@ -62,15 +35,15 @@ class MdatToAutoeq(Converter):
     options = (CHANNEL_OPTION,)
 
     def __init__(self, channel: str = "left"):
-        self.channel = _channel_name(channel)
+        self.channel = channel_name(channel)
 
     def _convert(self, path: Path) -> Result:
         measurements = {m.channel: m for m in mdat.load(path)}
         if self.channel not in measurements:
-            raise _missing(self.channel, measurements)
+            raise missing(self.channel, measurements)
         m = measurements[self.channel]
-        return _result(list(zip(m.frequencies, m.response)), f"{path.stem} {self.channel}.csv",
-                       f"{self.channel} measurement {m.name!r}, dB SPL")
+        return csv_result(list(zip(m.frequencies, m.response)), f"{path.stem} {self.channel}.csv",
+                          f"{self.channel} measurement {m.name!r}, dB SPL")
 
 
 class ArcxToAutoeq(Converter):
@@ -88,8 +61,8 @@ class ArcxToAutoeq(Converter):
         c = a.channel(self.speaker)
         frequencies, db, _ = arcx.response(a, c, self.point)
         points = "all points" if self.point is None else f"point {self.point}"
-        return _result(list(zip(frequencies, db)), f"{path.stem} {a.speakers[c]}.csv",
-                       f"{a.speakers[c]} response, {points}, dB re full scale")
+        return csv_result(list(zip(frequencies, db)), f"{path.stem} {a.speakers[c]}.csv",
+                          f"{a.speakers[c]} response, {points}, dB re full scale")
 
 
 class MqxToAutoeq(Converter):
@@ -115,8 +88,8 @@ class MqxToAutoeq(Converter):
         designation = m.channels[c].designation
         positions = ("enabled measurements" if self.position is None
                      else f"position {self.position}")
-        return _result(list(zip(frequencies, db)), f"{path.stem} {designation}.csv",
-                       f"{designation} response, {positions}, dB re full scale, {mic}")
+        return csv_result(list(zip(frequencies, db)), f"{path.stem} {designation}.csv",
+                          f"{designation} response, {positions}, dB re full scale, {mic}")
 
 
 class FuzzmeasureToAutoeq(Converter):
@@ -145,8 +118,8 @@ class FuzzmeasureToAutoeq(Converter):
                    else f"microphone calibration {r.calibration.name!r} not applied")
         # Titles are free text; keep the file name valid.
         name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", r.title).strip() or f"measurement {i}"
-        return _result(list(zip(frequencies, db)), f"{path.stem} {name}.csv",
-                       f"measurement {r.title!r}, {level}, {mic}")
+        return csv_result(list(zip(frequencies, db)), f"{path.stem} {name}.csv",
+                          f"measurement {r.title!r}, {level}, {mic}")
 
 
 class Arc4ToAutoeq(Converter):
@@ -156,13 +129,13 @@ class Arc4ToAutoeq(Converter):
     options = (CHANNEL_OPTION,)
 
     def __init__(self, channel: str = "left"):
-        self.channel = _channel_name(channel)
+        self.channel = channel_name(channel)
 
     def _convert(self, path: Path) -> Result:
         a = arc4.load(path)
         frequencies, db = arc4.response(a, a.channel(self.channel))
-        return _result(list(zip(frequencies, db)), f"{path.stem} {self.channel}.csv",
-                       f"{self.channel} response, dB re the 40 Hz-10 kHz mean")
+        return csv_result(list(zip(frequencies, db)), f"{path.stem} {self.channel}.csv",
+                          f"{self.channel} response, dB re the 40 Hz-10 kHz mean")
 
 
 class SwprojToAutoeq(Converter):
@@ -174,37 +147,36 @@ class SwprojToAutoeq(Converter):
     options = (
         CHANNEL_OPTION,
         SPEAKER_OPTION,
-        PASSWORD_OPTION,
+        swproj.PASSWORD_OPTION,
     )
 
     def __init__(self, channel: str | None = None, speaker: str | None = None,
                  password: str | None = None):
         if channel is not None and speaker is not None:
             raise ValueError("give --channel or --speaker, not both")
-        self.speaker = speaker if speaker is not None else _channel_name(channel or "left")
-        password = password or os.environ.get("SWPROJ_PASSWORD")
-        self.password = password.encode() if password else None
+        self.speaker = speaker if speaker is not None else channel_name(channel or "left")
+        self.password = swproj.password_bytes(password)
 
     def _convert(self, path: Path) -> Result:
         curves = swproj.measurement_curves(swproj.SwProj.open(path, self.password))
         names = {name.lower(): name for name in curves}
         if self.speaker.lower() not in names:
-            raise _missing(self.speaker, curves)
+            raise missing(self.speaker, curves)
         name = names[self.speaker.lower()]
         points = [(f, r) for f, r, _ in curves[name]]
-        return _result(points, f"{path.stem} {name}.csv",
-                       f"{name} measurement, dB relative to the project reference")
+        return csv_result(points, f"{path.stem} {name}.csv",
+                          f"{name} measurement, dB relative to the project reference")
 
 
 class PeqbToAutoeq(Converter):
     source = "peqb"
     target = "autoeq"
     description = "the response of one side of a SoundID profile (headphone: -correction)"
-    options = (CHANNEL_OPTION, COMPUTER_ID_OPTION, KEY_OPTION)
+    options = (CHANNEL_OPTION, peqb.COMPUTER_ID_OPTION, peqb.KEY_OPTION)
 
     def __init__(self, channel: str = "left", computer_id: str | None = None,
                  key: str | None = None):
-        self.channel = _channel_name(channel)
+        self.channel = channel_name(channel)
         peqb.key_for(computer_id, key)
         self.computer_id = computer_id
         self.key = key
@@ -217,12 +189,12 @@ class PeqbToAutoeq(Converter):
         for c in p.curves:
             if (c.type_name == f"Measurement{side}"
                     or (c.type_name == "Measurement" and c.parameters.get("ChannelName") == side)):
-                return _result([(f, r) for f, r, _ in c.points], f"{path.stem} {side}.csv",
-                               f"{side} measurement")
+                return csv_result([(f, r) for f, r, _ in c.points], f"{path.stem} {side}.csv",
+                                  f"{side} measurement")
         for c in p.curves:
             if c.type_name == f"Correction{side}":
-                return _result([(f, -r) for f, r, _ in c.points], f"{path.stem} {side}.csv",
-                               f"{side} response = -{c.type_name}")
+                return csv_result([(f, -r) for f, r, _ in c.points], f"{path.stem} {side}.csv",
+                                  f"{side} response = -{c.type_name}")
         raise ValueError(f"no {side} measurement or correction curve; curves: "
                          f"{', '.join(c.type_name for c in p.curves) or 'none'}")
 
@@ -237,8 +209,9 @@ class TargetpresetToAutoeq(Converter):
         grid = standard_grid()
         points = list(zip(grid, targetpreset.target_response(preset, grid)))
         filters = sum(f.enabled for g in preset.filter_groups for f in g.filters)
-        return _result(points, f"{path.stem}.csv",
-                       f"{filters} enabled filters; the correction band is not part of the curve")
+        return csv_result(points, f"{path.stem}.csv",
+                          f"{filters} enabled filters; the correction band is not part of "
+                          "the curve")
 
 
 class TargetcurveToAutoeq(Converter):
@@ -250,9 +223,9 @@ class TargetcurveToAutoeq(Converter):
         curve = targetcurve.load(path)
         curve.validate()
         grid = standard_grid()
-        return _result(list(zip(grid, curve.response(grid))), f"{path.stem}.csv",
-                       f"{len(curve.breakpoints)} breakpoints; the correction range "
-                       f"{curve.low_hz:g}-{curve.high_hz:g} Hz is not part of the curve")
+        return csv_result(list(zip(grid, curve.response(grid))), f"{path.stem}.csv",
+                          f"{len(curve.breakpoints)} breakpoints; the correction range "
+                          f"{curve.low_hz:g}-{curve.high_hz:g} Hz is not part of the curve")
 
 
 SAMPLE_RATE_OPTION = Option(
@@ -272,7 +245,7 @@ class ExportToAutoeq(Converter):
     loader: Callable[..., correction.Export]    # the format module's load(path, **options)
 
     def __init__(self, channel: str = "left", sample_rate: float | None = None):
-        self.channel = _channel_name(channel)
+        self.channel = channel_name(channel)
         self.sample_rate = sample_rate
         self.load_options: dict = {}
 
@@ -288,7 +261,7 @@ class ExportToAutoeq(Converter):
             points = [(f, g + c.gain_db) for f, g in c.points]
         side = correction.channel_name(c.channel)
         rate = f" at {c.sample_rate:g} Hz" if c.sample_rate else ""
-        return _result(points, self.output_name(path, side), f"{side} correction{rate}, dB")
+        return csv_result(points, self.output_name(path, side), f"{side} correction{rate}, dB")
 
     def output_name(self, path: Path, side: str) -> str:
         return f"{path.stem} {side}.csv"
@@ -354,3 +327,42 @@ class SoundsourceToAutoeq(ExportToAutoeq):
 
     def output_name(self, path: Path, side: str) -> str:
         return f"{path.stem}.csv"
+
+
+class FirToAutoeq(Converter):
+    """A mono file is the left channel."""
+
+    source = "fir"
+    target = "autoeq"
+    description = "the gain of one channel of a FIR filter, on the standard grid"
+    options = (CHANNEL_OPTION,)
+
+    def __init__(self, channel: str = "left"):
+        self.channel = channel_name(channel)
+
+    def _convert(self, path: Path) -> Result:
+        f = fir.load(path)
+        index = fir.CHANNEL_NAMES.index(self.channel)
+        if index >= len(f.channels):
+            raise ValueError(f"no {self.channel} channel; the filter has {len(f.channels)}")
+        return csv_result(fir.response(f, index), f"{path.stem} {self.channel}.csv",
+                          f"{self.channel} gain of {f.taps} taps at {f.sample_rate:g} Hz, dB")
+
+
+class DiracFilterToAutoeq(Converter):
+    source = "dirac-filter"
+    target = "autoeq"
+    description = "the gain the Dirac Live Processor plays on one output, on the standard grid"
+    options = (SPEAKER_OPTION, RATE_OPTION)
+
+    def __init__(self, speaker: str | None = None, rate: float = DEFAULT_RATE):
+        self.speaker = speaker
+        self.rate = dirac_rate(rate)
+
+    def _convert(self, path: Path) -> Result:
+        slot = filterslot.load(path).slot
+        index, name = dirac_output(slot, self.speaker)
+        ir, cross = playback.impulse_response(slot, index, self.rate)
+        points = fir.response(fir.Fir(self.rate, [ir]), 0)
+        return csv_result(points, f"{path.stem} {name}.csv",
+                          *dirac_notes(slot, self.rate, [(name, cross)]))

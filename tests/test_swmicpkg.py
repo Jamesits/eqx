@@ -1,14 +1,14 @@
 import base64
 import json
 import unittest
-from pathlib import Path
 
-from eqx.convert.mdat_swproj import load_mic_profile
-from eqx.convert.rewcal_swmicpkg import RewcalToSwmicpkg
+from testgen import common
+from eqx.convert.to_swmicpkg import RewcalToSwmicpkg
+from eqx.convert.to_swproj import load_mic_profile
 from eqx.rew import cal
 from eqx.soundid import swmicpkg
 
-TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
+TESTDATA = common.ROOT
 PACKAGE = TESTDATA / "soundid/swmicpkg/TILT01.swmicpkg"
 # Converted with the degrees_30 table of PACKAGE.
 PROJECT = TESTDATA / "soundid/swproj/Bandpass.swproj"

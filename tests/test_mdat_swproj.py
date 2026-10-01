@@ -4,18 +4,19 @@ import json
 import math
 import unittest
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from testgen import common
 from eqx.autoeq import response as autoeq
-from eqx.convert import mdat_swproj as convert
-from eqx.convert.from_autoeq import AutoeqToMdat
+from eqx.convert.to_mdat import AutoeqToMdat
+from eqx.convert.to_swproj import MdatToSwproj
+from eqx.curve import interp
 from eqx.model import Measurement
 from eqx.rew import mdat
-from eqx.soundid import layout, swmicpkg, swproj
+from eqx.soundid import layout, speakerproject, swmicpkg, swproj
 
-TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
+TESTDATA = common.ROOT
 NS = swproj.NS
 GRID = [20.0, 50.0, 61.0, 100.0, 1000.0, 10000.0, 19900.0, 21000.0, 22000.0]
 FLAT_MIC = [(20.0, 0.0), (22000.0, 0.0)]
@@ -32,7 +33,7 @@ def measurement(level, channel="Left", index=None):
 
 
 def prepare(measurements, profile=FLAT_MIC, **settings):
-    return convert.prepare_speaker_curves(measurements, GRID, profile, **settings)[0]
+    return speakerproject.prepare_speaker_curves(measurements, GRID, profile, **settings)[0]
 
 
 class LevelTests(unittest.TestCase):
@@ -41,31 +42,31 @@ class LevelTests(unittest.TestCase):
     def test_median_ignores_notches(self):
         # Deep notches within the clip budget (2 of 40 points) do not move the level.
         response = [80.0] * 38 + [30.0] * 2
-        self.assertEqual(convert.estimate_reference_spl([response], self.GRID), 80.0)
+        self.assertEqual(speakerproject.estimate_reference_spl([response], self.GRID), 80.0)
 
     def test_boost_cap_lowers_level(self):
         # 20 % of the points are 20 dB low: the 5 % quantile is 60 dB, so the
         # level drops to 72 dB, where those points need exactly the cap.
         response = [80.0] * 32 + [60.0] * 8
-        self.assertEqual(convert.estimate_reference_spl([response], self.GRID), 72.0)
+        self.assertEqual(speakerproject.estimate_reference_spl([response], self.GRID), 72.0)
         self.assertEqual(
-            convert.estimate_reference_spl([response], self.GRID, clip_fraction=0.25), 80.0)
+            speakerproject.estimate_reference_spl([response], self.GRID, clip_fraction=0.25), 80.0)
 
     def test_channels_are_pooled(self):
         left, right = [80.0] * 40, [86.0] * 40
-        self.assertEqual(convert.estimate_reference_spl([left, right], self.GRID), 83.0)
+        self.assertEqual(speakerproject.estimate_reference_spl([left, right], self.GRID), 83.0)
 
     def test_level_band(self):
         grid = [100.0, 1000.0, 5000.0, 15000.0]
-        self.assertEqual(convert.estimate_reference_spl([[0.0, 80.0, 80.0, 99.0]], grid), 80.0)
+        self.assertEqual(speakerproject.estimate_reference_spl([[0.0, 80.0, 80.0, 99.0]], grid), 80.0)
         # The level band is limited to the correction band.
-        self.assertEqual(convert.estimate_reference_spl(
+        self.assertEqual(speakerproject.estimate_reference_spl(
             [[0.0, 80.0, 90.0, 99.0]], grid, low_cutoff_hz=2000.0), 90.0)
 
 
 class ProcessingTests(unittest.TestCase):
     def test_estimated_reference(self):
-        curves, reference = convert.prepare_speaker_curves([measurement(77.0)], GRID, FLAT_MIC)
+        curves, reference = speakerproject.prepare_speaker_curves([measurement(77.0)], GRID, FLAT_MIC)
         self.assertEqual(reference, 77.0)
         self.assertEqual(curves["Left"].response, [0.0] * len(GRID))
         self.assertEqual(curves["Left"].correction, [0.0] * len(GRID))
@@ -92,8 +93,8 @@ class ProcessingTests(unittest.TestCase):
         # Check between grid samples as well: the cutoff anchors prevent a
         # ramp towards the first corrected sample from leaking out of band.
         for frequency in (20, 55, 59.999, 60, 20000, 20000.001, 20500, 22000):
-            self.assertEqual(convert.interp(GRID, curve.correction, frequency), 0.0)
-            self.assertEqual(convert.interp(GRID, curve.correction_group_delay, frequency), 0.0)
+            self.assertEqual(interp(GRID, curve.correction, frequency), 0.0)
+            self.assertEqual(interp(GRID, curve.correction_group_delay, frequency), 0.0)
 
     def test_boost_cap_and_custom_settings(self):
         for level, expected in ((42.0, 12.0), (99.0, 6.0), (105.0, 0.0), (125.0, -20.0)):
@@ -111,7 +112,7 @@ class ProcessingTests(unittest.TestCase):
 
     def test_lfe(self):
         lfe = "Low freq. effects"
-        curves, reference = convert.prepare_speaker_curves(
+        curves, reference = speakerproject.prepare_speaker_curves(
             [measurement(80.0), measurement(60.0, lfe, 3)], GRID, FLAT_MIC,
             lfe=[lfe], lfe_high_cutoff_hz=1000.0)
         # The LFE level is left out of the reference estimate.
@@ -139,7 +140,7 @@ class ProcessingTests(unittest.TestCase):
 class ProjectTests(unittest.TestCase):
     def test_supplied_measurement_round_trip(self):
         profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/TILT01.swmicpkg")
-        result = convert.convert(mdat.load(TESTDATA / "rew/mdat/Room.mdat"), profile, "Room")
+        result = speakerproject.convert(mdat.load(TESTDATA / "rew/mdat/Room.mdat"), profile, "Room")
         proj = swproj.SwProj(result.data)
         eqb = proj.eqb
         self.assertEqual(eqb.version, (3, 0, 0, 2))
@@ -199,7 +200,7 @@ class ProjectTests(unittest.TestCase):
         target = layout.LAYOUTS[11]
         channels = [(c.name, i) for i, c in enumerate(target.channels)]
         measurements = [measurement(80.0, name, i) for name, i in channels]
-        result = convert.convert(measurements, swmicpkg.load(
+        result = speakerproject.convert(measurements, swmicpkg.load(
             TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg"), "5.1", layout=target)
         proj = swproj.SwProj(result.data)
         self.assertEqual([c.curve_type for c in proj.eqb.curves],
@@ -225,7 +226,7 @@ class ProjectTests(unittest.TestCase):
     def test_listening_spot(self):
         profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg")
         measurements = [measurement(80.0), measurement(80.0, "Right")]
-        result = convert.convert(measurements, profile, "x", spot={"Right": (0.15, -0.5)})
+        result = speakerproject.convert(measurements, profile, "x", spot={"Right": (0.15, -0.5)})
         proj = swproj.SwProj(result.data)
         xml = {c.findtext("s:Name", namespaces=NS): swproj._curve_params(c)
                for c in proj.tree().findall("s:Curves/s:Curve", NS)}
@@ -237,22 +238,22 @@ class ProjectTests(unittest.TestCase):
         for params in (xml["Correction CH 0"], proj.eqb.curves[1].parameters):
             self.assertEqual((params["ChannelDelayMs"], params["Transfer"]), ("-0", "-0"))
         with self.assertRaisesRegex(ValueError, "unmeasured channel.*Center"):
-            convert.convert(measurements, profile, "x", spot={"Center": (1.0, 0.0)})
+            speakerproject.convert(measurements, profile, "x", spot={"Center": (1.0, 0.0)})
 
     def test_listening_spot_options(self):
         mic = TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg"
-        c = convert.MdatToSwproj(mic_profile=mic, spot_delay_ms=["right=0.15", "Left=0"],
+        c = MdatToSwproj(mic_profile=mic, spot_delay_ms=["right=0.15", "Left=0"],
                                  spot_gain_db=["Right=-0.5"])
         measurements = [measurement(80.0), measurement(80.0, "Right")]
         self.assertEqual(c.spot(measurements), {"Right": (0.15, -0.5), "Left": (0.0, 0.0)})
         with self.assertRaisesRegex(ValueError, "--spot-gain-db: no Center channel"):
-            convert.MdatToSwproj(mic_profile=mic, spot_gain_db=["Center=1"]).spot(measurements)
+            MdatToSwproj(mic_profile=mic, spot_gain_db=["Center=1"]).spot(measurements)
         for items, message in ((["Right"], "expected CHANNEL=NUMBER"),
                                (["Right=x"], "expected CHANNEL=NUMBER"),
                                (["=1"], "expected CHANNEL=NUMBER"),
                                (["Right=1", "right=2"], "given twice")):
             with self.subTest(items), self.assertRaisesRegex(ValueError, message):
-                convert.MdatToSwproj(mic_profile=mic, spot_delay_ms=items)
+                MdatToSwproj(mic_profile=mic, spot_delay_ms=items)
 
     def test_layout_checked(self):
         profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg")
@@ -261,7 +262,7 @@ class ProjectTests(unittest.TestCase):
                 ([measurement(80.0, "Center", 1)], "channel 1 of layout .* is Right"),
                 ([measurement(80.0), measurement(80.0)], "channel 0 measured twice")):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
-                convert.convert(measurements, profile, "x")
+                speakerproject.convert(measurements, profile, "x")
 
 
 class MdatWriterTests(unittest.TestCase):

@@ -4,20 +4,21 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import gen_testdata
+from helpers import csv_points
+from testgen import common, rew, soundid
 from eqx import dsp
-from eqx.autoeq import response
 from eqx.convert import AutoeqToFir, FirToAutoeq, MdatToSwproj, PeqbToFir, SwprojToFir
+from eqx.curve import log_resample
 from eqx.model import standard_grid
 from eqx.soundid import crypto, peqb, playback
 from eqx.wav import fir
 
-ROOT = gen_testdata.ROOT
-TILT = ROOT / gen_testdata.PEQB_DIR / "Tilt Tilt Wired Average.swhp"
-ROOM_LEFT = ROOT / gen_testdata.CSV_DIR / "Room Left.csv"
-ROOM_RIGHT = ROOT / gen_testdata.CSV_DIR / "Room Right.csv"
-ROOM_PROJECT = ROOT / gen_testdata.PROJ_DIR / "Room.swproj"
-SURROUND = ROOT / gen_testdata.PROJ_DIR / "Arc 5.1.swproj"
+ROOT = common.ROOT
+TILT = ROOT / soundid.PEQB_DIR / "Tilt Tilt Wired Average.swhp"
+ROOM_LEFT = ROOT / common.CSV_DIR / "Room Left.csv"
+ROOM_RIGHT = ROOT / common.CSV_DIR / "Room Right.csv"
+ROOM_PROJECT = ROOT / soundid.PROJ_DIR / "Room.swproj"
+SURROUND = ROOT / soundid.PROJ_DIR / "Arc 5.1.swproj"
 GRID = standard_grid()
 SAMPLES = [0.5, -0.25, 0.0, 0.75]
 
@@ -38,11 +39,11 @@ def _pcm(values, bits: int) -> bytes:
 
 
 def _tilt() -> peqb.Peqb:
-    return peqb.read(TILT.read_bytes(), crypto.swhp_key(gen_testdata.COMPUTER_ID))
+    return peqb.read(TILT.read_bytes(), crypto.swhp_key(common.COMPUTER_ID))
 
 
 def _interp_log(points, f):
-    return playback._interp_log(points, f)
+    return log_resample(points, [f])[0]
 
 
 class WavTests(unittest.TestCase):
@@ -189,7 +190,7 @@ class PlaybackTests(unittest.TestCase):
 
 class ConversionTests(unittest.TestCase):
     def test_peqb_to_fir(self):
-        result = PeqbToFir(computer_id=gen_testdata.COMPUTER_ID).convert([TILT])
+        result = PeqbToFir(computer_id=common.COMPUTER_ID).convert([TILT])
         f = fir.read(result.data)
         self.assertEqual((result.name, f.sample_rate, len(f.channels), f.taps),
                          ("Tilt Tilt Wired Average.wav", 48000.0, 2, 4096))
@@ -203,7 +204,7 @@ class ConversionTests(unittest.TestCase):
                     self.assertAlmostEqual(got, _interp_log(curves[side], freq) + gain, delta=0.1)
 
     def test_peqb_to_fir_options(self):
-        result = PeqbToFir("linear", 96000, computer_id=gen_testdata.COMPUTER_ID,
+        result = PeqbToFir("linear", 96000, computer_id=common.COMPUTER_ID,
                            safe_headroom=False).convert([TILT])
         f = fir.read(result.data)
         self.assertEqual((f.sample_rate, f.taps), (96000.0, 8707))
@@ -229,7 +230,7 @@ class ConversionTests(unittest.TestCase):
             path.write_bytes(fir.write(fir.Fir(44100.0, [[0.5] + [0.0] * 99])))
             result = FirToAutoeq().convert([path])
             self.assertEqual(result.name, "f Left.csv")
-            points = response.read(result.data.decode()).curve()
+            points = csv_points(result)
             self.assertEqual(len(points), 355)
             self.assertTrue(all(abs(g + 6.02) < 0.01 for _, g in points))
             with self.assertRaisesRegex(ValueError, "no Right channel"):
@@ -326,10 +327,10 @@ class SpeakerTests(unittest.TestCase):
             SwprojToFir(limit_low="wide")
 
     def test_listening_spot(self):
-        mic = ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
+        mic = ROOT / soundid.MIC_DIR / "FLAT01.swmicpkg"
         project = MdatToSwproj(mic_profile=mic, spot_delay_ms=["Right=1"],
                                spot_gain_db=["Left=1.5"]).convert(
-            [ROOT / gen_testdata.MDAT_DIR / "Room.mdat"]).data
+            [ROOT / rew.MDAT_DIR / "Room.mdat"]).data
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "spot.swproj"
             path.write_bytes(project)

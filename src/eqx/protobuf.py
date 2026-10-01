@@ -187,13 +187,13 @@ def _encode(schema: Schema, fields, message: dict[str, Any]) -> bytes:
         if label.startswith("map:"):
             # Map entries always hold both the key and the value.
             for k, v in value.items():
-                body = _field(schema, 1, label[4:], k) + _field(schema, 2, kind, v)
-                out += _encode_varint(number << 3 | 2) + _encode_varint(len(body)) + body
+                out += _length_delimited(number, _field(schema, 1, label[4:], k)
+                                         + _field(schema, 2, kind, v))
         elif label == "repeated":
             if kind in SCALARS and kind not in ("string", "bytes"):
                 if value:
-                    body = b"".join(_scalar_bytes(kind, v) for v in value)
-                    out += _encode_varint(number << 3 | 2) + _encode_varint(len(body)) + body
+                    out += _length_delimited(number,
+                                             b"".join(_scalar_bytes(kind, v) for v in value))
             else:
                 for v in value:
                     out += _field(schema, number, kind, v)
@@ -213,12 +213,15 @@ def _is_default(kind: str, value) -> bool:
 
 def _field(schema: Schema, number: int, kind: str, value) -> bytes:
     if kind not in SCALARS:
-        body = _encode(schema, schema[kind], value)
-        return _encode_varint(number << 3 | 2) + _encode_varint(len(body)) + body
+        return _length_delimited(number, _encode(schema, schema[kind], value))
     if kind in ("string", "bytes"):
-        body = value.encode("utf-8") if kind == "string" else bytes(value)
-        return _encode_varint(number << 3 | 2) + _encode_varint(len(body)) + body
+        return _length_delimited(number,
+                                 value.encode("utf-8") if kind == "string" else bytes(value))
     return _encode_varint(number << 3 | _wire_type(kind)) + _scalar_bytes(kind, value)
+
+
+def _length_delimited(number: int, body: bytes) -> bytes:
+    return _encode_varint(number << 3 | 2) + _encode_varint(len(body)) + body
 
 
 def _scalar_bytes(kind: str, value) -> bytes:

@@ -1,23 +1,23 @@
 import math
 import unittest
 
-import gen_testdata
+from helpers import FREQUENCIES, analytic
+from testgen import common, rew, rogueamoeba, soundid
 from eqx import dsp, formats
 from eqx.autoeq import response
 from eqx.convert import CONVERTERS
-from eqx.convert.from_autoeq import AutoeqToSoundsource
+from eqx.convert.to_soundsource import AutoeqToSoundsource
 from eqx.convert.to_autoeq import SoundsourceToAutoeq
 from eqx.model import Correction, Peq
 from eqx.rogueamoeba import soundsource
 
-ROOT = gen_testdata.ROOT
-TILT = ROOT / gen_testdata.SOUNDSOURCE_DIR / "Tilt - Flat.txt"
-CSV = ROOT / gen_testdata.CSV_DIR / "Bass and treble.csv"
+ROOT = common.ROOT
+TILT = ROOT / rogueamoeba.SOUNDSOURCE_DIR / "Tilt - Flat.txt"
+CSV = ROOT / common.CSV_DIR / "Bass and treble.csv"
 # Rogue Amoeba's sample profile, first lines.
 SAMPLE = """Preamp: -7.9 dB
 Filter 1: ON PK Fc 210 Hz Gain -4.9 dB Q 0.46
 Filter 2: ON PK Fc 753 Hz Gain 4.2 dB Q 1.88"""
-FREQUENCIES = [20, 60, 250, 1000, 4000, 8000, 16000]
 
 
 def peqs(text: str) -> list[Peq]:
@@ -33,8 +33,7 @@ class ReaderTests(unittest.TestCase):
     def test_generated(self):
         c = soundsource.load(TILT).corrections[0]
         self.assertEqual(c.gain_db, -1.5)
-        want = [dsp.cascade_db(gen_testdata.bells("Left"), f, dsp.PEQ_SAMPLE_RATE) - 1.5
-                for f in FREQUENCIES]
+        want = [g - 1.5 for g in analytic("Left")]
         for got, w in zip(c.response(FREQUENCIES), want, strict=True):
             self.assertAlmostEqual(got, w, places=9)
 
@@ -96,9 +95,9 @@ class DetectTests(unittest.TestCase):
     def test_by_content(self):
         self.assertEqual(formats.detect(TILT), "soundsource")
         self.assertFalse(soundsource.sniff(b"Preamp: -1 dB\n"))
-        self.assertFalse(soundsource.sniff((ROOT / gen_testdata.CAL_DIR /
+        self.assertFalse(soundsource.sniff((ROOT / rew.CAL_DIR /
                                             "Bass and treble.txt").read_bytes()))
-        for path in (ROOT / gen_testdata.EXPORT_TXT_DIR).glob("*.txt"):
+        for path in (ROOT / soundid.EXPORT_TXT_DIR).glob("*.txt"):
             self.assertFalse(soundsource.sniff(path.read_bytes()))
 
 
@@ -151,7 +150,7 @@ class ConvertTests(unittest.TestCase):
     def test_to_autoeq(self):
         result = SoundsourceToAutoeq().convert([TILT])
         self.assertEqual(result.name, "Tilt - Flat.csv")
-        points = response.load(ROOT / gen_testdata.CSV_DIR / "Tilt - Flat.csv").curve()
+        points = response.load(ROOT / common.CSV_DIR / "Tilt - Flat.csv").curve()
         want = soundsource.load(TILT).corrections[0].response([f for f, _ in points])
         for (_, v), w in zip(points, want, strict=True):
             self.assertTrue(math.isclose(v, w, abs_tol=0.01))

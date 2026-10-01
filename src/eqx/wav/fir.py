@@ -11,7 +11,7 @@ import struct
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import dsp
+from .. import dsp, impulse
 from ..fileformat import Format, Inspector, file_section
 from ..model import standard_grid
 from ..report import Section, Table
@@ -130,7 +130,7 @@ class FirInspector(Inspector):
             ("length ms", 1000 * fir.taps / fir.sample_rate), ("encoding", fir.encoding),
         ])]
         for c, ir in enumerate(fir.channels):
-            peak = max(range(len(ir)), key=lambda i: abs(ir[i])) if ir else 0
+            peak = impulse.peak_index(ir) if ir else 0
             points = response(fir, c)
             band = [g for f, g in points if BAND_HZ[0] <= f <= BAND_HZ[1]] or [math.nan]
             sections.append(Section(f"channel {channel_name(c, count)}", [

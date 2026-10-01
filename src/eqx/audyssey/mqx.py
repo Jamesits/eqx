@@ -25,8 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..fileformat import Format, Inspector, file_section, frequency_range
-from ..ik import arcx
+from .. import impulse
+from ..fileformat import Format, Inspector, file_section, response_section
 from ..model import Measurement
 from ..options import Option
 from ..report import Section, Table
@@ -261,9 +261,9 @@ def response(mqx: Mqx, channel: int, position: int | None = None,
              frequencies: list[float] | None = None) -> tuple[list[float], list[float], list[float]]:
     """(frequencies, dB, group delay s) of one channel: power average over positions."""
     if frequencies is None:
-        frequencies = arcx.log_grid(SAMPLE_RATE)
+        frequencies = impulse.log_grid(SAMPLE_RATE)
     irs = [r.ir for r in channel_recordings(mqx, channel, position)]
-    return (frequencies, *arcx.average(irs, SAMPLE_RATE, frequencies))
+    return (frequencies, *impulse.average(irs, SAMPLE_RATE, frequencies))
 
 
 def measurement(mqx: Mqx, speaker: str, position: int | None = None,
@@ -278,7 +278,7 @@ def measurement(mqx: Mqx, speaker: str, position: int | None = None,
 def delay_ms(recording: Recording) -> float:
     """Peak time after the system delay, ms: the time of flight."""
     system = recording.data.get("SystemDelay", SYSTEM_DELAY)
-    return (arcx.peak_index(recording.ir) - system) / SAMPLE_RATE * 1000
+    return (impulse.peak_index(recording.ir) - system) / SAMPLE_RATE * 1000
 
 
 # --------------------------------------------------------------------------
@@ -467,15 +467,8 @@ class MqxInspector(Inspector):
                       *_flat("", {k: v for k, v in c.data.items() if k != "Metadata"}),
                       *_flat("", {k: v for k, v in (c.data.get("Metadata") or {}).items()
                                   if k not in ("AvrOriginatingDesignation", "DisplayName")})]
-            table = None
-            try:
-                frequencies, db, gd = response(m, i)
-                fields.append(("range", frequency_range(list(zip(frequencies, db)))))
-                table = Table(["frequency Hz", "dB", "group delay s"],
-                              list(zip(frequencies, db, gd)))
-            except ValueError as exc:
-                fields.append(("response", str(exc)))
-            sections.append(Section(f"channel {i} {c.designation} ({c.name})", fields, table))
+            sections.append(response_section(f"channel {i} {c.designation} ({c.name})", fields,
+                                             lambda: response(m, i)))
 
         if m.targets:
             rows = [(i, t.name, t.kind, t.describe(), _presets(t),

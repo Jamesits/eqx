@@ -110,6 +110,17 @@ def open_export(data: bytes, serial: str | None = None,
     raise ValueError("not an encrypted SoundID export, or its key is not known")
 
 
+def open_as(data: bytes, format_id: str, kind: str, serial: str | None = None,
+            search: bool = True) -> tuple[bytes, str]:
+    """(plaintext, encryption description) of an export of the format ``format_id``,
+    named ``kind`` in the error."""
+    plain, partner, key = open_export(data, serial, search)
+    if partner.format != format_id:
+        raise ValueError(f"a {partner.name} export is not a {kind}")
+    serial_note = f", serial number {key}" if partner.key is None else ""
+    return plain, f"AES-256-CBC, {partner.name} key{serial_note}"
+
+
 def partner_format(data: bytes) -> str | None:
     """The eqx format id of an encrypted export, or None."""
     try:

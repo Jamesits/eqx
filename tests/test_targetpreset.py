@@ -1,10 +1,10 @@
 import json
 import unittest
-from pathlib import Path
 
+from testgen import common
 from eqx.soundid import targetpreset
 
-TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
+TESTDATA = common.ROOT
 PRESETS = sorted((TESTDATA / "soundid/targetpreset").glob("*.json"))
 
 

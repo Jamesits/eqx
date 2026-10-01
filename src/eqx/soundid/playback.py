@@ -8,12 +8,12 @@ bands and the plug-in's limit controls have no effect.
 from __future__ import annotations
 
 import base64
-import bisect
 import json
 import math
 from dataclasses import dataclass
 
 from .. import dsp
+from ..curve import log_resample
 from . import swproj
 from .peqb import Peqb
 
@@ -30,18 +30,6 @@ def _curve(p: Peqb, type_name: str) -> list[tuple[float, float]]:
                      f"{', '.join(c.type_name for c in p.curves) or 'none'}")
 
 
-def _interp_log(points: list[tuple[float, float]], f: float) -> float:
-    """Linear in log frequency, clamped to the end values."""
-    xs = [x for x, _ in points]
-    if f <= xs[0]:
-        return points[0][1]
-    if f >= xs[-1]:
-        return points[-1][1]
-    i = bisect.bisect_right(xs, f) - 1
-    (f0, g0), (f1, g1) = points[i], points[i + 1]
-    return g0 + math.log(f / f0) / math.log(f1 / f0) * (g1 - g0)
-
-
 def headphone_curves(p: Peqb) -> dict[str, list[tuple[float, float]]]:
     """{side: (frequency, dB)}: the correction capped by the profile's frame."""
     has_frame = any(c.type_name == "Frame" for c in p.curves)
@@ -49,7 +37,10 @@ def headphone_curves(p: Peqb) -> dict[str, list[tuple[float, float]]]:
     out = {}
     for side in SIDES:
         points = _curve(p, f"Correction{side}")
-        out[side] = [(f, min(g, _interp_log(frame, f)) if frame else g) for f, g in points]
+        if frame:
+            points = [(f, min(g, cap)) for (f, g), cap in
+                      zip(points, log_resample(frame, [f for f, _ in points]))]
+        out[side] = points
     return out
 
 
@@ -64,9 +55,8 @@ def headphone_fir(p: Peqb, sample_rate: float = 48000.0, phase: str = "minimum",
     curves = headphone_curves(p)
     gain = safe_headroom_db(curves) if safe_headroom else 0.0
     scale = 10 ** (gain / 20)
-    channels = [[v * scale for v in dsp.design_fir([f for f, _ in curves[side]],
-                                                   [g for _, g in curves[side]],
-                                                   sample_rate, phase, taps, EDGE_DB)]
+    channels = [[v * scale for v in dsp.design_fir_points(curves[side], sample_rate, phase,
+                                                          taps, EDGE_DB)]
                 for side in SIDES]
     return channels, gain
 
@@ -119,10 +109,10 @@ def _param(curve, key: str) -> float:
 
 def _lfe_map(project: swproj.SwProj) -> list[bool]:
     """``lfeChannelMap`` of the ``TestSignalConfig`` parameter; SoundID's only LFE source."""
-    for kv in project.tree().iter(f"{{{swproj.NS['a']}}}KeyValueOfstringstring"):
-        if kv.findtext("a:Key", namespaces=swproj.NS) == "TestSignalConfig":
+    for key, value in swproj.key_values(project.tree(), ".//a:KeyValueOfstringstring"):
+        if key == "TestSignalConfig":
             try:
-                config = json.loads(base64.b64decode(kv.findtext("a:Value", namespaces=swproj.NS)))
+                config = json.loads(base64.b64decode(value))
             except ValueError:
                 continue
             return [bool(v) for v in config.get("lfeChannelMap", [])]
@@ -262,8 +252,8 @@ def speaker_curves(channels: list[SpeakerChannel], limit_correction_db: float = 
         logs = [math.log(f) for f in grid]
         meas, corr, levels, lows, highs = {}, {}, {}, {}, {}
         for c in members:
-            meas[c.index] = [_interp_log(c.measurement, f) for f in grid]
-            corr[c.index] = [_interp_log(c.correction, f) for f in grid]
+            meas[c.index] = log_resample(c.measurement, grid)
+            corr[c.index] = log_resample(c.correction, grid)
             points = list(zip(grid, meas[c.index]))
             level = levels[c.index] = level_db(points, rule.level_hz)
             lows[c.index] = low_rolloff(points, level, rule.low_search_hz)
@@ -313,8 +303,6 @@ def speaker_fir(project: swproj.SwProj, sample_rate: float = 48000.0, phase: str
         points = curves[c.index]
         g = gain + (c.gain_db - top_gain if listening_spot else 0.0)
         delay = spot_samples(c.delay_ms - first_delay, sample_rate) if listening_spot else 0
-        ir = dsp.design_fir([f for f, _ in points], [v for _, v in points], sample_rate, phase,
-                            taps, EDGE_DB)
+        ir = dsp.design_fir_points(points, sample_rate, phase, taps, EDGE_DB)
         irs.append([0.0] * delay + [v * 10 ** (g / 20) for v in ir])
-    length = max(len(ir) for ir in irs)
-    return channels, [ir + [0.0] * (length - len(ir)) for ir in irs], gain
+    return channels, dsp.padded(irs), gain

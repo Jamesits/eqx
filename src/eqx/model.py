@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import bisect
 import math
 from dataclasses import dataclass, field
 
+from .curve import interp
 from .dsp import PEQ_SAMPLE_RATE, Biquad, all_pass, bell, cascade_db, notch, pass_filter, shelf_q
 
 EPOCH = "1970-01-01T00:00:00.000000Z"
@@ -83,7 +83,7 @@ class Correction:
             if peqs:
                 db += cascade_db(peqs, f, PEQ_SAMPLE_RATE)
             if self.points:
-                db += _interp_log(logs, gains, math.log(f))
+                db += interp(logs, gains, math.log(f))
             out.append(db + 0.0)
         return out
 
@@ -112,13 +112,3 @@ class Peq:
         if self.kind == "all-pass":
             return all_pass(self.frequency, self.q)
         raise ValueError(f"unsupported filter type {self.kind!r}")
-
-
-def _interp_log(xs: list[float], ys: list[float], x: float) -> float:
-    """Linear interpolation, clamped to the end values."""
-    if x <= xs[0]:
-        return ys[0]
-    if x >= xs[-1]:
-        return ys[-1]
-    i = bisect.bisect_right(xs, x) - 1
-    return ys[i] + (x - xs[i]) / (xs[i + 1] - xs[i]) * (ys[i + 1] - ys[i])

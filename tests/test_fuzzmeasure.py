@@ -6,17 +6,19 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-import gen_testdata
+from helpers import csv_points
+from testgen import common, rode
 from eqx import caf, dsp, keyedarchive
 from eqx.autoeq import response
-from eqx.convert.from_autoeq import FUZZMEASURE_FLIGHT_M, AutoeqToFuzzmeasure, _log_resample
 from eqx.convert.to_autoeq import FuzzmeasureToAutoeq
+from eqx.convert.to_fuzzmeasure import FLIGHT_M, AutoeqToFuzzmeasure
+from eqx.curve import log_resample
 from eqx.keyedarchive import Instance, Ref
 from eqx.rode import fuzzmeasure
 
-FM_DIR = gen_testdata.ROOT / gen_testdata.FUZZMEASURE_DIR
+FM_DIR = common.ROOT / rode.FUZZMEASURE_DIR
 FM4, FM3, FM2 = FM_DIR / "Fm4.fume4", FM_DIR / "Fm3.fume3", FM_DIR / "Fm2.fume"
-CSV = gen_testdata.ROOT / gen_testdata.CSV_DIR
+CSV = common.ROOT / common.CSV_DIR
 
 
 def _error(frequencies, db, expected, low=30.0, high=16000.0) -> float:
@@ -24,8 +26,8 @@ def _error(frequencies, db, expected, low=30.0, high=16000.0) -> float:
 
 
 def _speaker_db(name: str, rate: float, frequencies, mic: bool = False) -> list[float]:
-    filters = gen_testdata.fm_filters(name, rate) + (gen_testdata.fm_mic(rate) if mic else [])
-    return [dsp.cascade_db(filters, f, rate) + gen_testdata.FM_GAIN_DB[name] for f in frequencies]
+    filters = rode.fm_filters(name, rate) + (rode.fm_mic(rate) if mic else [])
+    return [dsp.cascade_db(filters, f, rate) + rode.FM_GAIN_DB[name] for f in frequencies]
 
 
 def _record(**settings) -> fuzzmeasure.Record:
@@ -138,7 +140,7 @@ class ReaderTests(unittest.TestCase):
         self.assertTrue(sub.normalized)
         self.assertIsNone(sub.calibration)
         for r in (left, right):
-            self.assertEqual(r.peak_index(), gen_testdata.FM_FLIGHT[r.title])
+            self.assertEqual(r.peak_index(), rode.FM_FLIGHT[r.title])
         self.assertEqual({r.sweep["Name"] for r in d.records}, {"Untitled"})
 
     def test_fume3(self):
@@ -164,7 +166,7 @@ class ReaderTests(unittest.TestCase):
         # FuzzMeasure 1 data (bare big-endian floats) is decoded in compatibility mode.
         self.assertEqual((right.compatibility, right.fft_length), (True, 4096))
         self.assertEqual(left.fft_length, fuzzmeasure.MIN_FFT)
-        self.assertEqual(right.peak_index(), gen_testdata.FM_FLIGHT["Right"])
+        self.assertEqual(right.peak_index(), rode.FM_FLIGHT["Right"])
 
     def test_record_lookup(self):
         d = fuzzmeasure.load(FM4)
@@ -321,7 +323,7 @@ class ConversionTests(unittest.TestCase):
         self.assertIn("dB SPL, minus microphone calibration 'TILT01 mic'", result.notes[1])
         result = FuzzmeasureToAutoeq(measurement="1", mic_calibration=False).convert([FM4])
         self.assertIn("'TILT01 mic' not applied", result.notes[1])
-        points = response.read(result.data.decode()).curve(response.RAW)
+        points = csv_points(result)
         f = [x for x, _ in points]
         self.assertLess(_error(f, [v for _, v in points], _speaker_db("Right", 48000, f, True)),
                         0.1)
@@ -342,11 +344,11 @@ class ConversionTests(unittest.TestCase):
         d = fuzzmeasure.read_package(result.data)
         self.assertEqual([r.title for r in d.records], ["Bandpass Left", "Bandpass Right"])
         for r, path in zip(d.records, paths):
-            self.assertEqual(r.peak_index(), round(FUZZMEASURE_FLIGHT_M
+            self.assertEqual(r.peak_index(), round(FLIGHT_M
                                                    / fuzzmeasure.SPEED_OF_SOUND * 48000))
             curve = response.load(path).curve(response.RAW)
             f, db, _ = fuzzmeasure.response(r, spl=True)
-            self.assertLess(_error(f, db, _log_resample(curve, f)), 0.2)
+            self.assertLess(_error(f, db, log_resample(curve, f)), 0.2)
             self.assertEqual((r.start_hz, r.end_hz), (curve[0][0], min(curve[-1][0], 24000)))
         f, db, _ = fuzzmeasure.response(d.records[0])
         band = sorted(v for x, v in zip(f, db) if 200 <= x <= 10000)

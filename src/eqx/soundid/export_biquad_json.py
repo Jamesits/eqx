@@ -22,9 +22,7 @@ SERIAL_OPTION = Option("--serial-number",
 
 
 def read(data: bytes, serial: str | None = None) -> Export:
-    plain, partner, key = export_partners.open_export(data, serial)
-    if partner.format != ID:
-        raise ValueError(f"a {partner.name} export is not a biquad JSON export")
+    plain, encryption = export_partners.open_as(data, ID, "biquad JSON export", serial)
     try:
         root = json.loads(plain)
         rates = {p["id"]: number(p["sample_rate"], "sample_rate")
@@ -44,12 +42,11 @@ def read(data: bytes, serial: str | None = None) -> Export:
                                               rate, biquads))
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError(f"not a biquad JSON export: {exc!r}") from None
-    serial = f", serial number {key}" if partner.key is None else ""
     return Export(corrections,
                   [("name", root.get("name")), ("target mode", root.get("target_mode")),
                    ("safe headroom dB", root.get("safe_headroom")),
                    ("sample rates", " ".join(f"{r:g}" for r in rates.values()))],
-                  f"AES-256-CBC, {partner.name} key{serial}", plain.decode("utf-8"))
+                  encryption, plain.decode("utf-8"))
 
 
 def load(path, serial_number: str | None = None) -> Export:

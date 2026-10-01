@@ -20,9 +20,8 @@ BELL_TYPES = ("Peak", "Parametric")
 
 
 def read(data: bytes) -> Export:
-    plain, partner, _key = export_partners.open_export(data, search=False)
-    if partner.format != ID:
-        raise ValueError(f"a {partner.name} export is not a parametric EQ JSON export")
+    plain, encryption = export_partners.open_as(data, ID, "parametric EQ JSON export",
+                                                search=False)
     try:
         root = json.loads(plain)
         corrections = []
@@ -43,7 +42,7 @@ def read(data: bytes) -> Export:
                   [("name", root.get("name")), ("target mode", root.get("targetMode")),
                    ("layout", root.get("layoutType")),
                    ("safe headroom dB", root.get("safeHeadroomDb"))],
-                  f"AES-256-CBC, {partner.name} key", plain.decode("utf-8"))
+                  encryption, plain.decode("utf-8"))
 
 
 def load(path) -> Export:

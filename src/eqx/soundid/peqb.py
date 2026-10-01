@@ -47,6 +47,12 @@ CURVE_TYPE = {
 }
 CURVE_TYPE_ID = {name: i for i, name in CURVE_TYPE.items()}
 
+COMPUTER_ID_OPTION = Option(
+    "--computer-id",
+    help="computer ID the profile was downloaded for (or SWHP_COMPUTER_ID; "
+         "default: this machine's ID)")
+KEY_OPTION = Option("--key", help="raw AES body key, hex")
+
 # Curve flag bits (3.0.0.2).
 F_FREQUENCY, F_RESPONSE, F_GROUP_DELAY, F_PARAMETERS = 1, 2, 4, 8
 
@@ -464,6 +470,13 @@ def key_for(computer_id: str | None = None, key: str | None = None) -> bytes | N
     return crypto.swhp_key(computer_id) if computer_id else None
 
 
+def body_key(computer_id: str | None = None, key: str | None = None) -> bytes | None:
+    """``key_for``; without a ``key``, ``computer_id`` defaults to SWHP_COMPUTER_ID."""
+    if not key:
+        computer_id = computer_id or os.environ.get("SWHP_COMPUTER_ID")
+    return key_for(computer_id, key)
+
+
 def read_local(blob: bytes) -> tuple[Peqb, str]:
     """Decode with each computer ID of this machine (SoundID, Sonarworks Reference 4, Sonarworks Reference 3).
 
@@ -482,18 +495,21 @@ def read_local(blob: bytes) -> tuple[Peqb, str]:
                                 f"{', '.join(dict.fromkeys(ids.values()))}")
 
 
+def decode(blob: bytes, key: bytes | None) -> tuple[Peqb, str]:
+    """The container and why the body is not decoded; an encrypted body without
+    ``key`` is decoded with this machine's IDs, if one matches."""
+    if key is not None or not parse_header(blob).encrypted:
+        return read(blob, key), ""
+    return read_local(blob)
+
+
 def open_decoded(blob: bytes, computer_id: str | None = None, key: str | None = None) -> Peqb:
     """Read and decode ``blob``; an encrypted body without a key uses this machine's IDs."""
-    if not key:
-        computer_id = computer_id or os.environ.get("SWHP_COMPUTER_ID")
-    body_key = key_for(computer_id, key)
-    if body_key is None and parse_header(blob).encrypted:
-        p, why = read_local(blob)
-        if not p.decoded:
-            raise ValueError(f"body is encrypted and no key is given "
-                             f"(--computer-id / --key / SWHP_COMPUTER_ID); {why}")
-        return p
-    return read(blob, body_key)
+    p, why = decode(blob, body_key(computer_id, key))
+    if not p.decoded:
+        raise ValueError(f"body is encrypted and no key is given "
+                         f"(--computer-id / --key / SWHP_COMPUTER_ID); {why}")
+    return p
 
 
 # --------------------------------------------------------------------------
@@ -555,34 +571,20 @@ def _write_csv(p: Peqb, directory: Path) -> list[str]:
 
 class PeqbInspector(Inspector):
     options = (
-        Option("--computer-id",
-               help="computer ID the profile was downloaded for (or SWHP_COMPUTER_ID; "
-                    "default: this machine's ID)"),
-        Option("--key", help="raw AES body key, hex"),
+        COMPUTER_ID_OPTION,
+        KEY_OPTION,
         Option("--csv", type=Path, metavar="DIR", help="write each curve as CSV to DIR"),
     )
 
     def __init__(self, computer_id: str | None = None, key: str | None = None,
                  csv: Path | None = None):
-        if computer_id and key:
-            raise ValueError("--computer-id and --key are mutually exclusive")
-        self.key = bytes.fromhex(key) if key else None
-        self.computer_id = computer_id or os.environ.get("SWHP_COMPUTER_ID")
+        self.key = body_key(computer_id, key)
         self.csv = csv
-
-    def _read(self, blob: bytes) -> tuple[Peqb, str]:
-        """The container and why the body is not decoded."""
-        key = self.key
-        if key is None and self.computer_id:
-            key = crypto.swhp_key(self.computer_id)
-        if key is not None or not parse_header(blob).encrypted:
-            return read(blob, key), ""
-        # Without an explicit key, try this machine's IDs; a mismatch is not an error.
-        return read_local(blob)
 
     def inspect(self, path: Path) -> list[Section]:
         blob = Path(path).read_bytes()
-        p, why = self._read(blob)
+        # A mismatch of this machine's IDs is not an error here.
+        p, why = decode(blob, self.key)
         sections = [file_section(path, blob), *inspect_sections(p, blob, why)]
         if self.csv is not None:
             if not p.decoded:

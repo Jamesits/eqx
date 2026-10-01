@@ -1,26 +1,30 @@
-"""Converters between file formats, one class per (source, target) pair."""
+"""Converters between file formats, one class per (source, target) pair.
+
+Each ``to_<format>`` module holds the converters to that format.
+"""
 
 from __future__ import annotations
 
-from .arc4_swproj import Arc4ToSwproj
-from .arcx_swproj import ArcxToSwproj
 from .base import Converter, Result
-from .dirac import AutoeqToDiracFilter, DiracFilterToAutoeq, DiracFilterToFir, FirToDiracFilter
-from .fir import AutoeqToFir, FirToAutoeq, PeqbToFir, SwprojToFir
-from .from_autoeq import (AutoeqToArcx, AutoeqToFuzzmeasure, AutoeqToMdat, AutoeqToMqx,
-                          AutoeqToPeqb, AutoeqToRewcal, AutoeqToSoundsource, AutoeqToSwproj,
-                          AutoeqToTargetcurve, AutoeqToTmreq)
-from .mdat_swproj import MdatToSwproj
-from .mqx_swproj import MqxToSwproj
-from .rewcal_swmicpkg import RewcalToSwmicpkg
-from .swmicpkg_rewcal import SwmicpkgToRewcal
-from .umik_swmicpkg import UmikToSwmicpkg
-from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, FuzzmeasureToAutoeq, MdatToAutoeq,
-                        MqxToAutoeq, PeqbToAutoeq, SoundidExportBiquadJsonToAutoeq,
-                        SoundidExportBiquadXmlToAutoeq, SoundidExportLvndToAutoeq,
-                        SoundidExportPeqJsonToAutoeq, SoundidExportTxtToAutoeq,
-                        SoundsourceToAutoeq, SwprojToAutoeq, TargetcurveToAutoeq,
-                        TargetpresetToAutoeq, TmreqToAutoeq)
+from .to_arcx import AutoeqToArcx
+from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, DiracFilterToAutoeq, FirToAutoeq,
+                        FuzzmeasureToAutoeq, MdatToAutoeq, MqxToAutoeq, PeqbToAutoeq,
+                        SoundidExportBiquadJsonToAutoeq, SoundidExportBiquadXmlToAutoeq,
+                        SoundidExportLvndToAutoeq, SoundidExportPeqJsonToAutoeq,
+                        SoundidExportTxtToAutoeq, SoundsourceToAutoeq, SwprojToAutoeq,
+                        TargetcurveToAutoeq, TargetpresetToAutoeq, TmreqToAutoeq)
+from .to_dirac_filter import AutoeqToDiracFilter, FirToDiracFilter
+from .to_fir import AutoeqToFir, DiracFilterToFir, PeqbToFir, SwprojToFir
+from .to_fuzzmeasure import AutoeqToFuzzmeasure
+from .to_mdat import AutoeqToMdat
+from .to_mqx import AutoeqToMqx
+from .to_peqb import AutoeqToPeqb
+from .to_rewcal import AutoeqToRewcal, SwmicpkgToRewcal
+from .to_soundsource import AutoeqToSoundsource
+from .to_swmicpkg import RewcalToSwmicpkg, UmikToSwmicpkg
+from .to_swproj import Arc4ToSwproj, ArcxToSwproj, AutoeqToSwproj, MdatToSwproj, MqxToSwproj
+from .to_targetcurve import AutoeqToTargetcurve
+from .to_tmreq import AutoeqToTmreq
 
 CONVERTERS: dict[tuple[str, str], type[Converter]] = {
     (c.source, c.target): c for c in (

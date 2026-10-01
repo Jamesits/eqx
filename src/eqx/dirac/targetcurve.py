@@ -28,6 +28,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..curve import log_resample
 from ..fileformat import Format, Inspector, file_section, frequency_range
 from ..report import Section, Table
 
@@ -80,20 +81,7 @@ class TargetCurve:
         points = [(f, g) for f, g in self.breakpoints if f > 0]
         if not points:
             raise ValueError("no breakpoint above 0 Hz")
-        xs = [math.log(f) for f, _ in points]
-        ys = [g for _, g in points]
-        out = []
-        for f in frequencies:
-            x = math.log(f)
-            if x <= xs[0]:
-                out.append(ys[0])
-            elif x >= xs[-1]:
-                out.append(ys[-1])
-            else:
-                i = next(i for i in range(len(xs) - 1) if xs[i + 1] >= x)
-                t = (x - xs[i]) / (xs[i + 1] - xs[i])
-                out.append(ys[i] + t * (ys[i + 1] - ys[i]))
-        return out
+        return log_resample(points, frequencies)
 
 
 def _float(text: str) -> float | None:

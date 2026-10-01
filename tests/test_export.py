@@ -4,36 +4,32 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import gen_testdata
+from helpers import FREQUENCIES, analytic
+from testgen import common, rme, soundid
 from eqx import dsp, formats
 from eqx.autoeq import response
 from eqx.convert import to_autoeq
-from eqx.convert.from_autoeq import AutoeqToTmreq
+from eqx.convert.to_tmreq import AutoeqToTmreq
 from eqx.model import Correction, Peq, standard_grid
 from eqx.rme import tmreq
 from eqx.soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_partners,
                          export_peq_json, export_txt)
 
-ROOT = gen_testdata.ROOT
+ROOT = common.ROOT
 BIQUAD_JSON, PEQ_JSON, BIQUAD_XML = export_biquad_json.ID, export_peq_json.ID, export_biquad_xml.ID
 LVND, TXT = export_lvnd.FORMAT.id, export_txt.FORMAT.id
 FILES = {
-    BIQUAD_JSON: [ROOT / gen_testdata.BIQUAD_JSON_DIR / n for n in ("Tilt Fluid.bin",
+    BIQUAD_JSON: [ROOT / soundid.BIQUAD_JSON_DIR / n for n in ("Tilt Fluid.bin",
                                                                    "Tilt MERGING.bin")],
-    PEQ_JSON: [ROOT / gen_testdata.PEQ_JSON_DIR / n for n in ("Tilt Grace.bin", "Tilt Lynx.bin")],
-    BIQUAD_XML: [ROOT / gen_testdata.BIQUAD_XML_DIR / "Tilt.adam"],
-    LVND: [ROOT / gen_testdata.LVND_DIR / n for n in ("Tilt_192000_Left.bin",
+    PEQ_JSON: [ROOT / soundid.PEQ_JSON_DIR / n for n in ("Tilt Grace.bin", "Tilt Lynx.bin")],
+    BIQUAD_XML: [ROOT / soundid.BIQUAD_XML_DIR / "Tilt.adam"],
+    LVND: [ROOT / soundid.LVND_DIR / n for n in ("Tilt_192000_Left.bin",
                                                      "Tilt_192000_Right.bin")],
-    TXT: [ROOT / gen_testdata.EXPORT_TXT_DIR / n for n in ("Tilt - Flat.txt",
+    TXT: [ROOT / soundid.EXPORT_TXT_DIR / n for n in ("Tilt - Flat.txt",
                                                           "Tilt - Flat - 8 - PEQ.txt")],
-    "tmreq": [ROOT / gen_testdata.TMREQ_DIR / "Tilt - Flat.tmreq"],
+    "tmreq": [ROOT / rme.TMREQ_DIR / "Tilt - Flat.tmreq"],
 }
-FREQUENCIES = [20, 60, 250, 1000, 4000, 8000, 16000]
 REAL = ROOT / "real"
-
-
-def analytic(side: str, rate: float = dsp.PEQ_SAMPLE_RATE) -> list[float]:
-    return [dsp.cascade_db(gen_testdata.bells(side, rate), f, rate) for f in FREQUENCIES]
 
 
 class ContainerTests(unittest.TestCase):
@@ -56,7 +52,7 @@ class ContainerTests(unittest.TestCase):
 
     def test_merging_serial(self):
         data = FILES[BIQUAD_JSON][1].read_bytes()
-        self.assertEqual(export_partners.find_serial(data), gen_testdata.MERGING_SERIAL)
+        self.assertEqual(export_partners.find_serial(data), soundid.MERGING_SERIAL)
         self.assertEqual(export_biquad_json.read(data, "000042").corrections[0].channel, "Left")
         with self.assertRaisesRegex(ValueError, "not for serial number A000043"):
             export_biquad_json.read(data, "A000043")
@@ -104,8 +100,8 @@ class ReaderTests(unittest.TestCase):
         export = export_txt.load(FILES[TXT][0])
         self.assertIn(("Target mode", "Flat"), export.fields)
         c = export.corrections[0]
-        self.assertEqual([f for f, _ in c.points], list(gen_testdata.THIRD_OCTAVES))
-        want = dsp.cascade_db(gen_testdata.bells("Left"), 1000, dsp.PEQ_SAMPLE_RATE)
+        self.assertEqual([f for f, _ in c.points], list(soundid.THIRD_OCTAVES))
+        want = dsp.cascade_db(common.bells("Left"), 1000, dsp.PEQ_SAMPLE_RATE)
         self.assertAlmostEqual(c.response([1000])[0], want, delta=0.05)
 
     def test_tmreq_band_types(self):
@@ -289,12 +285,12 @@ class TmreqWriterTests(unittest.TestCase):
         grid = [f for f in standard_grid() if f <= 20000]
         for side in ("Left", "Right"):
             with self.subTest(side):
-                target = [dsp.cascade_db(gen_testdata.bells(side), f, dsp.PEQ_SAMPLE_RATE) - 2
+                target = [dsp.cascade_db(common.bells(side), f, dsp.PEQ_SAMPLE_RATE) - 2
                           for f in grid]
                 fit = dsp.fit_bells(grid, target, 9)
                 self.assertLess(fit.max_db, 0.01)
                 self.assertAlmostEqual(fit.gain_db, -2, places=3)
-                for got, want in zip(fit.bells, gen_testdata.SPEAKER[side], strict=True):
+                for got, want in zip(fit.bells, common.SPEAKER[side], strict=True):
                     for x, y in zip(got, want):
                         self.assertAlmostEqual(x, y, delta=1e-3 * abs(y))
 
@@ -307,7 +303,7 @@ class TmreqWriterTests(unittest.TestCase):
         self.assertEqual(dsp.fit_bells(grid, [0.0] * len(grid), 9).bells, [])
 
     def test_from_autoeq(self):
-        csv = ROOT / gen_testdata.CSV_DIR / "Bass and treble.csv"
+        csv = ROOT / common.CSV_DIR / "Bass and treble.csv"
         result = AutoeqToTmreq().convert([csv])
         self.assertEqual(result.name, "Bass and treble.tmreq")
         left, right = tmreq.read(result.data.decode()).corrections
@@ -316,7 +312,7 @@ class TmreqWriterTests(unittest.TestCase):
         points = [(f, v) for f, v in response.load(csv).curve() if 20 <= f <= 20000]
         for (f, v), got in zip(points, left.response([f for f, _ in points])):
             self.assertAlmostEqual(got, v, delta=0.3)
-        tilt = ROOT / gen_testdata.CSV_DIR / "Tilt - Flat Right.csv"
+        tilt = ROOT / common.CSV_DIR / "Tilt - Flat Right.csv"
         left, right = tmreq.read(AutoeqToTmreq().convert([csv, tilt]).data.decode()).corrections
         self.assertNotEqual(left.peqs, right.peqs)
 

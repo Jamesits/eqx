@@ -13,16 +13,15 @@ IK publishes no specification; the layout is taken from ARC X 2.0.2.
 
 from __future__ import annotations
 
-import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from .. import dsp
-from ..fileformat import Format, Inspector, file_section, frequency_range
+from .. import impulse
+from ..fileformat import Format, Inspector, response_section
 from ..model import Measurement
 from ..options import Option
-from ..report import Section, Table
+from ..report import Section
 from ..wav import fir
 from . import pak
 
@@ -51,7 +50,6 @@ MAX_CHANNELS = 16
 INFO_VERSION_MAJOR = 5
 SESSION, INFO = "session.xml", "info.xml"
 # Response grid: 1/48 octave from 20 Hz; bands of +-1/96 octave.
-GRID_LOW_HZ, GRID_HIGH_HZ, GRID_STEPS_PER_OCTAVE = 20.0, 20000.0, 48
 SAMPLE_RATES = (44100.0, 48000.0)
 # ARC X writes and processes 32768 samples.
 IR_LENGTH = 32768
@@ -109,20 +107,20 @@ def read(data: bytes) -> ArcX:
     version, entries = pak.read(data)
     if INFO not in entries:
         raise ValueError("not an ARC X session or analysis: no info.xml")
-    info_text = _text(entries[INFO], INFO)
-    info = _root(info_text, INFO, "SerializedMeasure")
+    info_text = xml_text(entries[INFO], INFO)
+    info = xml_root(info_text, INFO, "SerializedMeasure")
     major = info.get("Version", "").split(".")[0]
     if major != str(INFO_VERSION_MAJOR):
         raise ValueError(f"unsupported ARC X analysis version {info.get('Version')!r}")
-    sample_rate = _number(info, "SampleRate", INFO)
-    points = int(_number(info, "NumMeasurementPoints", INFO))
+    sample_rate = number_attribute(info, "SampleRate", INFO)
+    points = int(number_attribute(info, "NumMeasurementPoints", INFO))
     if points <= 0:
         raise ValueError("ARC X analysis has no measurement points")
 
     session, session_text = None, ""
     if SESSION in entries:
-        session_text = _text(entries[SESSION], SESSION)
-        session = _root(session_text, SESSION, "Session")
+        session_text = xml_text(entries[SESSION], SESSION)
+        session = xml_root(session_text, SESSION, "Session")
 
     channels = []
     for c in range(MAX_CHANNELS):
@@ -185,14 +183,14 @@ def _samples(entries: dict[str, bytes], channel: int, point: int, kind: str,
     return samples
 
 
-def _text(data: bytes, name: str) -> str:
+def xml_text(data: bytes, name: str) -> str:
     try:
         return data.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
         raise ValueError(f"{name} is not UTF-8: {exc}") from None
 
 
-def _root(text: str, name: str, tag: str) -> ET.Element:
+def xml_root(text: str, name: str, tag: str) -> ET.Element:
     try:
         root = ET.fromstring(text)
     except ET.ParseError as exc:
@@ -202,7 +200,7 @@ def _root(text: str, name: str, tag: str) -> ET.Element:
     return root
 
 
-def _number(element: ET.Element, key: str, where: str) -> float:
+def number_attribute(element: ET.Element, key: str, where: str) -> float:
     try:
         return float(element.get(key, ""))
     except ValueError:
@@ -276,64 +274,6 @@ def read_wav(data: bytes, name: str = "WAV") -> tuple[float, list[float]]:
 # --------------------------------------------------------------------------
 # response
 # --------------------------------------------------------------------------
-def log_grid(sample_rate: float) -> list[float]:
-    """1/48 octave from 20 Hz up to 20 kHz, below Nyquist."""
-    top = min(GRID_HIGH_HZ, sample_rate / 2 * 2 ** (-1 / (2 * GRID_STEPS_PER_OCTAVE)))
-    steps = math.floor(GRID_STEPS_PER_OCTAVE * math.log2(top / GRID_LOW_HZ) + 1e-9)
-    return [GRID_LOW_HZ * 2 ** (k / GRID_STEPS_PER_OCTAVE) for k in range(steps + 1)]
-
-
-def peak_index(ir: list[float]) -> int:
-    return max(range(len(ir)), key=lambda i: abs(ir[i]))
-
-
-def point_bands(ir: list[float], sample_rate: float,
-                frequencies: list[float]) -> list[tuple[float, float]]:
-    """(power, group delay s) of one impulse response in the band around each frequency.
-
-    The peak is moved to sample 0 first, so the delay before it (time of
-    flight, latency) is not part of the group delay.
-    """
-    n = 1 << max(1, (len(ir) - 1).bit_length())
-    padded = list(ir) + [0.0] * (n - len(ir))
-    peak = peak_index(padded)
-    spectrum = dsp.fft(padded[peak:] + padded[:peak])[:n // 2 + 1]
-    step = sample_rate / n
-    power = [abs(x) ** 2 for x in spectrum]
-    # Central phase difference; its angle stays in (-pi, pi] without unwrapping.
-    delay = [0.0] * len(spectrum)
-    for k in range(1, len(spectrum) - 1):
-        d = spectrum[k + 1] * spectrum[k - 1].conjugate()
-        delay[k] = -math.atan2(d.imag, d.real) / (2 * math.pi * 2 * step) if d else 0.0
-    delay[0], delay[-1] = delay[1], delay[-2]
-    return spectrum_bands(power, delay, step, frequencies)
-
-
-def spectrum_bands(power: list[float], delay: list[float], step: float,
-                   frequencies: list[float]) -> list[tuple[float, float]]:
-    """(mean power, power-weighted delay) of the FFT bins within +-1/96 octave.
-
-    Bin k is at k * ``step`` Hz.  A band with no bin interpolates the two
-    nearest bins.
-    """
-    half = 2 ** (1 / (2 * GRID_STEPS_PER_OCTAVE))
-    out = []
-    for f in frequencies:
-        first = math.ceil(f / half / step)
-        last = min(math.ceil(f * half / step) - 1, len(power) - 1)
-        if last >= first:
-            p = sum(power[first:last + 1])
-            gd = (sum(power[k] * delay[k] for k in range(first, last + 1)) / p if p
-                  else sum(delay[first:last + 1]) / (last - first + 1))
-            out.append((p / (last - first + 1), gd))
-        else:
-            k = min(int(f / step), len(power) - 2)
-            t = f / step - k
-            out.append((power[k] + t * (power[k + 1] - power[k]),
-                        delay[k] + t * (delay[k + 1] - delay[k])))
-    return out
-
-
 def response(arcx: ArcX, channel: int, point: int | None = None,
              frequencies: list[float] | None = None) -> tuple[list[float], list[float], list[float]]:
     """(frequencies, dB, group delay s) of one channel: power average of the points."""
@@ -343,22 +283,8 @@ def response(arcx: ArcX, channel: int, point: int | None = None,
             raise ValueError(f"point {point} does not exist; points: 0-{len(points) - 1}")
         points = [points[point]]
     if frequencies is None:
-        frequencies = log_grid(arcx.sample_rate)
-    return (frequencies, *average([p.ir for p in points], arcx.sample_rate, frequencies))
-
-
-def average(irs: list[list[float]], sample_rate: float,
-            frequencies: list[float]) -> tuple[list[float], list[float]]:
-    """(dB, group delay s): power average of the impulse responses' bands."""
-    bands = [point_bands(ir, sample_rate, frequencies) for ir in irs]
-    db, gd = [], []
-    for i in range(len(frequencies)):
-        powers = [b[i][0] for b in bands]
-        total = sum(powers)
-        db.append(10 * math.log10(max(total / len(bands), 1e-30)))
-        gd.append(sum(p * b[i][1] for p, b in zip(powers, bands)) / total if total
-                  else sum(b[i][1] for b in bands) / len(bands))
-    return db, gd
+        frequencies = impulse.log_grid(arcx.sample_rate)
+    return (frequencies, *impulse.average([p.ir for p in points], arcx.sample_rate, frequencies))
 
 
 def measurement(arcx: ArcX, speaker: str, point: int | None = None,
@@ -389,21 +315,18 @@ class ArcxInspector(Inspector):
         data = path.read_bytes()
         a = read(data)
         kind = "session" if a.session is not None else "analysis"
-        sections = [file_section(path, data, ("content", kind), ("pak version", a.pak_version),
-                                 ("entries", len(a.sizes)))]
-        sections[0].table = Table(["entry", "size"], sorted(a.sizes.items()))
+        sections = [pak.file_section(path, data, a.pak_version, a.sizes, ("content", kind))]
         if a.session is not None:
             sections += _xml_sections(a.session, "Session", a.session_text)
         sections += _xml_sections(a.info, "SerializedMeasure", a.info_text)
         for c, (speaker, points) in enumerate(zip(a.speakers, a.channels)):
-            frequencies, db, gd = response(a, c)
-            peaks = ", ".join(f"{peak_index(p.ir) / a.sample_rate * 1000:.2f}" for p in points)
-            sections.append(Section(f"channel {c} {speaker}", [
+            peaks = ", ".join(f"{impulse.peak_index(p.ir) / a.sample_rate * 1000:.2f}"
+                              for p in points)
+            sections.append(response_section(f"channel {c} {speaker}", [
                 ("points", len(points)),
                 ("IR samples", len(points[0].ir)),
                 ("peak delay ms", peaks),
-                ("range", frequency_range(list(zip(frequencies, db)))),
-            ], Table(["frequency Hz", "dB", "group delay s"], list(zip(frequencies, db, gd)))))
+            ], lambda: response(a, c)))
         return sections
 
 

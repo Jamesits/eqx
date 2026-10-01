@@ -1,14 +1,13 @@
 import unittest
-from pathlib import Path
 
+from testgen import common
 from eqx.soundid import crypto, peqb, swproj
 
-import gen_testdata
 
-TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
+TESTDATA = common.ROOT
 PROJECTS = sorted((TESTDATA / "soundid/swproj").glob("*.swproj"))
 PROFILES = sorted((TESTDATA / "soundid/peqb").glob("*.swhp"))
-SWPROJ_PASSWORD = gen_testdata.SWPROJ_PASSWORD.encode()
+SWPROJ_PASSWORD = common.SWPROJ_PASSWORD.encode()
 
 
 class CryptoTests(unittest.TestCase):
@@ -57,7 +56,7 @@ class PeqbTests(unittest.TestCase):
 
     def test_decrypt_profiles(self):
         self.assertTrue(PROFILES)
-        key = crypto.swhp_key(gen_testdata.COMPUTER_ID)
+        key = crypto.swhp_key(common.COMPUTER_ID)
         for path in PROFILES:
             with self.subTest(path=path.name):
                 blob = path.read_bytes()

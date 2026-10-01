@@ -1,4 +1,4 @@
-"""REW measurements -> SoundID ``.swproj`` speaker project.
+"""SoundID speaker project writer: measurements -> ``.swproj``.
 
 Audio samples are omitted.  Curves are resampled to SoundID's standard
 355-point, 20 Hz--22 kHz logarithmic grid.
@@ -7,23 +7,17 @@ Audio samples are omitted.  Curves are resampled to SoundID's standard
 from __future__ import annotations
 
 import base64
-import bisect
 import json
 import math
 import statistics
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Iterable
 
-from .. import formats
-from ..minidsp import umik
+from ..curve import quantile, resample
 from ..model import EPOCH, Measurement, MicProfile, standard_grid
-from ..options import Option
-from ..rew import cal, mdat
-from ..soundid import layout as sid_layout
-from ..soundid import peqb, swmicpkg, swproj
-from .base import Converter, Result
+from . import layout as sid_layout
+from . import peqb, swproj
 
 DEFAULT_LOW_CUTOFF_HZ = 60.0
 DEFAULT_HIGH_CUTOFF_HZ = 20000.0
@@ -40,35 +34,6 @@ GRID_NAME = "LOG_355_20_22000"
 NULL_ID = "00000000-0000-0000-0000-000000000000"
 # Target applications: SoundID Reference, or Sonarworks Reference 3 and 4.
 APPS = ("soundid", "sonarworks-reference")
-
-
-
-def interp(xs: list[float], ys: list[float], x: float) -> float:
-    """Linear interpolation, clamped to the end values."""
-    if x <= xs[0]:
-        return ys[0]
-    if x >= xs[-1]:
-        return ys[-1]
-    i = bisect.bisect_right(xs, x) - 1
-    x0, x1, y0, y1 = xs[i], xs[i + 1], ys[i], ys[i + 1]
-    if x1 == x0:
-        return y0
-    t = (x - x0) / (x1 - x0)
-    return y0 + t * (y1 - y0)
-
-
-def resample(frequencies: list[float], values: list[float], grid: list[float]) -> list[float]:
-    return [interp(frequencies, values, f) for f in grid]
-
-
-def quantile(values: list[float], q: float) -> float:
-    """Linearly interpolated quantile, ``0 <= q <= 1``."""
-    ordered = sorted(values)
-    position = q * (len(ordered) - 1)
-    i = math.floor(position)
-    if i + 1 >= len(ordered):
-        return ordered[-1]
-    return ordered[i] + (position - i) * (ordered[i + 1] - ordered[i])
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +113,7 @@ def prepare_speaker_curves(
     bands = {False: _band(grid, low_cutoff_hz, high_cutoff_hz)}
     if any(m.channel in lfe for m in measurements):
         bands[True] = _band(grid, low_cutoff_hz, min(high_cutoff_hz, lfe_high_cutoff_hz))
-    mic_freq = [p[0] for p in profile_points]
-    mic_gain = [p[1] for p in profile_points]
-    calibration = [interp(mic_freq, mic_gain, f) for f in grid]
+    calibration = resample([f for f, _ in profile_points], [g for _, g in profile_points], grid)
     # Apply microphone calibration over the WHOLE range.  The table is the
     # microphone's own response, so it is subtracted.
     calibrated = [
@@ -596,202 +559,3 @@ def convert(
     else:
         data = swproj.write(xml, build_eqb(measurements, grid, corrected, layout, spot))
     return Conversion(data, grid, corrected, reference_spl)
-
-
-MIC_PROFILE_FORMATS = ("swmicpkg", "swproj", "umik")
-
-
-def load_mic_profile(path: Path, angle: str | None = None,
-                     kind: str | None = None) -> MicProfile:
-    """One microphone table from a ``.swmicpkg``, a ``.swproj`` measured with it,
-    or a UMIK file.
-
-    ``angle`` selects the table of a profile with several (default
-    ``degrees_0``); a profile with one table rejects it and gives that table.
-    ``kind`` None detects the format by extension.
-    """
-    path = Path(path)
-    kind = kind or formats.detect(path, MIC_PROFILE_FORMATS)
-    if kind == "swmicpkg":
-        text = path.read_text(encoding="utf-8")
-        available = swmicpkg.angles(text)
-        read = lambda a: swmicpkg.read(text, a, path.stem)
-    elif kind == "swproj":
-        profiles = {p.angle: p for p in swproj.mic_profiles(swproj.SwProj.open(path))}
-        available, read = list(profiles), profiles.__getitem__
-    elif kind == "umik":
-        profile = umik.load(path).profile
-        available, read = [profile.angle], lambda a: profile
-    else:
-        raise ValueError(f"{path.name}: a microphone profile must be .swmicpkg, .swproj "
-                         "or a UMIK .txt")
-    if not available:
-        raise ValueError(f"{path.name} holds no microphone table")
-    if len(available) == 1:
-        if angle is not None:
-            raise ValueError(f"{path.name} holds one microphone table ({available[0]}); "
-                             "--mic-angle applies only to profiles with several tables")
-        return read(available[0])
-    angle = angle or swmicpkg.PLAIN_ANGLE
-    if angle not in available:
-        raise ValueError(f"{path.name} has no microphone {angle!r} table; "
-                         f"available: {', '.join(available)}")
-    return read(angle)
-
-
-def mic_response_db(path: Path, frequencies: list[float]) -> list[float]:
-    """The table of a REW calibration file at ``frequencies``: linear in log frequency,
-    clamped to the end values."""
-    profile, _ = cal.load(path)
-    points = [(math.log(f), g) for f, g in profile.points if f > 0]
-    if len(points) < 2:
-        raise ValueError(f"{Path(path).name}: too few calibration points above 0 Hz")
-    return resample([x for x, _ in points], [g for _, g in points],
-                    [math.log(f) for f in frequencies])
-
-
-def _channel_values(items: list[str], flag: str) -> dict[str, float]:
-    """``CHANNEL=NUMBER`` items -> {channel: number}."""
-    out: dict[str, float] = {}
-    for item in items:
-        name, sep, text = item.partition("=")
-        name = name.strip()
-        try:
-            value = float(text)
-        except ValueError:
-            value = math.nan
-        if not sep or not name or not math.isfinite(value):
-            raise ValueError(f"{flag} {item!r}: expected CHANNEL=NUMBER")
-        if name.lower() in (n.lower() for n in out):
-            raise ValueError(f"{flag}: {name} given twice")
-        out[name] = value
-    return out
-
-
-class SpeakerProjectConverter(Converter):
-    """Speaker measurements as a SoundID speaker project; subclasses read the measurements."""
-
-    target = "swproj"
-    options = (
-        Option("--mic-profile", type=Path,
-               help="required: SoundID microphone package (.swmicpkg), a .swproj "
-                    "measured with the microphone, or a UMIK calibration file (.txt)"),
-        Option("--mic-profile-format", choices=MIC_PROFILE_FORMATS,
-               help="format of --mic-profile (default: by extension)"),
-        Option("--mic-angle",
-               help="table of a --mic-profile with several tables, by the angle between "
-                    "mic axis and speaker: degrees_0, degrees_30 or degrees_90 "
-                    f"(default: {swmicpkg.PLAIN_ANGLE}); a profile with one table uses it"),
-        Option("--reference-spl", type=float,
-               help="calibrated SPL mapped to 0 dB for all channels "
-                    "(default: estimated from the 200 Hz-10 kHz level)"),
-        Option("--low-cutoff-hz", type=float,
-               help=f"no speaker EQ below this frequency (default: {DEFAULT_LOW_CUTOFF_HZ:g} Hz)"),
-        Option("--high-cutoff-hz", type=float,
-               help=f"no speaker EQ above this frequency (default: {DEFAULT_HIGH_CUTOFF_HZ:g} Hz)"),
-        Option("--lfe-high-cutoff-hz", type=float,
-               help="no LFE channel EQ above this frequency "
-                    f"(default: {DEFAULT_LFE_HIGH_CUTOFF_HZ:g} Hz)"),
-        Option("--max-boost-db", type=float,
-               help=f"maximum positive speaker EQ gain, at most +{SOUNDID_MAX_BOOST_DB:g} "
-                    f"(default: +{DEFAULT_MAX_BOOST_DB:g} dB)"),
-        Option("--clip-percent", type=float,
-               help="estimated reference only: percent of 200 Hz-10 kHz points allowed to "
-                    f"need more than the maximum boost (default: {DEFAULT_CLIP_FRACTION * 100:g})"),
-        Option("--spot-delay-ms", action="append", metavar="CHANNEL=MS",
-               help="listening spot delay of a channel, e.g. Right=0.15; repeatable "
-                    "(default: 0)"),
-        Option("--spot-gain-db", action="append", metavar="CHANNEL=DB",
-               help="listening spot gain of a channel, e.g. Left=-0.5; repeatable "
-                    "(default: 0)"),
-        Option("--app", choices=APPS,
-               help="soundid: SoundID Reference; sonarworks-reference: Sonarworks Reference 3 and 4, "
-                    "stereo only (default: soundid)"),
-    )
-
-    def __init__(
-        self,
-        mic_profile: Path | None = None,
-        mic_profile_format: str | None = None,
-        mic_angle: str | None = None,
-        reference_spl: float | None = None,
-        low_cutoff_hz: float = DEFAULT_LOW_CUTOFF_HZ,
-        high_cutoff_hz: float = DEFAULT_HIGH_CUTOFF_HZ,
-        lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
-        max_boost_db: float = DEFAULT_MAX_BOOST_DB,
-        clip_percent: float = DEFAULT_CLIP_FRACTION * 100,
-        spot_delay_ms: list[str] | None = None,
-        spot_gain_db: list[str] | None = None,
-        app: str = "soundid",
-    ):
-        if app not in APPS:
-            raise ValueError(f"--app must be one of: {', '.join(APPS)}")
-        self.app = app
-        if mic_profile is None:
-            raise ValueError(f"{self.source} -> {self.target} needs --mic-profile")
-        self.mic_profile = Path(mic_profile)
-        self.mic_profile_format = mic_profile_format
-        self.mic_angle = mic_angle
-        self.settings = dict(
-            reference_spl=reference_spl,
-            low_cutoff_hz=low_cutoff_hz,
-            high_cutoff_hz=high_cutoff_hz,
-            lfe_high_cutoff_hz=lfe_high_cutoff_hz,
-            max_boost_db=max_boost_db,
-            clip_fraction=clip_percent / 100,
-        )
-        self.spot_values = ((_channel_values(spot_delay_ms or [], "--spot-delay-ms"), 0,
-                             "--spot-delay-ms"),
-                            (_channel_values(spot_gain_db or [], "--spot-gain-db"), 1,
-                             "--spot-gain-db"))
-
-    def spot(self, measurements: list[Measurement]) -> dict[str, tuple[float, float]]:
-        """{channel: (delay ms, gain dB)}; option channel names are case-insensitive."""
-        names = {m.channel.lower(): m.channel for m in measurements}
-        spot: dict[str, list[float]] = {}
-        for values, slot, flag in self.spot_values:
-            for name, value in values.items():
-                if name.lower() not in names:
-                    raise ValueError(f"{flag}: no {name} channel; channels: "
-                                     f"{', '.join(names.values())}")
-                spot.setdefault(names[name.lower()], [0.0, 0.0])[slot] = value
-        return {channel: (delay, gain) for channel, (delay, gain) in spot.items()}
-
-    def measurements(self, *paths: Path) -> tuple[sid_layout.Layout, list[Measurement]]:
-        """The SoundID layout and the measurements in ``paths``, in channel order."""
-        raise NotImplementedError
-
-    def _convert(self, *paths: Path) -> Result:
-        path = paths[0]
-        layout, measurements = self.measurements(*paths)
-        profile = load_mic_profile(self.mic_profile, self.mic_angle,
-                                   self.mic_profile_format)
-        spot = self.spot(measurements)
-        result = convert(measurements, profile, path.stem, layout=layout, spot=spot,
-                         app=self.app, **self.settings)
-        s = self.settings
-        source = "estimated" if s["reference_spl"] is None else "given"
-        app = "Sonarworks Reference 3 / 4" if self.app == "sonarworks-reference" else "SoundID Reference"
-        notes = [
-            f"app: {app}; layout: {layout.name}; measurements: {len(measurements)}; "
-            f"frequency points: {len(result.grid)}; mic table: {profile.name} {profile.angle}",
-            f"reference: {result.reference_spl:.1f} dB SPL = 0 dB ({source}); correction band: "
-            f"{s['low_cutoff_hz']:g}-{s['high_cutoff_hz']:g} Hz; "
-            f"maximum boost: {s['max_boost_db']:g} dB",
-        ]
-        if any(layout.channels[m.index].is_lfe for m in measurements):
-            notes.append(f"LFE correction band: {s['low_cutoff_hz']:g}-"
-                         f"{min(s['high_cutoff_hz'], s['lfe_high_cutoff_hz']):g} Hz")
-        notes += [f"{channel} correction: {min(c.correction):+.2f} to {max(c.correction):+.2f} dB"
-                  for channel, c in result.curves.items()]
-        notes += [f"{channel} listening spot: delay {delay:g} ms, gain {gain:+g} dB"
-                  for channel, (delay, gain) in spot.items()]
-        return Result(result.data, path.stem + ".swproj", notes)
-
-
-class MdatToSwproj(SpeakerProjectConverter):
-    source = "mdat"
-    description = "REW speaker measurements as a SoundID speaker project (no audio samples)"
-
-    def measurements(self, path: Path) -> tuple[sid_layout.Layout, list[Measurement]]:
-        return sid_layout.STEREO, mdat.load(path)

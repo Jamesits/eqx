@@ -136,10 +136,23 @@ def split_parts(blob: bytes, header: ProjectHeader) -> dict:
     return out
 
 
+PASSWORD_OPTION = Option("--password", help="project password (or SWPROJ_PASSWORD)")
+
+
+def password_bytes(text: str | None) -> bytes | None:
+    """The project password: ``text``, else SWPROJ_PASSWORD; None for the default."""
+    text = text or os.environ.get("SWPROJ_PASSWORD")
+    return text.encode() if text else None
+
+
+def _derive_key(password: bytes | None) -> bytes:
+    return crypto.derive_key(password if password is not None else crypto.DEFAULT_PASSWORD)
+
+
 def _key(header: ProjectHeader, password: bytes | None) -> bytes:
     if header.password_protected and password is None:
         raise ValueError("project is password protected; supply the password")
-    return crypto.derive_key(password if password is not None else crypto.DEFAULT_PASSWORD)
+    return _derive_key(password)
 
 
 def decode_part(data: bytes, header: ProjectHeader, password: bytes | None = None) -> bytes:
@@ -214,7 +227,7 @@ def write(xml: bytes, eqb: bytes | None = None, password: bytes | None = None,
     """
     if version not in (VERSION, SONARWORKS_REFERENCE_VERSION):
         raise ValueError(f"project version must be {VERSION} or {SONARWORKS_REFERENCE_VERSION}")
-    key = crypto.derive_key(password if password is not None else crypto.DEFAULT_PASSWORD)
+    key = _derive_key(password)
     # A fixed IV keeps the output reproducible.  SoundID also writes projects
     # with a zero IV; the key is public, so a random IV protects nothing.
     swproj = crypto.encrypt(key, gzip.compress(xml, mtime=0), iv)
@@ -243,11 +256,15 @@ def write(xml: bytes, eqb: bytes | None = None, password: bytes | None = None,
 # --------------------------------------------------------------------------
 # curves
 # --------------------------------------------------------------------------
+def key_values(element: ET.Element,
+               path: str = "a:KeyValueOfstringstring") -> list[tuple[str, str]]:
+    """The DataContract string pairs at ``path`` below ``element``, in order."""
+    return [(kv.findtext("a:Key", namespaces=NS), kv.findtext("a:Value", namespaces=NS))
+            for kv in element.findall(path, NS)]
+
+
 def _curve_params(curve: ET.Element) -> dict[str, str]:
-    return {
-        kv.findtext("a:Key", namespaces=NS): kv.findtext("a:Value", namespaces=NS)
-        for kv in curve.findall("s:Parameters/a:KeyValueOfstringstring", NS)
-    }
+    return dict(key_values(curve, "s:Parameters/a:KeyValueOfstringstring"))
 
 
 def mic_profiles(project: SwProj) -> list[MicProfile]:
@@ -358,9 +375,7 @@ def _xml_sections(elem: ET.Element, title: str, trail: str = "") -> list[Section
         elif len(child) == 0:
             fields.append((tag, (child.text or "").strip()))
         elif tag == "Parameters":
-            fields += [(f"param {kv.findtext('a:Key', namespaces=NS)}",
-                        kv.findtext("a:Value", namespaces=NS))
-                       for kv in child.findall("a:KeyValueOfstringstring", NS)]
+            fields += [(f"param {key}", value) for key, value in key_values(child)]
         elif tag == "Points" and _afl_points(child):
             table = Table(peqb.POINT_COLUMNS, _points(child))
             fields += [("points", len(table.rows)), ("range", frequency_range(table.rows))]
@@ -392,7 +407,7 @@ def _write_wav(path: Path, samples, rate: int = 48000) -> None:
 
 class SwprojInspector(Inspector):
     options = (
-        Option("--password", help="project password (or SWPROJ_PASSWORD)"),
+        PASSWORD_OPTION,
         Option("--xml", type=Path, metavar="FILE", help="write the project XML to FILE"),
         Option("--wav", type=Path, metavar="DIR",
                help="write each recording (RawData) as WAV to DIR"),
@@ -400,8 +415,7 @@ class SwprojInspector(Inspector):
 
     def __init__(self, password: str | None = None, xml: Path | None = None,
                  wav: Path | None = None):
-        password = password or os.environ.get("SWPROJ_PASSWORD")
-        self.password = password.encode() if password else None
+        self.password = password_bytes(password)
         self.xml = xml
         self.wav = wav
 

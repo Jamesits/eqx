@@ -2,15 +2,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import gen_testdata
+from testgen import common, minidsp
 from eqx import convert, formats
-from eqx.convert.mdat_swproj import load_mic_profile
-from eqx.convert.umik_swmicpkg import UmikToSwmicpkg
+from eqx.convert.to_swmicpkg import UmikToSwmicpkg
+from eqx.convert.to_swproj import load_mic_profile
 from eqx.minidsp import umik
 from eqx.rew import cal
 from eqx.soundid import swmicpkg
 
-TESTDATA = Path(__file__).resolve().parent.parent / "testdata"
+TESTDATA = common.ROOT
 DIR = TESTDATA / "minidsp/umik"
 UMIK1, UMIK1_90 = DIR / "7000042.txt", DIR / "7000042_90deg.txt"
 UMIK2, UMIK2_90 = DIR / "8100042.txt", DIR / "8100042_90deg.txt"
@@ -34,9 +34,9 @@ class ReaderTests(unittest.TestCase):
 
     def test_points_follow_curve(self):
         for path, angle in ((UMIK1, "degrees_0"), (UMIK2_90, "degrees_90")):
-            sections = gen_testdata.UMIK_SECTIONS[angle]
+            sections = minidsp.UMIK_SECTIONS[angle]
             for f, g in umik.load(path).profile.points:
-                self.assertAlmostEqual(g, gen_testdata.response(sections, f)[0], delta=1e-3)  # rounded frequencies
+                self.assertAlmostEqual(g, common.response(sections, f)[0], delta=1e-3)  # rounded frequencies
 
     def test_angle(self):
         self.assertEqual(umik.load(UMIK1_90).profile.angle, "degrees_90")
@@ -90,9 +90,9 @@ class SwmicpkgTests(unittest.TestCase):
         for angle, path in (("degrees_0", UMIK1), ("degrees_90", UMIK1_90)):
             points = profiles[angle].points
             self.assertEqual([f for f, _ in points], [round(f, 1) for f in swmicpkg.grid()])
-            sections = gen_testdata.UMIK_SECTIONS[angle]
+            sections = minidsp.UMIK_SECTIONS[angle]
             for f, g in points:
-                self.assertAlmostEqual(g, gen_testdata.response(sections, f)[0], delta=0.02)
+                self.assertAlmostEqual(g, common.response(sections, f)[0], delta=0.02)
         # The 90 degree table loses treble.
         self.assertLess(profiles["degrees_90"].points[-1][1],
                         profiles["degrees_0"].points[-1][1] - 3)

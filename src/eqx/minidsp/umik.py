@@ -16,7 +16,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..fileformat import Format, Inspector, file_section, frequency_range
+from ..fileformat import Format, Inspector, file_section, frequency_range, head_text
 from ..model import MicProfile
 from ..report import Section, Table
 from ..rew import cal
@@ -93,7 +93,7 @@ class UmikInspector(Inspector):
 
 def sniff(data: bytes) -> bool:
     """The first non-empty line is the header."""
-    lines = data[:4096].decode("utf-8", errors="replace").splitlines()
+    lines = head_text(data).splitlines()
     return _HEADER.match(next((line for line in lines if line.strip()), "")) is not None
 
 

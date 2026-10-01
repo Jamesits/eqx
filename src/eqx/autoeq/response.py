@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..fileformat import Format, Inspector, file_section, frequency_range
+from ..fileformat import Format, Inspector, file_section, fixed, frequency_range
 from ..report import Section, Table
 
 FREQUENCY = "frequency"
@@ -133,23 +133,20 @@ def load(path) -> Response:
 # --------------------------------------------------------------------------
 # writer
 # --------------------------------------------------------------------------
-def _fixed(value: float) -> str:
-    # AutoEq's number pattern has no exponent; it writes two decimals.
-    text = f"{value:.2f}"
-    return "0.00" if text == "-0.00" else text
-
-
 def write(points, column: str = RAW) -> str:
-    """``frequency,<column>`` CSV text of sorted (frequency, value) points."""
+    """``frequency,<column>`` CSV text of sorted (frequency, value) points.
+
+    AutoEq's number pattern has no exponent; it writes two decimals.
+    """
     lines = [f"{FREQUENCY},{column}"]
     previous = None
     for frequency, value in points:
         if not (math.isfinite(frequency) and math.isfinite(value)) or frequency <= 0:
             raise ValueError(f"cannot write the point ({frequency}, {value})")
-        f = _fixed(frequency)
+        f = fixed(frequency)
         if f == previous:
             raise ValueError(f"frequencies too close for two decimals at {f} Hz")
-        lines.append(f"{f},{_fixed(value)}")
+        lines.append(f"{f},{fixed(value)}")
         previous = f
     return "\n".join(lines) + "\n"
 
