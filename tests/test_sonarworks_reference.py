@@ -164,9 +164,9 @@ class ProjectReaderTests(unittest.TestCase):
 
     def test_fir_and_autoeq(self):
         path = SONARWORKS_PROJ / "Tilt Sonarworks Reference 4.swproj"
-        result = fir_convert.SwprojToFir().convert(path)
+        result = fir_convert.SwprojToFir().convert([path])
         self.assertIn("Right listening spot: 6 samples, +0.00 dB", result.notes)
-        result = to_autoeq.SwprojToAutoeq(channel="right").convert(path)
+        result = to_autoeq.SwprojToAutoeq(channel="right").convert([path])
         self.assertEqual(result.name, "Tilt Sonarworks Reference 4 Right.csv")
 
 

@@ -110,7 +110,13 @@ def cmd_inspect(args) -> int:
 # convert
 # --------------------------------------------------------------------------
 def cmd_convert(args) -> int:
-    source = args.source or formats.detect(args.input)
+    source = args.source
+    if source is None:
+        sources = {formats.detect(path) for path in args.input}
+        if len(sources) > 1:
+            raise ValueError(f"inputs of different formats: {', '.join(sorted(sources))}; "
+                             "specify --from")
+        source = sources.pop()
     target = args.target
     if target is None and args.output is not None:
         target = formats.detect(args.output, (t for s, t in convert.CONVERTERS if s == source))
@@ -118,7 +124,7 @@ def cmd_convert(args) -> int:
     converter = cls(**_class_options(args, args.option_dests, cls,
                                      f"{cls.source} -> {cls.target}"))
     result = converter.convert(args.input)
-    output = args.output or args.input.with_name(result.name)
+    output = args.output or args.input[0].with_name(result.name)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(result.data)
     print(f"wrote {output} ({len(result.data):,} bytes)")
@@ -173,9 +179,10 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="conversions:\n" + "\n".join(
             f"  {s} -> {t}: {c.description}" for (s, t), c in convert.CONVERTERS.items())
         + "\n\n" + _format_list())
-    p.add_argument("input", type=Path)
+    p.add_argument("-i", "--input", type=Path, action="append", required=True,
+                   help="input file; repeatable, in the order the conversion takes them")
     p.add_argument("-o", "--output", type=Path,
-                   help="output file (default: next to INPUT, named by the conversion)")
+                   help="output file (default: next to the first INPUT, named by the conversion)")
     p.add_argument("--from", dest="source", choices=formats.FORMATS,
                    help="input format (default: by INPUT extension)")
     p.add_argument("--to", dest="target", choices=formats.FORMATS,

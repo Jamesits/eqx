@@ -56,9 +56,9 @@ Inspect a file:
 uv run eqx inspect <file> [--format <format>] [--full] [...options]
 ```
 
-Convert a file:
+Convert files (`-i` is repeatable, e.g. left then right):
 ```shell
-uv run eqx convert <in-file> -o <out-file> [--from <format>] [--to <format>] [...options]
+uv run eqx convert -i <in-file> [-i <in-file>] -o <out-file> [--from <format>] [--to <format>] [...options]
 ```
 
 ## Development

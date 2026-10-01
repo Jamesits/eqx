@@ -194,7 +194,7 @@ def compare(profile: Path, rate: float, out: Path, settings: dict) -> list[tuple
         vst = impulse_response(plugin, rate, int(rate))
         del plugin
         converter = (SwprojToFir if speaker else PeqbToFir)(phase, rate, **settings)
-        eqx = fir.read(converter.convert(profile).data).channels
+        eqx = fir.read(converter.convert([profile]).data).channels
         stem = f"{profile.stem} {phase}"
         (out / f"{stem} vst.wav").write_bytes(fir.write(fir.Fir(rate, [list(c) for c in vst])))
         (out / f"{stem} eqx.wav").write_bytes(fir.write(fir.Fir(rate, eqx)))

@@ -17,7 +17,8 @@ TOLERANCE = 0.005 + 1e-9                    # two decimals
 
 
 def run(source, target, path, **options):
-    return convert.CONVERTERS[source, target](**options).convert(path)
+    paths = path if isinstance(path, list) else [path]
+    return convert.CONVERTERS[source, target](**options).convert(paths)
 
 
 def points(result: convert.Result) -> list:
@@ -206,13 +207,13 @@ class FromAutoeqTests(unittest.TestCase):
 
     def test_right_side(self):
         left, right = CSV / "Room Left.csv", CSV / "Room Right.csv"
-        p = peqb.read(run("autoeq", "peqb", left, right=right).data)
+        p = peqb.read(run("autoeq", "peqb", [left, right]).data)
         self.assertNotEqual(p.curves[0].points, p.curves[1].points)
 
     def test_speaker_project(self):
         left, right = CSV / "Room Left.csv", CSV / "Room Right.csv"
         mic = ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
-        project = swproj.SwProj(run("autoeq", "swproj", left, right=right, mic_profile=mic,
+        project = swproj.SwProj(run("autoeq", "swproj", [left, right], mic_profile=mic,
                                     reference_spl=80.0).data)
         curves = swproj.measurement_curves(project)
         self.assertEqual(list(curves), ["Left", "Right"])

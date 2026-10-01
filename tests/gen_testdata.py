@@ -1029,8 +1029,8 @@ EXPORT_TXT_DIR = "soundid/soundid-export-txt"
 TMREQ_DIR = "rme/tmreq"
 FIR_DIR = "fir/wav"
 
-# (input, output, converter options); paths relative to the root.  In
-# dependency order: a later input may be an earlier output.
+# (input or tuple of inputs, output, converter options); paths relative to
+# the root.  In dependency order: a later input may be an earlier output.
 CONVERSIONS = [
     *((f"{MIC_DIR}/{serial}.swmicpkg", f"{CAL_DIR}/{serial} {angle}.txt", {"angle": angle})
       for serial in MICS for angle in ANGLES),
@@ -1050,8 +1050,8 @@ CONVERSIONS = [
      {"computer_id": COMPUTER_ID}),
     (f"{PRESET_DIR}/Bass and treble.json", f"{CSV_DIR}/Bass and treble.csv", {}),
     (f"{CSV_DIR}/Bass and treble.csv", f"{CAL_DIR}/Bass and treble.txt", {}),
-    (f"{CSV_DIR}/Room Left.csv", f"{PROJ_DIR}/Room Left.swproj",
-     {"right": f"{CSV_DIR}/Room Right.csv", "mic_profile": f"{MIC_DIR}/TILT01.swmicpkg"}),
+    ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{PROJ_DIR}/Room Left.swproj",
+     {"mic_profile": f"{MIC_DIR}/TILT01.swmicpkg"}),
     (f"{CSV_DIR}/Tilt Tilt Wired Average Left.csv", f"{PEQB_DIR}/Tilt Tilt Wired Average Left.swhp",
      {"make": "Tilt", "model": "Tilt", "reference_db": 0.0}),
     (f"{BIQUAD_JSON_DIR}/Tilt Fluid.bin", f"{CSV_DIR}/Tilt Fluid Left.csv", {}),
@@ -1070,8 +1070,8 @@ CONVERSIONS = [
      {"computer_id": COMPUTER_ID}),
     (f"{FIR_DIR}/Tilt Tilt Wired Average.wav", f"{CSV_DIR}/Tilt Tilt Wired Average Right.csv",
      {"channel": "right"}),
-    (f"{CSV_DIR}/Room Left.csv", f"{FIR_DIR}/Room Left.wav",
-     {"right": f"{CSV_DIR}/Room Right.csv", "phase": "linear"}),
+    ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{FIR_DIR}/Room Left.wav",
+     {"phase": "linear"}),
     (f"{PROJ_DIR}/Room.swproj", f"{FIR_DIR}/Room.wav", {}),
     (f"{MDAT_DIR}/Bandpass.mdat", f"{SONARWORKS_PROJ_DIR}/Bandpass.swproj",
      {"mic_profile": f"{MIC_DIR}/TILT01.swmicpkg", "mic_angle": "degrees_30", "app": "sonarworks-reference",
@@ -1079,15 +1079,17 @@ CONVERSIONS = [
     (f"{SONARWORKS_PROJ_DIR}/Bandpass.swproj", f"{CSV_DIR}/Bandpass Right.csv", {"channel": "right"}),
     (f"{SONARWORKS_PROJ_DIR}/Bandpass.swproj", f"{FIR_DIR}/Bandpass.wav", {}),
 ]
-PATH_OPTIONS = ("mic_profile", "right", "target_curve")
+PATH_OPTIONS = ("mic_profile", "target_curve")
 
 
-def run_conversion(root: Path, source: str, target: str, options: dict) -> convert.Result:
+def run_conversion(root: Path, source: str | tuple[str, ...], target: str,
+                   options: dict) -> convert.Result:
     options = {k: root / v if k in PATH_OPTIONS else v for k, v in options.items()}
-    kind = formats.detect(root / source)
+    paths = [root / s for s in ((source,) if isinstance(source, str) else source)]
+    kind = formats.detect(paths[0])
     pair = convert.find(kind, formats.detect(Path(target), (t for s, t in convert.CONVERTERS
                                                              if s == kind)))
-    return pair(**options).convert(root / source)
+    return pair(**options).convert(paths)
 
 
 def generate(root: Path = ROOT) -> list[Path]:

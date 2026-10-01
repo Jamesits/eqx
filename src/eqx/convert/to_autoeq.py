@@ -59,8 +59,7 @@ class MdatToAutoeq(Converter):
     def __init__(self, channel: str = "left"):
         self.channel = _channel_name(channel)
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         measurements = {m.channel: m for m in mdat.load(path)}
         if self.channel not in measurements:
             raise _missing(self.channel, measurements)
@@ -79,8 +78,7 @@ class ArcxToAutoeq(Converter):
         self.speaker = speaker
         self.point = point
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         a = arcx.load(path)
         c = a.channel(self.speaker)
         frequencies, db, _ = arcx.response(a, c, self.point)
@@ -98,8 +96,7 @@ class Arc4ToAutoeq(Converter):
     def __init__(self, channel: str = "left"):
         self.channel = _channel_name(channel)
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         a = arc4.load(path)
         frequencies, db = arc4.response(a, a.channel(self.channel))
         return _result(list(zip(frequencies, db)), f"{path.stem} {self.channel}.csv",
@@ -126,8 +123,7 @@ class SwprojToAutoeq(Converter):
         password = password or os.environ.get("SWPROJ_PASSWORD")
         self.password = password.encode() if password else None
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         curves = swproj.measurement_curves(swproj.SwProj.open(path, self.password))
         names = {name.lower(): name for name in curves}
         if self.speaker.lower() not in names:
@@ -151,8 +147,7 @@ class PeqbToAutoeq(Converter):
         self.computer_id = computer_id
         self.key = key
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         p = peqb.open_decoded(path.read_bytes(), self.computer_id, self.key)
         side = self.channel
         # A project export holds the measurement; a headphone profile only the
@@ -175,8 +170,7 @@ class TargetpresetToAutoeq(Converter):
     target = "autoeq"
     description = "the target curve of a Custom Target Preset, on the standard 355-point grid"
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         preset = targetpreset.load(path)
         grid = standard_grid()
         points = list(zip(grid, targetpreset.target_response(preset, grid)))
@@ -209,8 +203,7 @@ class ExportToAutoeq(Converter):
     def correction(self, export: correction.Export) -> Correction:
         return export.select(self.channel, self.sample_rate)
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         c = self.correction(type(self).loader(path, **self.load_options))
         if c.biquads or c.peqs:
             grid = standard_grid()

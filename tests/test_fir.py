@@ -189,7 +189,7 @@ class PlaybackTests(unittest.TestCase):
 
 class ConversionTests(unittest.TestCase):
     def test_peqb_to_fir(self):
-        result = PeqbToFir(computer_id=gen_testdata.COMPUTER_ID).convert(TILT)
+        result = PeqbToFir(computer_id=gen_testdata.COMPUTER_ID).convert([TILT])
         f = fir.read(result.data)
         self.assertEqual((result.name, f.sample_rate, len(f.channels), f.taps),
                          ("Tilt Tilt Wired Average.wav", 48000.0, 2, 4096))
@@ -204,7 +204,7 @@ class ConversionTests(unittest.TestCase):
 
     def test_peqb_to_fir_options(self):
         result = PeqbToFir("linear", 96000, computer_id=gen_testdata.COMPUTER_ID,
-                           safe_headroom=False).convert(TILT)
+                           safe_headroom=False).convert([TILT])
         f = fir.read(result.data)
         self.assertEqual((f.sample_rate, f.taps), (96000.0, 8707))
         self.assertEqual(max(range(f.taps), key=lambda i: abs(f.channels[0][i])), 4353)
@@ -215,9 +215,9 @@ class ConversionTests(unittest.TestCase):
                 PeqbToFir(*args)
 
     def test_autoeq_to_fir(self):
-        mono = fir.read(AutoeqToFir().convert(ROOM_LEFT).data)
+        mono = fir.read(AutoeqToFir().convert([ROOM_LEFT]).data)
         self.assertEqual((len(mono.channels), mono.taps), (1, 4096))
-        result = AutoeqToFir(right=ROOM_RIGHT, phase="linear", taps=2001).convert(ROOM_LEFT)
+        result = AutoeqToFir(phase="linear", taps=2001).convert([ROOM_LEFT, ROOM_RIGHT])
         stereo = fir.read(result.data)
         self.assertEqual((result.name, len(stereo.channels), stereo.taps),
                          ("Room Left.wav", 2, 2001))
@@ -227,13 +227,13 @@ class ConversionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "f.wav"
             path.write_bytes(fir.write(fir.Fir(44100.0, [[0.5] + [0.0] * 99])))
-            result = FirToAutoeq().convert(path)
+            result = FirToAutoeq().convert([path])
             self.assertEqual(result.name, "f Left.csv")
             points = response.read(result.data.decode()).curve()
             self.assertEqual(len(points), 355)
             self.assertTrue(all(abs(g + 6.02) < 0.01 for _, g in points))
             with self.assertRaisesRegex(ValueError, "no Right channel"):
-                FirToAutoeq("right").convert(path)
+                FirToAutoeq("right").convert([path])
 
 
 def _hp(f, f0, order=2):
@@ -313,12 +313,12 @@ class SpeakerTests(unittest.TestCase):
             self.assertEqual(playback.spot_samples(ms, 48000), samples)
 
     def test_swproj_to_fir(self):
-        result = SwprojToFir(safe_headroom=False).convert(ROOM_PROJECT)
+        result = SwprojToFir(safe_headroom=False).convert([ROOM_PROJECT])
         f = fir.read(result.data)
         self.assertEqual((result.name, len(f.channels), f.taps), ("Room.wav", 2, 4096))
         self.assertIn("channels: Left, Right; gain 0.00 dB; limits: 12 dB, low neutral, "
                       "high neutral", result.notes)
-        surround = fir.read(SwprojToFir("linear").convert(SURROUND).data)
+        surround = fir.read(SwprojToFir("linear").convert([SURROUND]).data)
         self.assertEqual((len(surround.channels), surround.taps), (6, 4353))
         with self.assertRaisesRegex(ValueError, "12, 6 or 0"):
             SwprojToFir(limit_correction=3)
@@ -329,13 +329,13 @@ class SpeakerTests(unittest.TestCase):
         mic = ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
         project = MdatToSwproj(mic_profile=mic, spot_delay_ms=["Right=1"],
                                spot_gain_db=["Left=1.5"]).convert(
-            ROOT / gen_testdata.MDAT_DIR / "Room.mdat").data
+            [ROOT / gen_testdata.MDAT_DIR / "Room.mdat"]).data
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "spot.swproj"
             path.write_bytes(project)
-            on = fir.read(SwprojToFir(safe_headroom=False).convert(path).data)
+            on = fir.read(SwprojToFir(safe_headroom=False).convert([path]).data)
             off = fir.read(SwprojToFir(safe_headroom=False, listening_spot=False)
-                           .convert(path).data)
+                           .convert([path]).data)
         self.assertEqual(on.taps, off.taps + 47)
         self.assertEqual(on.channels[1][:47], [0.0] * 47)
         # The louder channel is at 0 dB; the other channel is 1.5 dB down.

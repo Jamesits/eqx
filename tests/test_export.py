@@ -219,7 +219,7 @@ class ConvertTests(unittest.TestCase):
             for path in paths:
                 with self.subTest(path.name):
                     options = {} if kind == LVND else {"channel": "right"}
-                    result = converters[kind](**options).convert(path)
+                    result = converters[kind](**options).convert([path])
                     side = "Left" if path.stem.endswith("Left") else "Right"
                     name = f"{path.stem}.csv" if kind == LVND else f"{path.stem} Right.csv"
                     self.assertEqual(result.name, name)
@@ -227,7 +227,7 @@ class ConvertTests(unittest.TestCase):
 
     def test_sample_rate_option(self):
         converter = to_autoeq.SoundidExportBiquadJsonToAutoeq(sample_rate=192000)
-        result = converter.convert(FILES[BIQUAD_JSON][0])
+        result = converter.convert([FILES[BIQUAD_JSON][0]])
         self.assertEqual(result.notes[1], "Left correction at 192000 Hz, dB")
 
 

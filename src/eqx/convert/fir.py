@@ -12,7 +12,7 @@ from ..options import Option
 from ..soundid import peqb, playback, swproj
 from ..wav import fir
 from .base import Converter, Result
-from .from_autoeq import COLUMN_OPTION, RIGHT_OPTION, _curves
+from .from_autoeq import COLUMN_OPTION, _curves
 from .to_autoeq import (CHANNEL_OPTION, COMPUTER_ID_OPTION, KEY_OPTION, PASSWORD_OPTION,
                         _channel_name, _result)
 
@@ -65,8 +65,7 @@ class PeqbToFir(Converter):
         self.computer_id, self.key = computer_id, key
         self.safe_headroom = safe_headroom
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         p = peqb.open_decoded(path.read_bytes(), self.computer_id, self.key)
         channels, gain = playback.headphone_fir(p, self.rate, self.phase, self.taps,
                                                 self.safe_headroom)
@@ -110,8 +109,7 @@ class SwprojToFir(Converter):
         self.safe_headroom, self.listening_spot = safe_headroom, listening_spot
         self.limits = (limit_correction, limit_low, limit_high)
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         channels, irs, gain = playback.speaker_fir(
             swproj.SwProj.open(path, self.password), self.rate, self.phase, self.taps,
             self.safe_headroom, self.listening_spot, *self.limits)
@@ -133,22 +131,21 @@ class AutoeqToFir(Converter):
 
     source = "autoeq"
     target = "fir"
-    description = "a curve (input: left, --right: right) as a FIR filter"
-    options = (COLUMN_OPTION, RIGHT_OPTION, PHASE_OPTION, RATE_OPTION, TAPS_OPTION)
+    description = "a curve (inputs: left, optional right) as a FIR filter"
+    options = (COLUMN_OPTION, PHASE_OPTION, RATE_OPTION, TAPS_OPTION)
+    inputs = 2
 
-    def __init__(self, column: str = response.RAW, right: Path | None = None,
+    def __init__(self, column: str = response.RAW,
                  phase: str = "minimum", rate: float = DEFAULT_RATE, taps: int | None = None):
         _check(phase, rate, taps)
         self.column = column
-        self.right = Path(right) if right is not None else None
         self.phase, self.rate, self.taps = phase, rate, taps
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, *paths: Path) -> Result:
         channels = [dsp.design_fir([f for f, _ in points], [g for _, g in points], self.rate,
                                    self.phase, self.taps)
-                    for _, points in _curves(path, self.right, self.column)]
-        return Result(fir.write(fir.Fir(self.rate, channels)), f"{path.stem}.wav",
+                    for _, points in _curves(paths, self.column)]
+        return Result(fir.write(fir.Fir(self.rate, channels)), f"{paths[0].stem}.wav",
                       _notes(channels, self.rate, self.phase, self.taps))
 
 
@@ -163,8 +160,7 @@ class FirToAutoeq(Converter):
     def __init__(self, channel: str = "left"):
         self.channel = _channel_name(channel)
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         f = fir.load(path)
         index = fir.CHANNEL_NAMES.index(self.channel)
         if index >= len(f.channels):

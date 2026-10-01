@@ -26,7 +26,7 @@ class SwmicpkgToRewcal(Converter):
     def __init__(self, angle: str = swmicpkg.PLAIN_ANGLE):
         self.angle = angle
 
-    def convert(self, path: Path) -> Result:
+    def _convert(self, path: Path) -> Result:
         profile = swmicpkg.load(path, self.angle)
         points = profile.points
         return Result(

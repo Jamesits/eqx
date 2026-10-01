@@ -13,8 +13,6 @@ from .base import Converter, Result
 from .mdat_swproj import SpeakerProjectConverter, interp, resample, standard_grid
 
 COLUMN_OPTION = Option("--column", help=f"AutoEq CSV column to read (default: {response.RAW})")
-RIGHT_OPTION = Option("--right", type=Path, metavar="CSV",
-                      help="AutoEq CSV of the right channel; the input is the left channel")
 
 # Downloaded average profiles use this error band.
 ERROR_BAND_DB = 3.0
@@ -25,12 +23,10 @@ def _resample(points, grid: list[float]) -> list[float]:
     return resample([f for f, _ in points], [v for _, v in points], grid)
 
 
-def _curves(path: Path, right: Path | None, column: str) -> list[tuple[str, list]]:
-    """[(channel, points)]: the input as Left, then ``right`` as Right."""
-    curves = [("Left", response.load(path).curve(column))]
-    if right is not None:
-        curves.append(("Right", response.load(right).curve(column)))
-    return curves
+def _curves(paths: tuple[Path, ...], column: str) -> list[tuple[str, list]]:
+    """[(channel, points)]: the first input as Left, the second as Right."""
+    return [(channel, response.load(path).curve(column))
+            for channel, path in zip(("Left", "Right"), paths)]
 
 
 class AutoeqToRewcal(Converter):
@@ -42,8 +38,7 @@ class AutoeqToRewcal(Converter):
     def __init__(self, column: str = response.RAW):
         self.column = column
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, path: Path) -> Result:
         points = response.load(path).curve(self.column)
         profile = MicProfile.from_points(path.stem, "", points)
         return Result(cal.write(profile, "AutoEq").encode("utf-8"), f"{path.stem}.txt",
@@ -54,20 +49,20 @@ class AutoeqToSwproj(SpeakerProjectConverter):
     """Group delay is not in the CSV, so it is 0 and there is no group-delay correction."""
 
     source = "autoeq"
-    description = ("speaker measurements (input: left, --right: right) as a SoundID "
+    description = ("speaker measurements (inputs: left, optional right) as a SoundID "
                    "speaker project")
-    options = SpeakerProjectConverter.options + (COLUMN_OPTION, RIGHT_OPTION)
+    options = SpeakerProjectConverter.options + (COLUMN_OPTION,)
+    inputs = 2
 
-    def __init__(self, column: str = response.RAW, right: Path | None = None, **settings):
+    def __init__(self, column: str = response.RAW, **settings):
         super().__init__(**settings)
         self.column = column
-        self.right = Path(right) if right is not None else None
 
-    def measurements(self, path: Path) -> tuple[layout.Layout, list[Measurement]]:
+    def measurements(self, *paths: Path) -> tuple[layout.Layout, list[Measurement]]:
         return layout.STEREO, [
             Measurement(channel, index, [f for f, _ in points], [v for _, v in points],
-                        [0.0] * len(points), name=f"{channel} {path.stem}")
-            for index, (channel, points) in enumerate(_curves(path, self.right, self.column))
+                        [0.0] * len(points), name=f"{channel} {paths[0].stem}")
+            for index, (channel, points) in enumerate(_curves(paths, self.column))
         ]
 
 
@@ -81,11 +76,11 @@ class AutoeqToPeqb(Converter):
 
     source = "autoeq"
     target = "peqb"
-    description = ("headphone measurement (input: left and right, or --right) as an "
+    description = ("headphone measurement (inputs: both sides, or left then right) as an "
                    "unencrypted .swhp headphone profile")
+    inputs = 2
     options = (
         COLUMN_OPTION,
-        RIGHT_OPTION,
         Option("--make", help="headphone manufacturer (default: AutoEq)"),
         Option("--model", help="headphone model (default: the input file name)"),
         Option("--target-curve", type=Path, metavar="CSV",
@@ -96,20 +91,19 @@ class AutoeqToPeqb(Converter):
                     f"(default: the mean {REFERENCE_HZ:g} Hz level)"),
     )
 
-    def __init__(self, column: str = response.RAW, right: Path | None = None,
+    def __init__(self, column: str = response.RAW,
                  make: str = "AutoEq", model: str | None = None,
                  target_curve: Path | None = None, reference_db: float | None = None):
         self.column = column
-        self.right = Path(right) if right is not None else None
         self.make = make
         self.model = model
         self.target_curve = Path(target_curve) if target_curve is not None else None
         self.reference_db = reference_db
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
+    def _convert(self, *paths: Path) -> Result:
+        path = paths[0]
         grid = standard_grid()
-        curves = dict(_curves(path, self.right, self.column))
+        curves = dict(_curves(paths, self.column))
         curves.setdefault("Right", curves["Left"])
         target = [0.0] * len(grid)
         if self.target_curve is not None:

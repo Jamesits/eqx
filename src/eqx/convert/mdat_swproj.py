@@ -720,13 +720,13 @@ class SpeakerProjectConverter(Converter):
                 spot.setdefault(names[name.lower()], [0.0, 0.0])[slot] = value
         return {channel: (delay, gain) for channel, (delay, gain) in spot.items()}
 
-    def measurements(self, path: Path) -> tuple[sid_layout.Layout, list[Measurement]]:
-        """The SoundID layout and the measurements in ``path``, in channel order."""
+    def measurements(self, *paths: Path) -> tuple[sid_layout.Layout, list[Measurement]]:
+        """The SoundID layout and the measurements in ``paths``, in channel order."""
         raise NotImplementedError
 
-    def convert(self, path: Path) -> Result:
-        path = Path(path)
-        layout, measurements = self.measurements(path)
+    def _convert(self, *paths: Path) -> Result:
+        path = paths[0]
+        layout, measurements = self.measurements(*paths)
         profile = load_mic_profile(self.mic_profile, self.mic_angle,
                                    self.mic_profile_format)
         spot = self.spot(measurements)
