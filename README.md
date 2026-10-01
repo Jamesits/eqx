@@ -28,6 +28,9 @@ DO check the output levels on all frequencies before playing any audio.
 | | Microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ | |
 | [RME TotalMix FX](https://rme-audio.de/totalmix-fx.html) | [Room EQ preset](https://rme-audio.de/totalmix-fx-room-eq.html) | `.tmreq` | `tmreq` | ✓ | ✓ | Untested: no hardware |
 | [Rogue Amoeba SoundSource](https://rogueamoeba.com/soundsource/) | [Headphone EQ custom profile](https://rogueamoeba.com/support/knowledgebase/?showArticle=SoundSource-Custom-HPEQ) | `.txt` | `soundsource` | ✓ | ✓ | |
+| Sonarworks Reference 3.x, 4.x | Headphone profile | `.swhp` | `peqb` | ✓ | | Untested: no license |
+| | Project | `.swproj` | `swproj` | ✓ | ✓ | Untested: no license |
+| | Export (including the PEQb 2.x and `PEQB` versions) | `.eqb` | `peqb` | ✓ | | Untested: no license |
 | [SoundID Reference 5.x](https://www.sonarworks.com/soundid-reference) | Headphone profile | `.swhp` | `peqb` | ✓ | ✓ | |
 | | Project | `.swproj` | `swproj` | ✓ | ✓ | |
 | | Microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ | |
@@ -40,9 +43,6 @@ DO check the output levels on all frequencies before playing any audio.
 | | Export: MERGING+ANUBIS | `.bin` | `soundid-export-biquad-json` | ✓ | | Untested: no hardware |
 | | Export: SPQ DSP (AVID MTRX, DAD) | `.txt` | `soundid-export-txt` | ✓ | | Untested: no hardware |
 | | Export: Wayne Jones AUDIO | `.bin` | `soundid-export-lvnd` | ✓ | | Untested: no hardware |
-| Sonarworks Reference 3.x, 4.x | Headphone profile | `.swhp` | `peqb` | ✓ | | Untested: no license |
-| | Project | `.swproj` | `swproj` | ✓ | ✓ | Untested: no license |
-| | Export (including the PEQb 2.x and `PEQB` versions) | `.eqb` | `peqb` | ✓ | | Untested: no license |
 
 Capabilities:
 - Read: `inspect` and `convert` input
