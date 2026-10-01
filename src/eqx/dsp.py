@@ -1,10 +1,12 @@
-"""Biquad filters (Audio EQ Cookbook design and magnitude response); FFT; FIR design."""
+"""Biquad filters (Audio EQ Cookbook design and magnitude response); FFT; FIR design; bell fit."""
 
 from __future__ import annotations
 
 import bisect
 import cmath
 import math
+import operator
+import statistics
 from dataclasses import dataclass
 
 # Parametric filters without their own sample rate are evaluated at this rate.
@@ -246,3 +248,135 @@ def fir_gain_db(ir: list[float], sample_rate: float, frequencies) -> list[float]
         p = power[k] + (x - k) * (power[k + 1] - power[k])
         out.append(10 * math.log10(max(p, 1e-30)))
     return out
+
+
+# --------------------------------------------------------------------------
+# parametric EQ fit
+# --------------------------------------------------------------------------
+@dataclass
+class BellFit:
+    gain_db: float                          # broadband gain
+    bells: list[tuple[float, float, float]]     # (frequency Hz, gain dB, Q), by frequency
+    rms_db: float                           # error over the fitted points
+    max_db: float
+
+
+class _Bells:
+    """Gains, dB, of cookbook bells at fixed frequencies."""
+
+    def __init__(self, frequencies, sample_rate: float):
+        w = [2 * math.pi * f / sample_rate for f in frequencies]
+        self.cos1 = [math.cos(x) for x in w]
+        self.cos2 = [math.cos(2 * x) for x in w]
+        self.sample_rate = sample_rate
+
+    def db(self, log_frequency: float, gain_db: float, log_q: float) -> list[float]:
+        bq = bell(math.exp(log_frequency), gain_db, math.exp(log_q), self.sample_rate)
+        # |H|^2 of a real biquad: (c0 + c1 cos w + c2 cos 2w) / (same for the poles).
+        n0, n1, n2 = (bq.b0 ** 2 + bq.b1 ** 2 + bq.b2 ** 2, 2 * (bq.b0 * bq.b1 + bq.b1 * bq.b2),
+                      2 * bq.b0 * bq.b2)
+        d0, d1, d2 = (bq.a0 ** 2 + bq.a1 ** 2 + bq.a2 ** 2, 2 * (bq.a0 * bq.a1 + bq.a1 * bq.a2),
+                      2 * bq.a0 * bq.a2)
+        return [10 * math.log10((n0 + n1 * c1 + n2 * c2) / (d0 + d1 * c1 + d2 * c2))
+                for c1, c2 in zip(self.cos1, self.cos2)]
+
+
+def _solve(a: list[list[float]], b: list[float]) -> list[float]:
+    """Gaussian elimination with partial pivoting; ``a`` is changed."""
+    n = len(b)
+    b = list(b)
+    for i in range(n):
+        p = max(range(i, n), key=lambda r: abs(a[r][i]))
+        a[i], a[p], b[i], b[p] = a[p], a[i], b[p], b[i]
+        for r in range(i + 1, n):
+            f = a[r][i] / a[i][i]
+            if f:
+                a[r] = [x - f * y for x, y in zip(a[r], a[i])]
+                b[r] -= f * b[i]
+    x = [0.0] * n
+    for i in reversed(range(n)):
+        x[i] = (b[i] - sum(a[i][j] * x[j] for j in range(i + 1, n))) / a[i][i]
+    return x
+
+
+def fit_bells(frequencies, gains_db, count: int, *,
+              frequency_hz: tuple[float, float] = (20.0, 20000.0),
+              gain_db: tuple[float, float] = (-20.0, 20.0),
+              q: tuple[float, float] = (0.4, 9.9),
+              sample_rate: float = PEQ_SAMPLE_RATE, tolerance_db: float = 0.05) -> BellFit:
+    """A gain and up to ``count`` bells whose sum follows ``gains_db``, least squares.
+
+    Each bell starts at the largest remaining error, then all parameters are
+    refined together (Levenberg-Marquardt, bounded).  Bands stop being added
+    once the error is below ``tolerance_db`` everywhere.
+    """
+    frequencies, target = list(frequencies), list(gains_db)
+    curves = _Bells(frequencies, sample_rate)
+    low = [gain_db[0], math.log(frequency_hz[0]), gain_db[0], math.log(q[0])]
+    high = [gain_db[1], math.log(frequency_hz[1]), gain_db[1], math.log(q[1])]
+
+    def clip(params: list[float]) -> list[float]:
+        return [min(max(v, low[1 + (i - 1) % 3] if i else low[0]),
+                    high[1 + (i - 1) % 3] if i else high[0]) for i, v in enumerate(params)]
+
+    def bands(params: list[float]) -> list[list[float]]:
+        return [curves.db(*params[i:i + 3]) for i in range(1, len(params), 3)]
+
+    def errors(params: list[float], curves_db: list[list[float]]) -> list[float]:
+        return [t - params[0] - sum(c) for t, *c in zip(target, *curves_db)]
+
+    def refine(params: list[float], iterations: int) -> list[float]:
+        damping = 1e-3
+        curves_db = bands(params)
+        r = errors(params, curves_db)
+        cost = sum(e * e for e in r)
+        for _ in range(iterations):
+            columns = [[1.0] * len(target)]
+            for k, base in enumerate(curves_db):
+                for j in range(3):
+                    p = params[1 + 3 * k:4 + 3 * k]
+                    p[j] += 1e-4
+                    columns.append([(v - b) / 1e-4 for v, b in zip(curves.db(*p), base)])
+            jtj = [[sum(map(operator.mul, a, b)) for b in columns] for a in columns]
+            jtr = [sum(map(operator.mul, a, r)) for a in columns]
+            while True:
+                m = [[v * (1 + damping) + 1e-9 if i == j else v for j, v in enumerate(row)]
+                     for i, row in enumerate(jtj)]
+                new = clip([p + d for p, d in zip(params, _solve(m, jtr))])
+                new_curves = bands(new)
+                new_r = errors(new, new_curves)
+                new_cost = sum(e * e for e in new_r)
+                if new_cost < cost:
+                    damping = max(damping / 3, 1e-9)
+                    break
+                damping *= 4
+                if damping > 1e9:
+                    return params
+            converged = cost - new_cost < 1e-9 * cost
+            params, curves_db, r, cost = new, new_curves, new_r, new_cost
+            if converged:
+                break
+        return params
+
+    params = clip([statistics.median(target)])
+    for _ in range(count):
+        r = errors(params, bands(params))
+        i = max(range(len(r)), key=lambda n: abs(r[n]))
+        if abs(r[i]) < tolerance_db:
+            break
+        # Width: where the error falls to half, on the same side of zero.
+        lo = hi = i
+        while lo > 0 and r[lo - 1] * r[i] > 0 and abs(r[lo - 1]) > abs(r[i]) / 2:
+            lo -= 1
+        while hi < len(r) - 1 and r[hi + 1] * r[i] > 0 and abs(r[hi + 1]) > abs(r[i]) / 2:
+            hi += 1
+        octaves = max(math.log2(frequencies[hi] / frequencies[lo]), 1 / 12)
+        params = clip(params + [math.log(frequencies[i]), r[i],
+                                math.log(2 ** (octaves / 2) / (2 ** octaves - 1))])
+        params = refine(params, 10)
+    params = refine(params, 200)
+    r = errors(params, bands(params))
+    bells = sorted((math.exp(params[i]), params[i + 1], math.exp(params[i + 2]))
+                   for i in range(1, len(params), 3))
+    return BellFit(params[0], bells, math.sqrt(sum(e * e for e in r) / len(r)),
+                   max(abs(e) for e in r))

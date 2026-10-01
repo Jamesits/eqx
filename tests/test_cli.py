@@ -183,7 +183,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", "-i", csv)
-        self.assertIn("4 converters from autoeq", err)
+        self.assertIn("7 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
             self.assertEqual(code, 0)
@@ -193,6 +193,22 @@ class ConvertTests(unittest.TestCase):
             self.assertEqual(code, 0)
             _, out = run("inspect", Path(tmp) / "y.csv")
             self.assertIn("  points  : 355", out)
+
+    def test_writers(self):
+        csv = SAMPLES["autoeq"]
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, want in (("x.mdat", "mdat"), ("x.tmreq", "tmreq"), ("x.arcXa", "arcx")):
+                with self.subTest(name):
+                    code, text = run("convert", "-i", csv, "-o", Path(tmp) / name)
+                    self.assertEqual(code, 0)
+                    self.assertEqual(formats.detect(Path(tmp) / name), want)
+                    self.assertEqual(run("inspect", Path(tmp) / name)[0], 0)
+            # The only conversion of rewcal; the default name is the serial.
+            table = Path(tmp) / "t.cal"
+            table.write_bytes(SAMPLES["rewcal"].read_bytes())
+            code, text = run("convert", "-i", table, "--serial", "S1")
+            self.assertEqual(code, 0)
+            self.assertEqual(swmicpkg.load(Path(tmp) / "S1.swmicpkg").name, "S1")
 
     def test_device_export(self):
         merging = TESTDATA / "soundid/soundid-export-biquad-json/Tilt MERGING.bin"

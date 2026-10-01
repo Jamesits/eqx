@@ -8,7 +8,9 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
+from eqx.autoeq import response as autoeq
 from eqx.convert import mdat_swproj as convert
+from eqx.convert.from_autoeq import AutoeqToMdat
 from eqx.model import Measurement
 from eqx.rew import mdat
 from eqx.soundid import layout, swmicpkg, swproj
@@ -260,6 +262,65 @@ class ProjectTests(unittest.TestCase):
                 ([measurement(80.0), measurement(80.0)], "channel 0 measured twice")):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 convert.convert(measurements, profile, "x")
+
+
+class MdatWriterTests(unittest.TestCase):
+    def linear(self, name: str, channel: str = "Left", index: int = 0) -> Measurement:
+        grid = [5.0 + 2.5 * i for i in range(100)]
+        return Measurement(channel, index, grid, [80 + math.sin(f / 50) for f in grid],
+                           [0.001 * i for i in range(100)], "2001-02-03T16:05:06.000000Z",
+                           44100, name, "a.csv", "Test")
+
+    def test_round_trip(self):
+        for rew in mdat.REW_VERSIONS:
+            with self.subTest(rew=rew):
+                left = self.linear("L Ünïcode 𝄞")
+                right = self.linear("R x", "Right", 1)
+                data = mdat.write([right, left], [[1.5] * 100, [0.0] * 100], rew)
+                got = mdat.read_detailed(data)
+                self.assertEqual([m.channel for m, _ in got], ["Left", "Right"])
+                m, fields = got[0]
+                self.assertEqual((m.name, m.sample_rate, m.timestamp, m.source_file,
+                                  m.source_format), (left.name, 44100, left.timestamp, "a.csv",
+                                                     "Test"))
+                for a, b in ((m.frequencies, left.frequencies), (m.response, left.response),
+                             (m.group_delay, left.group_delay)):
+                    for x, y in zip(a, b, strict=True):
+                        self.assertAlmostEqual(x, y, delta=1e-5 * max(1, abs(y)))
+                self.assertEqual(fields["rewVersion"], rew[0])
+                self.assertEqual(got[1][1]["phaseValues"], "<array of 100>")
+
+    def test_rejected(self):
+        m = self.linear("L")
+        log = Measurement("Left", 0, [10.0, 20.0, 40.0], [0.0] * 3, [0.0] * 3)
+        for args, message in ((([log],), "not a positive linear grid"),
+                              (([m], [[0.0]]), "1 phase values, 100 points"),
+                              (([m], None, (5, 0)), "REW version must be one of"),
+                              (([],), "no measurement")):
+            with self.subTest(message), self.assertRaisesRegex(ValueError, message):
+                mdat.write(*args)
+
+    def test_from_autoeq(self):
+        csv = TESTDATA / "autoeq/csv/Bandpass Left.csv"
+        result = AutoeqToMdat(rate=44100).convert([csv])
+        self.assertEqual(result.name, "Bandpass Left.mdat")
+        (m,) = mdat.read(result.data)
+        self.assertEqual((m.channel, m.name, m.sample_rate), ("Left", "L Bandpass Left", 44100))
+        points = autoeq.load(csv).curve()
+        step = 44100 / 65536
+        self.assertTrue(points[0][0] <= m.frequencies[0] < points[0][0] + step)
+        self.assertTrue(points[-1][0] - step < m.frequencies[-1] <= points[-1][0])
+        self.assertAlmostEqual(m.frequencies[1] - m.frequencies[0], step, places=6)
+        # Linear in log frequency between the CSV points.
+        for i in (0, 1000, 5000, len(m.frequencies) - 1):
+            f = m.frequencies[i]
+            j = max(n for n, (x, _) in enumerate(points[:-1]) if x <= f)
+            (f0, v0), (f1, v1) = points[j], points[j + 1]
+            want = v0 + (v1 - v0) * math.log(f / f0) / math.log(f1 / f0)
+            self.assertAlmostEqual(m.response[i], want, places=4)
+        self.assertTrue(all(g == 0 for g in m.group_delay))
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            AutoeqToMdat(rate=44100.5)
 
 
 if __name__ == "__main__":

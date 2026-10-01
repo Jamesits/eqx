@@ -18,15 +18,15 @@ DO check the output levels on all frequencies before playing any audio.
 |:---|:---|:---|:-:|:-:|
 | AutoEq | `.csv` | `autoeq` | ✓ | ✓ |
 | FIR filter (Equalizer APO, CamillaDSP, Roon, ...) | `.wav` | `fir` | ✓ | ✓ |
-| IK Multimedia ARC X 2.x session | `.arcXs` | `arcx` | ✓ | |
-| IK Multimedia ARC X 2.x analysis | `.arcXa` | `arcx` | ✓ | |
+| IK Multimedia ARC X 2.x session | `.arcXs` | `arcx` | ✓ | ✓ |
+| IK Multimedia ARC X 2.x analysis | `.arcXa` | `arcx` | ✓ | ✓ |
 | IK Multimedia ARC 4 analysis | `.arc4a` | `arc4` | ✓ | |
-| REW measurement | `.mdat` | `mdat` | ✓ | |
+| REW measurement | `.mdat` | `mdat` | ✓ | ✓ |
 | REW microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ |
-| RME TotalMix FX Room EQ preset | `.tmreq` | `tmreq` | ✓ | |
+| RME TotalMix FX Room EQ preset | `.tmreq` | `tmreq` | ✓ | ✓ |
 | SoundID Reference 5.x headphone profile | `.swhp` | `peqb` | ✓ | ✓ |
 | SoundID Reference 5.x project | `.swproj` | `swproj` | ✓ | ✓ |
-| SoundID Reference 5.x microphone package | `.swmicpkg` | `swmicpkg` | ✓ | |
+| SoundID Reference 5.x microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ |
 | SoundID Reference 5.x target preset | `.json` | `targetpreset` | ✓ | |
 | SoundID Reference 5.x export: ADAM Audio A Series | `.adam` | `soundid-export-biquad-xml` | ✓ | |
 | SoundID Reference 5.x export: Dolby Atmos Renderer | `.txt` | `soundid-export-txt` | ✓ | |

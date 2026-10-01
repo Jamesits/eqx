@@ -1,4 +1,4 @@
-"""Reader for IK Multimedia ARC X sessions (``*.arcXs``) and analyses (``*.arcXa``).
+"""Reader and writer for IK Multimedia ARC X sessions (``*.arcXs``) and analyses (``*.arcXa``).
 
 Both are ``IKMPAK`` containers (``eqx.ik.pak``)::
 
@@ -52,6 +52,26 @@ INFO_VERSION_MAJOR = 5
 SESSION, INFO = "session.xml", "info.xml"
 # Response grid: 1/48 octave from 20 Hz; bands of +-1/96 octave.
 GRID_LOW_HZ, GRID_HIGH_HZ, GRID_STEPS_PER_OCTAVE = 20.0, 20000.0, 48
+SAMPLE_RATES = (44100.0, 48000.0)
+# ARC X writes and processes 32768 samples.
+IR_LENGTH = 32768
+INFO_VERSION = "5.0.0"
+APP_VERSION = "2.0.2 (26D30)"
+NULL_GUID = "00000000-0000-0000-0000-000000000000"
+# Speaker device: IK product | serial | two a.b.c versions | 0 or 1.  ARC X
+# loads no session whose speakers lack a product and a serial.  183: ARC Studio.
+DEVICE = "183|000000000|1.0.0|1.0.0|0"
+# The device state of a speaker: flat, no tuning filter.
+SETTINGS = (
+    [("HpfFrequency", "20.0"), ("DelayMs", "0.0"), ("GainDb", "0.0"), ("DelayEnable", "1"),
+     ("GainEnable", "1"), ("CalEnable", "1"), ("PhaseInvert", "0"), ("PhaseInvertEnable", "1"),
+     ("FilterLowType", "0"), ("FilterHighType", "0"), ("VoiceIndex", "0"), ("FilterEnable", "0"),
+     ("VoiceEnable", "0"), ("DimAttenuationDb", "0.0"), ("ActivePreset", "0"),
+     ("FilterLowFrequency", "100.0"), ("FilterLowGainDb", "0.0"), ("FilterLowQ", "0.7")]
+    + [(f"PeakFilters{n}{k}", v) for n in range(4)
+       for k, v in (("Frequency", "1000.0"), ("GainDb", "0.0"), ("Q", "1.0"))]
+    + [("FilterHighFrequency", "10000.0"), ("FilterHighGainDb", "0.0"), ("FilterHighQ", "0.7")]
+)
 
 POINT_OPTION = Option("--point", type=int,
                       help="measurement point, from 0 as in the file names "
@@ -187,6 +207,59 @@ def _number(element: ET.Element, key: str, where: str) -> float:
         return float(element.get(key, ""))
     except ValueError:
         raise ValueError(f"{where}: {key} {element.get(key)!r} is not a number") from None
+
+
+# --------------------------------------------------------------------------
+# writer
+# --------------------------------------------------------------------------
+def value_tree(tag: str, attributes, children=(), indent: str = "") -> list[str]:
+    attrs = "".join(f' {k}="{v}"' for k, v in attributes)
+    if not children:
+        return [f"{indent}<{tag}{attrs}/>"]
+    lines = [f"{indent}<{tag}{attrs}>"]
+    for child in children:
+        lines += value_tree(*child, indent=indent + "  ")
+    return lines + [f"{indent}</{tag}>"]
+
+
+def juce_xml(lines: list[str]) -> bytes:
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n\n' + "\n".join(lines) + "\n").encode()
+
+
+def write(sample_rate: float, channels: list[list[Point]], layout: int,
+          session: bool = True, mic_type: str = "MEMS") -> bytes:
+    """A session (``session``) or an analysis; ``channels`` in the layout's speaker order."""
+    if layout not in LAYOUTS:
+        raise ValueError(f"unknown ARC X layout {layout}")
+    name, positions = LAYOUTS[layout]
+    if len(channels) != len(positions):
+        raise ValueError(f"layout {name} has {len(positions)} speakers, got {len(channels)} "
+                         "channels")
+    points = len(channels[0])
+    if not points or any(len(c) != points for c in channels):
+        raise ValueError("every channel needs the same number of points, at least one")
+    entries = {INFO: juce_xml(value_tree("SerializedMeasure", [
+        ("Version", INFO_VERSION), ("SampleRate", f"{sample_rate:.1f}"),
+        ("SelectedMicType", mic_type), ("CorrectionSpeaker", NULL_GUID),
+        ("NumMeasurementPoints", points), ("Layout", name), ("ListeningArea", "Project Studio"),
+        ("FastMode", "0"), ("Countdown", "5")]))}
+    for c, channel in enumerate(channels):
+        for p, point in enumerate(channel):
+            entries[_wav_name(c, p, "ir")] = fir.write(fir.Fir(sample_rate, [point.ir]))
+            entries[_wav_name(c, p, "cc")] = fir.write(fir.Fir(sample_rate, [point.cc]))
+    if session:
+        entries[SESSION] = juce_xml(value_tree("Session", [
+            ("Version", 1), ("AppVersion", APP_VERSION), ("GUID", NULL_GUID),
+            ("Layout", layout), ("CorrectionType", 1), ("CorrectionPhase", 1),
+            ("MasterRemoteSpeakerIndex", -1), ("BassManaged", 0), ("TargetRequest", 0),
+            ("Notes", ""), ("AudioDeviceName", ""), ("AudioDeviceSampleRate", round(sample_rate)),
+            ("AudioDeviceBufferSize", 512)], [
+            (f"Speaker_{position}", [
+                ("Device", DEVICE), ("CalRangeLow", 20), ("CalRangeHigh", 20000),
+                ("CorrectionAssetGUID", NULL_GUID), ("OutputChannelIndex", c)],
+             [("Settings", SETTINGS)])
+            for c, position in enumerate(positions)]))
+    return pak.write(entries)
 
 
 # --------------------------------------------------------------------------

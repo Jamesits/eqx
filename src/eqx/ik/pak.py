@@ -1,4 +1,4 @@
-"""Reader for IK Multimedia ``IKMPAK`` containers.
+"""Reader and writer for IK Multimedia ``IKMPAK`` containers.
 
 Little endian: ``IKMPAK``, u32 version, then the entry table::
 
@@ -55,6 +55,21 @@ def read(data: bytes) -> tuple[int, dict[str, bytes]]:
     if version == 3 and pos != end:
         raise ValueError("pak entry table size does not match its entries")
     return version, entries
+
+
+def write(entries: dict[str, bytes]) -> bytes:
+    """Version 3, entries sorted by name, as ARC X writes them."""
+    names = sorted(entries)
+    for name in names:
+        if not 0 < len(name.encode()) <= MAX_NAME or "\0" in name:
+            raise ValueError(f"invalid pak entry name {name!r}")
+    table_size = sum(len(n.encode()) + 17 for n in names)
+    offset = 26 + table_size
+    table, body = b"", b""
+    for name in names:
+        table += name.encode() + b"\0" + struct.pack("<QQ", offset + len(body), len(entries[name]))
+        body += entries[name]
+    return MAGIC + struct.pack("<IQQ", 3, len(names), table_size) + table + body
 
 
 def _unpack(fmt: str, data: bytes, pos: int) -> tuple:

@@ -12,15 +12,13 @@ from ..options import Option
 from ..soundid import peqb, playback, swproj
 from ..wav import fir
 from .base import Converter, Result
-from .from_autoeq import COLUMN_OPTION, _curves
+from .from_autoeq import COLUMN_OPTION, DEFAULT_RATE, RATE_OPTION, _curves
 from .to_autoeq import (CHANNEL_OPTION, COMPUTER_ID_OPTION, KEY_OPTION, PASSWORD_OPTION,
                         _channel_name, _result)
 
-DEFAULT_RATE = 48000.0
 PHASE_OPTION = Option("--phase", choices=dsp.PHASES,
                       help="minimum (SoundID Zero Latency) or linear (SoundID Linear Phase) "
                            "phase (default: minimum)")
-RATE_OPTION = Option("--rate", type=float, help="sample rate of the filter, Hz (default: 48000)")
 TAPS_OPTION = Option("--taps", type=int,
                      help="filter length (default: SoundID's, at 48 kHz 4096 minimum phase, "
                           "4353 linear phase)")

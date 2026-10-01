@@ -6,8 +6,10 @@ from pathlib import Path
 
 import gen_testdata
 from eqx import dsp, formats
+from eqx.autoeq import response
 from eqx.convert import to_autoeq
-from eqx.model import Correction, Peq
+from eqx.convert.from_autoeq import AutoeqToTmreq
+from eqx.model import Correction, Peq, standard_grid
 from eqx.rme import tmreq
 from eqx.soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_partners,
                          export_peq_json, export_txt)
@@ -256,6 +258,67 @@ class RealExportTests(unittest.TestCase):
         b = export_lvnd.load(wayne).corrections[0].response(FREQUENCIES)
         for x, y in zip(a, b):
             self.assertAlmostEqual(x, y, delta=0.1)
+
+
+class TmreqWriterTests(unittest.TestCase):
+    def test_round_trip(self):
+        peqs = [Peq(40, 3, 0.7, "low-shelf"), Peq(500, -2.5, 1.2),
+                *(Peq(1000 * n, 0, 1) for n in range(1, 6)),
+                Peq(9000, 1, 0.8, "high-shelf"), Peq(20000, 0, 0.71, "low-pass")]
+        text = tmreq.write([Correction("L", -1.5, 0.25, peqs=peqs), Correction("R")])
+        self.assertIn('<val e="REQ Band1Type" v="1.00,"/>', text)
+        self.assertIn('<val e="REQ Band9 Type" v="2.00,"/>', text)
+        left, right = tmreq.read(text).corrections
+        self.assertEqual((left.channel, left.gain_db, left.delay_ms), ("L", -1.5, 0.25))
+        self.assertEqual(left.peqs, peqs)
+        self.assertEqual(right.response(FREQUENCIES), [0.0] * len(FREQUENCIES))
+        stored = FILES["tmreq"][0]
+        self.assertEqual(tmreq.write(tmreq.load(stored).corrections), stored.read_text())
+
+    def test_rejected(self):
+        for c, message in ((Correction("L", peqs=[Peq(1000, 1, 1)] * 10), "10 filters"),
+                           (Correction("L", peqs=[Peq(1000, 1, 1), Peq(50, 1, 1, "low-shelf")]),
+                            "band 2 cannot be a low-shelf"),
+                           (Correction("L", peqs=[Peq(50, 1, 1, "high-shelf")]),
+                            "band 1 cannot be a high-shelf"),
+                           (Correction("L", points=[(100, 1)]), "parametric filters only")):
+            with self.subTest(message), self.assertRaisesRegex(ValueError, message):
+                tmreq.write([c])
+
+    def test_fit_recovers_bells(self):
+        grid = [f for f in standard_grid() if f <= 20000]
+        for side in ("Left", "Right"):
+            with self.subTest(side):
+                target = [dsp.cascade_db(gen_testdata.bells(side), f, dsp.PEQ_SAMPLE_RATE) - 2
+                          for f in grid]
+                fit = dsp.fit_bells(grid, target, 9)
+                self.assertLess(fit.max_db, 0.01)
+                self.assertAlmostEqual(fit.gain_db, -2, places=3)
+                for got, want in zip(fit.bells, gen_testdata.SPEAKER[side], strict=True):
+                    for x, y in zip(got, want):
+                        self.assertAlmostEqual(x, y, delta=1e-3 * abs(y))
+
+    def test_fit_bounds(self):
+        grid = [f for f in standard_grid() if f <= 20000]
+        fit = dsp.fit_bells(grid, [30.0 if 900 < f < 1100 else 0.0 for f in grid], 2,
+                            gain_db=(-6, 6), q=(1, 2))
+        self.assertTrue(all(-6 <= g <= 6 and 1 <= q <= 2 for _, g, q in fit.bells))
+        self.assertTrue(-6 <= fit.gain_db <= 6)
+        self.assertEqual(dsp.fit_bells(grid, [0.0] * len(grid), 9).bells, [])
+
+    def test_from_autoeq(self):
+        csv = ROOT / gen_testdata.CSV_DIR / "Bass and treble.csv"
+        result = AutoeqToTmreq().convert([csv])
+        self.assertEqual(result.name, "Bass and treble.tmreq")
+        left, right = tmreq.read(result.data.decode()).corrections
+        self.assertEqual((left.channel, right.channel, left.peqs), ("L", "R", right.peqs))
+        self.assertEqual(len(left.peqs), 9)
+        points = [(f, v) for f, v in response.load(csv).curve() if 20 <= f <= 20000]
+        for (f, v), got in zip(points, left.response([f for f, _ in points])):
+            self.assertAlmostEqual(got, v, delta=0.3)
+        tilt = ROOT / gen_testdata.CSV_DIR / "Tilt - Flat Right.csv"
+        left, right = tmreq.read(AutoeqToTmreq().convert([csv, tilt]).data.decode()).corrections
+        self.assertNotEqual(left.peqs, right.peqs)
 
 
 if __name__ == "__main__":

@@ -40,9 +40,9 @@ class ReaderTests(unittest.TestCase):
                 ({**entries, "ch1.wav": short}, "differ in length"),
                 ({k: v for k, v in entries.items() if k != "info.xml"}, "no info.xml")):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
-                arc4.read(gen_testdata.write_pak(bad))
+                arc4.read(pak.write(bad))
         # A newer version is read.
-        arc4.read(gen_testdata.write_pak({**entries,
+        arc4.read(pak.write({**entries,
                                           "info.xml": info.replace(b'"4.0.0"', b'"4.10.0"')}))
 
 

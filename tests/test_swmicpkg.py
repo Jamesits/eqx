@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from eqx.convert.mdat_swproj import load_mic_profile
+from eqx.convert.rewcal_swmicpkg import RewcalToSwmicpkg
 from eqx.rew import cal
 from eqx.soundid import swmicpkg
 
@@ -88,6 +89,39 @@ class RewTests(unittest.TestCase):
         profile = swmicpkg.read(json.dumps({"degrees_0": table}), name="X")
         self.assertEqual(cal.write(profile, "SoundID"), "* SoundID microphone X degrees_0\n"
                                                      "20\t0\n1000\t-1.5\n")
+
+
+class WriterTests(unittest.TestCase):
+    def test_round_trip(self):
+        profiles = swmicpkg.read_all(PACKAGE.read_text(), "TILT01")
+        data = swmicpkg.write(profiles)
+        self.assertEqual(data, PACKAGE.read_bytes())
+        package = json.loads(data)
+        self.assertEqual(base64.b64decode(package["degrees_30"])[:16], bytes(16))
+        with self.assertRaisesRegex(ValueError, "two degrees_0 tables"):
+            swmicpkg.write(profiles[:1] * 2)
+
+    def test_from_rewcal(self):
+        tables = [TESTDATA / f"rew/rewcal/TILT01 {angle}.txt" for angle in swmicpkg.ANGLES]
+        result = RewcalToSwmicpkg(serial="X").convert(tables)
+        self.assertEqual(result.name, "X.swmicpkg")
+        got = swmicpkg.read_all(result.data.decode(), "X")
+        want = swmicpkg.read_all(PACKAGE.read_text(), "TILT01")
+        for a, b in zip(got, want, strict=True):
+            self.assertEqual(a.angle, b.angle)
+            self.assertEqual([f for f, _ in a.points], [f for f, _ in b.points])
+            for (_, x), (_, y) in zip(a.points, b.points):
+                self.assertAlmostEqual(x, y, delta=0.011)
+
+    def test_missing_angles(self):
+        result = RewcalToSwmicpkg().convert([TESTDATA / "rew/rewcal/TILT01 sensitivity.cal"])
+        self.assertEqual(result.name, "TILT01 sensitivity.swmicpkg")
+        self.assertIn("degrees_0: TILT01 sensitivity.cal, 300 points; 1 other lines ignored",
+                      result.notes)
+        self.assertIn("degrees_90: copy of degrees_0", result.notes)
+        profiles = swmicpkg.read_all(result.data.decode())
+        self.assertEqual([p.angle for p in profiles], list(swmicpkg.ANGLES))
+        self.assertEqual(profiles[2].points, profiles[0].points)
 
 
 if __name__ == "__main__":

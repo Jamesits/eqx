@@ -7,15 +7,13 @@ device, user or time metadata.  Files that a converter produces from other
 test files are written by running that converter (``CONVERSIONS``).
 
 Writers for formats that ``eqx`` only reads live here, not in the library:
-REW ``.mdat``, encrypted PEQb, PEQb 2.x and ``PEQB``, ``.swmicpkg``,
-Custom Target Presets, a REW ``.cal`` with a sensitivity line, the
-SoundID device exports, Sonarworks Reference 3 and Sonarworks Reference 4 Measure projects,
-IK Multimedia paks, ARC X and ARC 4 files.
+encrypted PEQb, PEQb 2.x and ``PEQB``, Custom Target Presets, a REW ``.cal``
+with a sensitivity line, the SoundID device exports, Sonarworks Reference 3
+and Sonarworks Reference 4 Measure projects, ARC 4 files.
 """
 
 from __future__ import annotations
 
-import base64
 import cmath
 import gzip
 import json
@@ -26,8 +24,10 @@ from pathlib import Path
 
 from eqx import convert, dsp, formats
 from eqx.convert.mdat_swproj import standard_grid
-from eqx.ik import arcx
-from eqx.model import EPOCH
+from eqx.ik import arcx, pak
+from eqx.model import EPOCH, Correction, Measurement, MicProfile, Peq
+from eqx.rew import mdat
+from eqx.rme import tmreq
 from eqx.soundid import crypto, peqb, swmicpkg, swproj
 from eqx.soundid import export_lvnd, export_partners
 from eqx.wav import fir
@@ -92,265 +92,22 @@ def response(sections, f):
 
 
 # ---------------------------------------------------------------------------
-# Java Object Serialization (REW .mdat)
+# REW .mdat
 # ---------------------------------------------------------------------------
-# REW's MeasData field sets.  Order is the serialized order (primitives, then
-# objects, each by name).  "Lname" fields list their class; "[name" is float[].
-MEASDATA_UID = -1234567890123456789
-_COMMON_PRIMITIVES = (
-    "DalignSPLOffsetCumulative DalignSPLOffsetLast DasdOffset IaudioDataLength "
-    "IaudioDataOffset DcalR DdBcOffset IdataLength FendFreq DfdwEndFreq DfdwFrac IfdwPPO "
-    "DfdwStartFreq FfreqStep DhfFallSlope IhfFallStart {hpApplied}DimpedanceCal DinputR "
-    "ZisFromRTA {isFsaf}ZisLogSpaced FlastUnwrapOffsetFreq DleadsR IlfRiseEnd DlfRiseSlope "
-    "IlfRiseStart DlogStep DlogStepLog InumSweeps DoctaveFrac {overlaySelected}"
-    "ZphaseIsUnwrapped Ippo {rawGDOctaveFrac}DrefR DroomHeight DroomLength DroomWidth "
-    "IsampleRate JsourceFileDate IsourceType IspeakerBassMgmtShape IspeakerCutoff FstartFreq "
-    "ZuseBars FvalidEndFreq FvalidStartFreq IxOverHPCutoff IxOverLPCutoff"
-)
-_OBJECTS_531 = (
-    "LaddRoomCurve:Ljava/lang/Boolean; LcalDataLimitApplied:Ljava/lang/Boolean; "
-    "LceaData:Lroomeqwizard/CEA2010Data; LdBVInputOffset:Ljava/lang/Double; "
-    "LdBVOutputOffset:Ljava/lang/Double; LdistortionData:Lroomeqwizard/DistortionData; "
-    "Leightc:Lroomeqwizard/Eightc; LeightcPosnsMeasured:Ljava/lang/String; "
-    "LeightcProfilePosnIDs:Ljava/util/HashSet; LeightcProfileSt:Ljava/lang/String; "
-    "LeightcRoomID:Ljava/lang/String; LeightcRoomName:Ljava/lang/String; "
-    "Lenable:Ljava/lang/Boolean; LeqConfig:Lroomeqwizard/EQConfig; LeqName:Ljava/lang/String; "
-    "[fdwImag [fdwReal LfilterSet:Lroomeqwizard/FilterSet; "
-    "LfilterSetWhenMeasured:Lroomeqwizard/FilterSet; [gdValues "
-    "LimpedanceCalType:Lroomeqwizard/ImpedanceCal; LinputVolume:Ljava/lang/Double; "
-    "Lir:Lroomeqwizard/IRFloat; LirData:Lroomeqwizard/IRData; Ljre:Ljava/lang/String; "
-    "Llocked:Ljava/lang/Boolean; LmeasNotes:Ljava/lang/String; LmeterCal:Lroomeqwizard/CalData; "
-    "LmicSensitivity:Ljava/lang/Double; LnoiseFilter:Lroomeqwizard/NoiseFilter; "
-    "LosName:Ljava/lang/String; LosVersion:Ljava/lang/String; LoutputName:Ljava/lang/String; "
-    "LoutputVolume:Ljava/lang/Double; Lpeaks:Ljava/util/ArrayList; [phaseValues "
-    "[rawPhaseValues [rawSourceSet [rawUnwPhaseValues [rawValues "
-    "LrefResistancedB:Ljava/lang/Double; LrewSubVersion:Ljava/lang/Integer; "
-    "LrewVersion:Ljava/lang/Integer; LroomData:Lroomeqwizard/RoomData; "
-    "LrtaDist:Lroomeqwizard/RTADistortionData; LsavedColor:Ljava/awt/Color; "
-    "LscCal:Lroomeqwizard/CalData; LshortDesc:Ljava/lang/String; LsigGenLevelSt:Ljava/lang/String; "
-    "[sourceCalOffsets LsourceFileFormat:Ljava/lang/String; LsourceFileName:Ljava/lang/String; "
-    "[sourceMax [sourceMaxdBFS [sourceMin [sourceMindBFS [sourceSet [sourceWeighting "
-    "[sourcedBOffsets LspeakerBassMgmtSlope:Ljava/lang/Integer; "
-    "LspeakerBassMgmtXOverSlope:Lroomeqwizard/XOverSlope; LspeakerLocn:Lroomeqwizard/Location; "
-    "LsplCalOffset:Ljava/lang/Double; [splValues [steppedSineResults "
-    "LsubLFCutoff:Ljava/lang/Integer; LsubLFSlope:Ljava/lang/Integer; "
-    "LsubLFXOverSlope:Lroomeqwizard/XOverSlope; Lsweep:Lroomeqwizard/MeasSweepFunction; "
-    "LsweepLevel:Ljava/lang/Double; Ltails:Lroomeqwizard/MinPhaseTails; "
-    "LtargetLevel:Ljava/lang/Double; LtargetShape:Lroomeqwizard/TargetShape; "
-    "LtimingRefInputName:Ljava/lang/String; LtimingRefName:Ljava/lang/String; "
-    "LtimingReferenceMode:Lroomeqwizard/TimingReference; Lts:Lroomeqwizard/TSParams; "
-    "[unwPhaseValues LusesEmbeddedCalData:Ljava/lang/Boolean; LversionSt:Ljava/lang/String; "
-    "LxOverHPChoice:Lroomeqwizard/XOverChoice; LxOverLPChoice:Lroomeqwizard/XOverChoice;"
-)
-# Object fields added by REW 5.40, inserted before the named 5.31 field.
-_ADDED_540 = {
-    "fdwReal": ["LfdwPeakTime:Ljava/lang/Double;"],
-    "impedanceCalType": ["LgroupColor:Ljava/awt/Color;", "LgroupName:Ljava/lang/String;",
-                         "LgroupNotes:Ljava/lang/String;", "LgroupUuid:Ljava/lang/String;"],
-    "inputVolume": ["Lindex3D:Ljava/lang/Double;"],
-    "locked": ["Llabel3D:Ljava/lang/String;"],
-    "rawPhaseValues": ["[rawGDValues"],
-    "savedColor": ["LrtaLevelAdjustApplied:Ljava/lang/Boolean;",
-                   "LrtaOctaveFrac:Ljava/lang/Integer;"],
-    "shortDesc": ["LselectedOnOverlay:Ljava/lang/Boolean;"],
-    "unwPhaseValues": ["Lunit3D:Ljava/lang/String;", "[unwPhaseRefPeak"],
-    "versionSt": ["Luuid:Ljava/util/UUID;", "Luuid2:Lroomeqwizard/UUID;"],
-}
-_ARRAY_TYPES = {"rawSourceSet": "[[F", "sourceSet": "[[F",
-                "steppedSineResults": "[Lroomeqwizard/SteppedSineDataPoint;"}
-
-
-def _parse_fields(spec: str) -> list[tuple[str, str, str | None]]:
-    fields = []
-    for item in spec.split():
-        code, rest = item[0], item[1:]
-        if code == "L":
-            name, cls = rest.split(":")
-        elif code == "[":
-            name, cls = rest, _ARRAY_TYPES.get(rest, "[F")
-        else:
-            name, cls = rest, None
-        fields.append((code, name, cls))
-    return fields
-
-
-def measdata_fields(rew: tuple[int, int]) -> list:
-    new = rew >= (5, 40)
-    primitives = _COMMON_PRIMITIVES.format(
-        hpApplied="ZhpApplied " if new else "",
-        isFsaf="ZisFsafFileMeasurement ZisGroupPlaceHolder " if new else "",
-        overlaySelected="ZoverlaySelected " if new else "",
-        rawGDOctaveFrac="DrawGDOctaveFrac " if new else "")
-    objects = _OBJECTS_531.split()
-    if new:
-        out = []
-        for item in objects:
-            name = item[1:].split(":")[0]
-            out += _ADDED_540.get(name, [])
-            out.append(item)
-        objects = out
-    return _parse_fields(primitives) + _parse_fields(" ".join(objects))
-
-
-class JavaWriter:
-    """Enough of ObjectOutputStream for REW's measurement file."""
-
-    def __init__(self):
-        self.out = bytearray(b"\xAC\xED\x00\x05")
-        self.next_handle = 0x7E0000
-        self.classes: dict[str, int] = {}
-        self.strings: dict[str, int] = {}
-
-    def _assign(self) -> int:
-        self.next_handle += 1
-        return self.next_handle - 1
-
-    def string(self, value: str) -> None:
-        if value in self.strings:
-            self.out += b"\x71" + struct.pack(">I", self.strings[value])
-            return
-        data = value.encode("utf-8")        # ASCII here: same as modified UTF-8
-        self.out += b"\x74" + struct.pack(">H", len(data)) + data
-        self.strings[value] = self._assign()
-
-    def block(self, data: bytes) -> None:
-        self.out += b"\x77" + bytes([len(data)]) + data
-
-    def null(self) -> None:
-        self.out += b"\x70"
-
-    def classdesc(self, name, uid, flags, fields=(), super_class=None) -> None:
-        if name in self.classes:
-            self.out += b"\x71" + struct.pack(">I", self.classes[name])
-            return
-        data = name.encode()
-        self.out += b"\x72" + struct.pack(">H", len(data)) + data
-        self.out += struct.pack(">qBH", uid, flags, len(fields))
-        self.classes[name] = self._assign()
-        for code, field, cls in fields:
-            data = field.encode()
-            self.out += code.encode() + struct.pack(">H", len(data)) + data
-            if code in "L[":
-                self.string(cls)
-        self.out += b"\x78"
-        if super_class is None:
-            self.null()
-        else:
-            self.classdesc(*super_class)
-
-    def array(self, signature: str, uid: int, fmt: str, values) -> None:
-        self.out += b"\x75"
-        self.classdesc(signature, uid, 0x02)
-        self._assign()
-        self.out += struct.pack(">i", len(values)) + struct.pack(f">{len(values)}{fmt}", *values)
-
-    def float_array(self, values) -> None:
-        self.array("[F", 836686056779680834, "f", values)
-
-    def boxed(self, kind: str, value) -> None:
-        number = ("java.lang.Number", -8742448824652078965, 0x02)
-        desc = {
-            "Boolean": ("java.lang.Boolean", -3665804199014368530, 0x02, [("Z", "value", None)]),
-            "Integer": ("java.lang.Integer", 1360826667806852920, 0x02, [("I", "value", None)],
-                        number),
-            "Double": ("java.lang.Double", -9172774392245257468, 0x02, [("D", "value", None)],
-                       number),
-        }[kind]
-        self.out += b"\x73"
-        self.classdesc(*desc)
-        self._assign()
-        self.out += struct.pack({"Boolean": ">?", "Integer": ">i", "Double": ">d"}[kind], value)
-
-    def object(self, desc, values: dict) -> None:
-        """A plain Serializable object; missing values are 0, false or null."""
-        self.out += b"\x73"
-        self.classdesc(*desc)
-        self._assign()
-        for code, name, _cls in desc[3]:
-            value = values.get(name)
-            if code in "L[":
-                if value is None:
-                    self.null()
-                else:
-                    value(self)             # a callable writes the object
-            else:
-                fmt = {"B": ">b", "Z": ">?", "C": ">H", "S": ">h", "I": ">i", "J": ">q",
-                       "F": ">f", "D": ">d"}[code]
-                self.out += struct.pack(fmt, value or 0)
-
-    def image_icon(self, width: int, height: int, argb: int, rew: tuple[int, int]) -> None:
-        context = ("Lroomeqwizard/IconStub$_A;" if rew >= (5, 40)
-                   else "Ljavax/swing/ImageIcon$AccessibleImageIcon;")
-        fields = [("I", "height", None), ("I", "width", None),
-                  ("L", "accessibleContext", context), ("L", "description", "Ljava/lang/String;"),
-                  ("L", "imageObserver", "Ljava/awt/image/ImageObserver;")]
-        self.out += b"\x73"
-        self.classdesc("javax.swing.ImageIcon", -962022720109015502, 0x03, fields)
-        self._assign()
-        self.out += struct.pack(">ii", height, width) + b"\x70\x70\x70"
-        self.block(struct.pack(">ii", width, height))
-        self.array("[I", 5600894804908749477, "i", [argb] * (width * height))
-        self.out += b"\x78"
-
-
-def _f32(x: float) -> float:
-    # Rounding first keeps the float32 values independent of libm last bits.
-    return struct.unpack(">f", struct.pack(">f", round(x, 5)))[0]
-
-
 def write_mdat(channels, sample_rate: int, fft_length: int, rew: tuple[int, int]) -> bytes:
     """``channels``: [(short description, level dB SPL, sections)]."""
     n = fft_length // 2 - 1
     step = sample_rate / fft_length
     freqs = [step * (i + 1) for i in range(n)]
-    curves = []
-    for desc, level, sections in channels:
+    measurements, phases = [], []
+    for index, (desc, level, sections) in enumerate(channels):
         points = [response(sections, f) for f in freqs]
-        curves.append((desc,
-                       [_f32(level + p[0]) for p in points],
-                       [_f32(p[1]) for p in points],
-                       [_f32(p[2] * 1000) for p in points]))      # REW: ms
-
-    w = JavaWriter()
-    w.string("REW Measurement Data File V2")
-    w.block(struct.pack(">ii", *rew))
-    w.string("Notes:")
-    w.block(struct.pack(">i", len(curves)))
-    for _desc, spl, _phase, _gd in curves:
-        w.image_icon(130, 70, -12566464, rew)                    # 0xFF404040
-        w.string('<HTML><style type="text/css">body { margin-left: 3; }</style><BODY>'
-                 f"Jan 1, 1970<BR>12:00:00 AM<BR>0 to {sample_rate // 2:,} Hz<BR>"
-                 f"{math.floor(min(spl))} to {math.ceil(max(spl))} dB SPL</HTML>")
-    fields = measdata_fields(rew)
-    desc = ("roomeqwizard.MeasData", MEASDATA_UID, 0x02, fields)
-    version = ".3" if rew < (5, 40) else " beta 1"
-    for short_desc, spl, phase, gd in curves:
-        w.block(struct.pack(">i", 3))
-        values = {
-            "dataLength": n, "startFreq": step, "freqStep": step,
-            "endFreq": freqs[-1], "validStartFreq": step, "validEndFreq": freqs[-1],
-            "sampleRate": sample_rate, "numSweeps": 1, "sourceType": 5,
-            "impedanceCal": 1.0, "hfFallSlope": 0.5, "hfFallStart": 1000,
-            "lfRiseEnd": 20, "lfRiseSlope": 1.0, "lfRiseStart": 200,
-            "roomHeight": 2.4, "roomLength": 5.0, "roomWidth": 4.0,
-            "speakerCutoff": 80, "xOverHPCutoff": 100, "xOverLPCutoff": 1000,
-            "enable": lambda w: w.boxed("Boolean", True),
-            "locked": lambda w: w.boxed("Boolean", False),
-            "eqName": lambda w: w.string("Generic"),
-            "measNotes": lambda w: w.string(""),
-            "shortDesc": lambda w, s=short_desc: w.string(s),
-            "sourceFileFormat": lambda w: w.string("Synthetic"),
-            "sourceFileName": lambda w: w.string(""),
-            "rewVersion": lambda w: w.boxed("Integer", rew[0]),
-            "rewSubVersion": lambda w: w.boxed("Integer", rew[1]),
-            "versionSt": lambda w: w.string(version),
-            "splValues": lambda w, v=spl: w.float_array(v),
-            "phaseValues": lambda w, v=phase: w.float_array(v),
-            "gdValues": lambda w, v=gd: w.float_array(v),
-        }
-        w.object(desc, values)
-    w.block(struct.pack(">i", 0))
-    return bytes(w.out)
+        measurements.append(Measurement(
+            "Right" if desc.startswith("R") else "Left", index, freqs,
+            [level + p[0] for p in points], [p[2] for p in points], sample_rate=sample_rate,
+            name=desc, source_format="Synthetic"))
+        phases.append([p[1] for p in points])
+    return mdat.write(measurements, phases, rew)
 
 
 MDAT = {
@@ -374,10 +131,6 @@ MDAT = {
 # ---------------------------------------------------------------------------
 # SoundID microphone package, REW calibration
 # ---------------------------------------------------------------------------
-def mic_grid() -> list[float]:
-    return [20.0 * 1000.0 ** (i / 299) for i in range(300)]
-
-
 MICS = {
     "FLAT01": {a: [] for a in ANGLES},
     "TILT01": {
@@ -388,25 +141,17 @@ MICS = {
 }
 
 
-def mic_table(sections) -> str:
-    return "".join(f"{f:.1f}\t{round(response(sections, f)[0], 2) + 0.0:.2f}\n"
-                   for f in mic_grid())
+def write_swmicpkg(serial: str, tables: dict) -> bytes:
+    return swmicpkg.write([MicProfile(serial, angle, [(f, response(sections, f)[0])
+                                                     for f in swmicpkg.grid()])
+                           for angle, sections in tables.items()])
 
-
-def write_swmicpkg(tables: dict) -> bytes:
-    package = {}
-    for angle, sections in tables.items():
-        blob = mic_table(sections).encode()
-        if angle != swmicpkg.PLAIN_ANGLE:
-            blob = crypto.encrypt(swmicpkg.PACKAGE_KEY, blob, ZERO_IV)
-        package[angle] = base64.b64encode(blob).decode()
-    return json.dumps(package, separators=(",", ":")).encode()
 
 
 def write_cal_with_sensitivity(sections) -> bytes:
     """REW cal variant: quoted sensitivity line, three columns (phase 0)."""
     lines = ['"Sens Factor =-1.5dB, SERNO: TILT01"']
-    lines += [f"{f:.3f} {response(sections, f)[0]:.3f} 0.000" for f in mic_grid()]
+    lines += [f"{f:.3f} {response(sections, f)[0]:.3f} 0.000" for f in swmicpkg.grid()]
     return ("\r\n".join(lines) + "\r\n").encode()
 
 
@@ -826,57 +571,28 @@ def write_peq_text() -> bytes:
 
 
 def write_tmreq() -> bytes:
-    lines = ["<Preset>"]
-    for side, filters in SPEAKER.items():
-        # The unused bands are flat.
-        bands = filters + [(1000 * (n + 1), 0, 1) for n in range(9 - len(filters))]
-        lines += [f"\t<Room EQ {side[0]}>", "\t\t<Params>", '\t\t\t<val e="REQ Delay" v="0.00,"/>']
-        for n, (f, g, q) in enumerate(bands, 1):
-            lines += [f'\t\t\t<val e="REQ Band{n} Freq" v="{f},"/>',
-                      f'\t\t\t<val e="REQ Band{n} Q" v="{q:.2f},"/>',
-                      f'\t\t\t<val e="REQ Band{n} Gain" v="{g:.2f},"/>']
-        lines += ['\t\t\t<val e="REQ Band1Type" v="0.00,"/>',
-                  '\t\t\t<val e="REQ Band8 Type" v="0.00,"/>',
-                  '\t\t\t<val e="REQ Band9 Type" v="0.00,"/>',
-                  '\t\t\t<val e="Chan Gain" v="0.00,"/>', "\t\t</Params>",
-                  f"\t</Room EQ {side[0]}>"]
-    lines.append("</Preset>")
-    return ("\n".join(lines) + "\n").encode()
+    return tmreq.write([Correction(side[0], peqs=[Peq(f, g, q) for f, g, q in filters])
+                        for side, filters in SPEAKER.items()]).encode()
+
 
 
 # ---------------------------------------------------------------------------
 # IK Multimedia ARC X
 # ---------------------------------------------------------------------------
 ARCX_DIR = "ik/arcx"
-# ARC X writes and processes 32768 samples.
-ARCX_IR_LENGTH = 32768
-ARCX_GUID = "00000000-0000-0000-0000-000000000000"
-# Speaker device: IK product | serial | two a.b.c versions | 0 or 1.  ARC X
-# loads no session whose speakers lack a product and a serial.  183: ARC Studio.
-ARCX_DEVICE = "183|000000000|1.0.0|1.0.0|0"
 # Level offset dB of each measurement point.
 ARCX_POINT_GAINS = (0.0, -1.0, 2.0)
 # Time of flight, samples, per speaker; other speakers: ARCX_OTHER_DELAY.
 ARCX_DELAY = {"Left": 150, "Right": 160, "Subwoofer": 170}
 ARCX_OTHER_DELAY = 180
-# name: (layout id, layout name, speakers, points, sample rate, with session)
+# name: (layout id, points, sample rate, with session)
 ARCX = {
-    "Arc.arcXs": (1, "Stereo", ("Left", "Right"), 3, 48000, True),
-    "Arc.arcXa": (1, "Stereo", ("Left", "Right"), 3, 48000, False),
-    "Arc Sub.arcXs": (2, "Stereo + Sub", ("Left", "Right", "Subwoofer"), 1, 44100, True),
-    "Arc 5.1.arcXs": (4, "5.1", tuple(arcx.POSITIONS[p] for p in arcx.LAYOUTS[4][1]), 1, 48000,
-                      True),
+    "Arc.arcXs": (1, 3, 48000, True),
+    "Arc.arcXa": (1, 3, 48000, False),
+    "Arc Sub.arcXs": (2, 1, 44100, True),
+    "Arc 5.1.arcXs": (4, 1, 48000, True),
 }
-ARCX_SETTINGS = (
-    [("HpfFrequency", "20.0"), ("DelayMs", "0.0"), ("GainDb", "0.0"), ("DelayEnable", "1"),
-     ("GainEnable", "1"), ("CalEnable", "1"), ("PhaseInvert", "0"), ("PhaseInvertEnable", "1"),
-     ("FilterLowType", "0"), ("FilterHighType", "0"), ("VoiceIndex", "0"), ("FilterEnable", "0"),
-     ("VoiceEnable", "0"), ("DimAttenuationDb", "0.0"), ("ActivePreset", "0"),
-     ("FilterLowFrequency", "100.0"), ("FilterLowGainDb", "0.0"), ("FilterLowQ", "0.7")]
-    + [(f"PeakFilters{n}{k}", v) for n in range(4)
-       for k, v in (("Frequency", "1000.0"), ("GainDb", "0.0"), ("Q", "1.0"))]
-    + [("FilterHighFrequency", "10000.0"), ("FilterHighGainDb", "0.0"), ("FilterHighQ", "0.7")]
-)
+
 
 
 def arcx_filters(speaker: str, rate: float) -> list:
@@ -891,7 +607,7 @@ def arcx_filters(speaker: str, rate: float) -> list:
 
 def arcx_ir(speaker: str, gain_db: float, rate: float) -> list[float]:
     """Unit impulse at the time of flight, through the speaker's biquads."""
-    x = [0.0] * ARCX_IR_LENGTH
+    x = [0.0] * arcx.IR_LENGTH
     x[ARCX_DELAY.get(speaker, ARCX_OTHER_DELAY)] = 10 ** (gain_db / 20)
     for bq in arcx_filters(speaker, rate):
         y, x1, x2, y1, y2 = [], 0.0, 0.0, 0.0, 0.0
@@ -903,60 +619,16 @@ def arcx_ir(speaker: str, gain_db: float, rate: float) -> list[float]:
     return x
 
 
-def write_pak(entries: dict[str, bytes]) -> bytes:
-    """Version 3, entries sorted by name, as ARC X writes them."""
-    names = sorted(entries)
-    table_size = sum(len(n.encode()) + 17 for n in names)
-    offset = 26 + table_size
-    table, body = b"", b""
-    for name in names:
-        table += name.encode() + b"\0" + struct.pack("<QQ", offset + len(body), len(entries[name]))
-        body += entries[name]
-    return b"IKMPAK" + struct.pack("<IQQ", 3, len(names), table_size) + table + body
-
-
-def _value_tree(tag: str, attributes, children=(), indent: str = "") -> list[str]:
-    attrs = "".join(f' {k}="{v}"' for k, v in attributes)
-    if not children:
-        return [f"{indent}<{tag}{attrs}/>"]
-    lines = [f"{indent}<{tag}{attrs}>"]
-    for child in children:
-        lines += _value_tree(*child, indent=indent + "  ")
-    return lines + [f"{indent}</{tag}>"]
-
-
-def _juce_xml(lines: list[str]) -> bytes:
-    return ('<?xml version="1.0" encoding="UTF-8"?>\n\n' + "\n".join(lines) + "\n").encode()
-
-
-def write_arcx(layout: int, layout_name: str, speakers, points: int, rate: int,
-               session: bool) -> bytes:
-    entries = {"info.xml": _juce_xml(_value_tree("SerializedMeasure", [
-        ("Version", "5.0.0"), ("SampleRate", f"{rate:.1f}"), ("SelectedMicType", "MEMS"),
-        ("CorrectionSpeaker", ARCX_GUID), ("NumMeasurementPoints", points),
-        ("Layout", layout_name), ("ListeningArea", "Project Studio"), ("FastMode", "0"),
-        ("Countdown", "5")]))}
-    positions = {name: n for n, name in arcx.POSITIONS.items()}
-    for c, speaker in enumerate(speakers):
-        cc = [0.0] * ARCX_IR_LENGTH
+def write_arcx(layout: int, points: int, rate: int, session: bool) -> bytes:
+    channels = []
+    for position in arcx.LAYOUTS[layout][1]:
+        speaker = arcx.POSITIONS[position]
+        cc = [0.0] * arcx.IR_LENGTH
         cc[ARCX_DELAY.get(speaker, ARCX_OTHER_DELAY)] = 1.0
-        for p in range(points):
-            ir = arcx_ir(speaker, ARCX_POINT_GAINS[p], rate)
-            entries[f"ch{c}/ch{c}p{p}_ir.wav"] = fir.write(fir.Fir(rate, [ir]))
-            entries[f"ch{c}/ch{c}p{p}_cc.wav"] = fir.write(fir.Fir(rate, [cc]))
-    if session:
-        entries["session.xml"] = _juce_xml(_value_tree("Session", [
-            ("Version", 1), ("AppVersion", "2.0.2 (26D30)"), ("GUID", ARCX_GUID),
-            ("Layout", layout), ("CorrectionType", 1), ("CorrectionPhase", 1),
-            ("MasterRemoteSpeakerIndex", -1), ("BassManaged", 0), ("TargetRequest", 0),
-            ("Notes", ""), ("AudioDeviceName", ""), ("AudioDeviceSampleRate", rate),
-            ("AudioDeviceBufferSize", 512)], [
-            (f"Speaker_{positions[s]}", [
-                ("Device", ARCX_DEVICE), ("CalRangeLow", 20), ("CalRangeHigh", 20000),
-                ("CorrectionAssetGUID", ARCX_GUID), ("OutputChannelIndex", c)],
-             [("Settings", ARCX_SETTINGS)])
-            for c, s in enumerate(speakers)]))
-    return write_pak(entries)
+        channels.append([arcx.Point(arcx_ir(speaker, ARCX_POINT_GAINS[p], rate), cc)
+                         for p in range(points)])
+    return arcx.write(rate, channels, layout, session)
+
 
 
 # ---------------------------------------------------------------------------
@@ -987,7 +659,7 @@ def arc4_spectrum(side: str, rate: float) -> list[float]:
 
 
 def write_arc4(version: str = "4.0.0", sha: str = ARC4_ID) -> bytes:
-    entries = {"info.xml": _juce_xml(_value_tree("SerializedMeasure", [
+    entries = {"info.xml": arcx.juce_xml(arcx.value_tree("SerializedMeasure", [
         ("Version", version), ("SampleRate", f"{ARC4_RATE:.1f}"), ("SelectedMicType", "MEMS"),
         ("CorrectionSpeaker", ARC4_ID), ("SHA", sha)]))}
     for c, side in enumerate(SPEAKER):
@@ -996,7 +668,7 @@ def write_arc4(version: str = "4.0.0", sha: str = ARC4_ID) -> bytes:
             for name in (f"sweep0ch{c}", f"tailch{c}"):
                 entries[f"step{step}/{name}.wav"] = fir.write(fir.Fir(ARC4_RATE,
                                                                       [ARC4_RECORDING]))
-    return write_pak(entries)
+    return pak.write(entries)
 
 
 def export_files() -> dict[str, bytes]:
@@ -1078,6 +750,11 @@ CONVERSIONS = [
       "spot_delay_ms": ["Right=0.15"], "spot_gain_db": ["Left=-0.5"]}),
     (f"{SONARWORKS_PROJ_DIR}/Bandpass.swproj", f"{CSV_DIR}/Bandpass Right.csv", {"channel": "right"}),
     (f"{SONARWORKS_PROJ_DIR}/Bandpass.swproj", f"{FIR_DIR}/Bandpass.wav", {}),
+    ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{MDAT_DIR}/Room Left.mdat", {}),
+    (f"{CSV_DIR}/Bass and treble.csv", f"{TMREQ_DIR}/Bass and treble.tmreq", {}),
+    ((f"{CSV_DIR}/Room Left.csv", f"{CSV_DIR}/Room Right.csv"), f"{ARCX_DIR}/Room Left.arcXs", {}),
+    (tuple(f"{CAL_DIR}/TILT01 {angle}.txt" for angle in ANGLES), f"{MIC_DIR}/TILT02.swmicpkg",
+     {"serial": "TILT02"}),
 ]
 PATH_OPTIONS = ("mic_profile", "target_curve")
 
@@ -1098,7 +775,7 @@ def generate(root: Path = ROOT) -> list[Path]:
     for name, (channels, rate, length, rew) in MDAT.items():
         files[f"{MDAT_DIR}/{name}.mdat"] = write_mdat(channels, rate, length, rew)
     for serial, tables in MICS.items():
-        files[f"{MIC_DIR}/{serial}.swmicpkg"] = write_swmicpkg(tables)
+        files[f"{MIC_DIR}/{serial}.swmicpkg"] = write_swmicpkg(serial, tables)
     files[f"{CAL_DIR}/TILT01 sensitivity.cal"] = write_cal_with_sensitivity(
         MICS["TILT01"]["degrees_0"])
     for name, (sections, make, model, average, band, version, cid) in SWHP.items():

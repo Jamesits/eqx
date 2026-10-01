@@ -1,4 +1,4 @@
-"""Reader for RME TotalMix FX Room EQ presets (``*.tmreq``).
+"""Reader and writer for RME TotalMix FX Room EQ presets (``*.tmreq``).
 
 Pseudo-XML: element names contain spaces, so it is not XML::
 
@@ -34,6 +34,8 @@ TYPE_NAMES = {1: "REQ Band1Type", 8: "REQ Band8 Type", 9: "REQ Band9 Type"}
 # Type codes as reported on the RME forum, not confirmed by RME.  A shelf is
 # a low shelf on band 1 and a high shelf on bands 8 and 9.
 BELL, SHELF, LOW_PASS, HIGH_PASS = 0, 1, 2, 3
+# Band ranges of TotalMix's parametric EQ; not confirmed for the Room EQ.
+FREQUENCY_HZ, GAIN_DB, Q = (20.0, 20000.0), (-20.0, 20.0), (0.4, 9.9)
 _CHANNEL = re.compile(r"<Room EQ ([^>]+)>(.*?)</Room EQ \1>", re.S)
 _VAL = re.compile(r'<val e="([^"]*)" v="([^"]*)"/>')
 
@@ -77,6 +79,47 @@ def read(text: str) -> Export:
 
 def load(path) -> Export:
     return read(Path(path).read_text(encoding="utf-8-sig"))
+
+
+def _fixed(value: float) -> str:
+    text = f"{value:.2f}"
+    return "0.00" if text == "-0.00" else text
+
+
+def _code(band: int, kind: str) -> int:
+    codes = {"bell": BELL, "low-pass": LOW_PASS, "high-pass": HIGH_PASS,
+             "low-shelf" if band == 1 else "high-shelf": SHELF}
+    if kind not in codes or (kind != "bell" and band not in TYPE_NAMES):
+        raise ValueError(f"band {band} cannot be a {kind} filter")
+    return codes[kind]
+
+
+def write(corrections: list[Correction]) -> str:
+    """Preset text; channel names are the element names (``L``, ``R``).
+
+    Up to nine filters per channel, in band order.  Bands without a filter
+    are flat bells.
+    """
+    lines = ["<Preset>"]
+    for c in corrections:
+        if len(c.peqs) > BANDS:
+            raise ValueError(f"{c.channel}: {len(c.peqs)} filters, the Room EQ has {BANDS}")
+        if c.biquads or c.points:
+            raise ValueError(f"{c.channel}: the Room EQ takes parametric filters only")
+        peqs = c.peqs + [Peq(1000.0 * (n + 1), 0.0, 1.0) for n in range(BANDS - len(c.peqs))]
+        codes = {band: _code(band, p.kind) for band, p in enumerate(peqs, 1)}
+        lines += [f"\t<Room EQ {c.channel}>", "\t\t<Params>",
+                  f'\t\t\t<val e="REQ Delay" v="{_fixed(c.delay_ms)},"/>']
+        for band, p in enumerate(peqs, 1):
+            lines += [f'\t\t\t<val e="REQ Band{band} Freq" v="{_fixed(p.frequency)},"/>',
+                      f'\t\t\t<val e="REQ Band{band} Q" v="{_fixed(p.q)},"/>',
+                      f'\t\t\t<val e="REQ Band{band} Gain" v="{_fixed(p.gain_db)},"/>']
+        lines += [f'\t\t\t<val e="{name}" v="{_fixed(codes[band])},"/>'
+                  for band, name in TYPE_NAMES.items()]
+        lines += [f'\t\t\t<val e="Chan Gain" v="{_fixed(c.gain_db)},"/>', "\t\t</Params>",
+                  f"\t</Room EQ {c.channel}>"]
+    lines.append("</Preset>")
+    return "\n".join(lines) + "\n"
 
 
 class TmreqInspector(ExportInspector):

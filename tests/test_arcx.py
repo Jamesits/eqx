@@ -8,7 +8,9 @@ from pathlib import Path
 
 import gen_testdata
 from eqx import dsp
+from eqx.autoeq import response
 from eqx.convert import arcx_swproj
+from eqx.convert.from_autoeq import AutoeqToArcx
 from eqx.ik import arcx, pak
 from eqx.soundid import layout
 
@@ -22,7 +24,7 @@ MIC = gen_testdata.ROOT / gen_testdata.MIC_DIR / "FLAT01.swmicpkg"
 
 def _pak(version: int, entries: dict[str, bytes]) -> bytes:
     if version == 3:
-        return gen_testdata.write_pak(entries)
+        return pak.write(entries)
     number = "<II" if version == 1 else "<QQ"
     header = b"IKMPAK" + struct.pack("<II", version, len(entries))
     table_size = sum(len(n) + 1 + struct.calcsize(number) for n in entries)
@@ -175,14 +177,14 @@ class ReaderTests(unittest.TestCase):
                              ({k: v for k, v in entries.items() if k != "info.xml"},
                               "no info.xml")):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
-                arcx.read(gen_testdata.write_pak(bad))
+                arcx.read(pak.write(bad))
 
     def test_sample_rate_mismatch(self):
         entries = _entries(SESSION)
         entries["info.xml"] = entries["info.xml"].replace(b'SampleRate="48000.0"',
                                                           b'SampleRate="44100.0"')
         with self.assertRaisesRegex(ValueError, "48000 Hz, the analysis is 44100 Hz"):
-            arcx.read(gen_testdata.write_pak(entries))
+            arcx.read(pak.write(entries))
 
 
 class SwprojTests(unittest.TestCase):
@@ -205,10 +207,9 @@ class SwprojTests(unittest.TestCase):
     def test_reordered(self):
         # ARC X records the 9.1.6 wides after the rear surrounds; SoundID before
         # the surrounds.
-        speakers = [arcx.POSITIONS[p] for p in arcx.LAYOUTS[8][1]]
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "Arc 9.1.6.arcXs"
-            path.write_bytes(gen_testdata.write_arcx(8, "9.1.6", speakers, 1, 48000, True))
+            path.write_bytes(gen_testdata.write_arcx(8, 1, 48000, True))
             target, measurements = arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
         self.assertEqual(target.name, "9.1.6 Overhead")
         self.assertEqual([m.channel for m in measurements], [c.name for c in target.channels])
@@ -220,9 +221,50 @@ class SwprojTests(unittest.TestCase):
         entries["info.xml"] = entries["info.xml"].replace(b'Layout="Stereo + Sub"', b'Layout=""')
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "x.arcXa"
-            path.write_bytes(gen_testdata.write_pak(entries))
+            path.write_bytes(pak.write(entries))
             with self.assertRaisesRegex(ValueError, "unknown ARC X layout of 3 channels"):
                 arcx_swproj.ArcxToSwproj(mic_profile=MIC).measurements(path)
+
+
+class WriterTests(unittest.TestCase):
+    def test_round_trip(self):
+        a = arcx.load(SUB)
+        for session in (True, False):
+            with self.subTest(session=session):
+                b = arcx.read(arcx.write(a.sample_rate, a.channels, a.layout, session))
+                self.assertEqual((b.layout, b.speakers, b.channels), (a.layout, a.speakers,
+                                                                      a.channels))
+                self.assertEqual(b.session is not None, session)
+        for args, message in (((48000.0, a.channels, 9), "unknown ARC X layout 9"),
+                              ((48000.0, a.channels[:2], 2), "Stereo \\+ Sub has 3 speakers"),
+                              ((48000.0, [[], [], []], 2), "same number of points")):
+            with self.subTest(message), self.assertRaisesRegex(ValueError, message):
+                arcx.write(*args)
+
+    def test_from_autoeq(self):
+        csv = gen_testdata.ROOT / gen_testdata.CSV_DIR
+        left, right = csv / "Bandpass Left.csv", csv / "Bandpass Right.csv"
+        result = AutoeqToArcx().convert([left, right])
+        self.assertEqual(result.name, "Bandpass Left.arcXs")
+        a = arcx.read(result.data)
+        self.assertEqual((a.sample_rate, a.speakers, len(a.channels[0])),
+                         (48000.0, ["Left", "Right"], 1))
+        self.assertEqual(arcx.peak_index(a.channels[0][0].cc), 150)
+        offsets = []
+        for c, path in enumerate((left, right)):
+            points = [(f, v) for f, v in response.load(path).curve() if 30 <= f <= 16000]
+            _, db, _ = arcx.response(a, c, frequencies=[f for f, _ in points])
+            offsets.append(db[0] - points[0][1])
+            for (f, v), got in zip(points, db):
+                self.assertAlmostEqual(got - v, offsets[0], delta=0.2, msg=f"{f} Hz")
+        analysis = AutoeqToArcx(rate=44100, session=False).convert([left])
+        self.assertEqual(analysis.name, "Bandpass Left.arcXa")
+        a = arcx.read(analysis.data)
+        self.assertEqual((a.session, a.sample_rate, a.speakers), (None, 44100.0,
+                                                                   ["Left", "Right"]))
+        self.assertEqual(a.channels[0], a.channels[1])
+        with self.assertRaisesRegex(ValueError, "sample rate must be one of: 44100, 48000"):
+            AutoeqToArcx(rate=96000)
 
 
 if __name__ == "__main__":
