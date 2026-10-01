@@ -26,8 +26,10 @@ def _curve(p: Peqb, type_name: str) -> list[tuple[float, float]]:
     for c in p.curves:
         if c.type_name == type_name:
             return [(f, r) for f, r, _ in c.points]
-    raise ValueError(f"no {type_name} curve; curves: "
-                     f"{', '.join(c.type_name for c in p.curves) or 'none'}")
+    raise ValueError(
+        f"no {type_name} curve; curves: "
+        f"{', '.join(c.type_name for c in p.curves) or 'none'}"
+    )
 
 
 def headphone_curves(p: Peqb) -> dict[str, list[tuple[float, float]]]:
@@ -38,8 +40,12 @@ def headphone_curves(p: Peqb) -> dict[str, list[tuple[float, float]]]:
     for side in SIDES:
         points = _curve(p, f"Correction{side}")
         if frame:
-            points = [(f, min(g, cap)) for (f, g), cap in
-                      zip(points, log_resample(frame, [f for f, _ in points]))]
+            points = [
+                (f, min(g, cap))
+                for (f, g), cap in zip(
+                    points, log_resample(frame, [f for f, _ in points])
+                )
+            ]
         out[side] = points
     return out
 
@@ -49,15 +55,26 @@ def safe_headroom_db(curves: dict) -> float:
     return min(0.0, -max(g for points in curves.values() for _, g in points))
 
 
-def headphone_fir(p: Peqb, sample_rate: float = 48000.0, phase: str = "minimum",
-                  taps: int | None = None, safe_headroom: bool = True) -> tuple[list, float]:
+def headphone_fir(
+    p: Peqb,
+    sample_rate: float = 48000.0,
+    phase: str = "minimum",
+    taps: int | None = None,
+    safe_headroom: bool = True,
+) -> tuple[list, float]:
     """([left, right] impulse responses, gain dB) of the filter SoundID plays."""
     curves = headphone_curves(p)
     gain = safe_headroom_db(curves) if safe_headroom else 0.0
     scale = 10 ** (gain / 20)
-    channels = [[v * scale for v in dsp.design_fir_points(curves[side], sample_rate, phase,
-                                                          taps, EDGE_DB)]
-                for side in SIDES]
+    channels = [
+        [
+            v * scale
+            for v in dsp.design_fir_points(
+                curves[side], sample_rate, phase, taps, EDGE_DB
+            )
+        ]
+        for side in SIDES
+    ]
     return channels, gain
 
 
@@ -71,15 +88,17 @@ LIMIT_HIGH = {"neutral": 0.0, "extended": 12.0, "aggressive": 24.0}
 LIMIT_MIN_HZ, LIMIT_MAX_HZ = 20.0, 22000.0
 # A roll-off is found where the measurement is this far below its level.
 ROLLOFF_DB = -12.0
-LOW_SLOPE = 24.0                         # dB per octave
+LOW_SLOPE = 24.0  # dB per octave
 
 
 @dataclass(frozen=True)
 class RolloffRule:
-    level_hz: tuple[float, float]        # band of the level
-    low_search_hz: float                 # the low roll-off is searched from 20 Hz up to here
-    high_search_hz: tuple[float, float]  # the high roll-off is searched downwards in here
-    high_slope: float                    # dB per octave
+    level_hz: tuple[float, float]  # band of the level
+    low_search_hz: float  # the low roll-off is searched from 20 Hz up to here
+    high_search_hz: tuple[
+        float, float
+    ]  # the high roll-off is searched downwards in here
+    high_slope: float  # dB per octave
 
 
 SPEAKER_RULE = RolloffRule((200.0, 10000.0), 200.0, (10000.0, 22000.0), 48.0)
@@ -95,7 +114,7 @@ class SpeakerChannel:
     lfe: bool
     measurement: list[tuple[float, float]]
     correction: list[tuple[float, float]]
-    delay_ms: float                      # listening spot adjustment
+    delay_ms: float  # listening spot adjustment
     gain_db: float
 
 
@@ -104,7 +123,9 @@ def _param(curve, key: str) -> float:
     try:
         return float(value)
     except ValueError:
-        raise ValueError(f"{curve.type_name}: {key} {value!r} is not a number") from None
+        raise ValueError(
+            f"{curve.type_name}: {key} {value!r} is not a number"
+        ) from None
 
 
 def _lfe_map(project: swproj.SwProj) -> list[bool]:
@@ -132,11 +153,23 @@ def sonarworks_reference_channels(curves: list) -> list[SpeakerChannel]:
         if c is None:
             raise ValueError(f"the project has no Correction{side} curve")
         m = by_type.get(f"Measurement{side}")
-        measurement = ([(f, r) for f, r, _ in m.points] if m is not None
-                       else [(f, -r) for f, r, _ in c.points])
-        channels.append(SpeakerChannel(index, side, "Front", False, measurement,
-                                       [(f, r) for f, r, _ in c.points],
-                                       c.delay_ms or 0.0, c.transfer or 0.0))
+        measurement = (
+            [(f, r) for f, r, _ in m.points]
+            if m is not None
+            else [(f, -r) for f, r, _ in c.points]
+        )
+        channels.append(
+            SpeakerChannel(
+                index,
+                side,
+                "Front",
+                False,
+                measurement,
+                [(f, r) for f, r, _ in c.points],
+                c.delay_ms or 0.0,
+                c.transfer or 0.0,
+            )
+        )
     return channels
 
 
@@ -163,11 +196,18 @@ def speaker_channels(project: swproj.SwProj) -> list[SpeakerChannel]:
         if index not in measurements:
             raise ValueError(f"channel {index} has no measurement curve")
         c, m = corrections[index], measurements[index]
-        channels.append(SpeakerChannel(
-            index, c.parameters.get("ChannelName") or f"Channel {index + 1}",
-            c.parameters.get("ChannelGroup", ""), index < len(lfe) and lfe[index],
-            [(f, r) for f, r, _ in m.points], [(f, r) for f, r, _ in c.points],
-            _param(c, "ChannelDelayMs"), _param(c, "Transfer")))
+        channels.append(
+            SpeakerChannel(
+                index,
+                c.parameters.get("ChannelName") or f"Channel {index + 1}",
+                c.parameters.get("ChannelGroup", ""),
+                index < len(lfe) and lfe[index],
+                [(f, r) for f, r, _ in m.points],
+                [(f, r) for f, r, _ in c.points],
+                _param(c, "ChannelDelayMs"),
+                _param(c, "Transfer"),
+            )
+        )
     return channels
 
 
@@ -193,7 +233,9 @@ def low_rolloff(points, level: float, search_hz: float) -> float:
     return LIMIT_MIN_HZ
 
 
-def high_rolloff(points, level: float, search_hz: tuple[float, float], slope: float) -> float:
+def high_rolloff(
+    points, level: float, search_hz: tuple[float, float], slope: float
+) -> float:
     """``low_rolloff`` mirrored: searched downwards from the top of ``search_hz``."""
     for f, g in reversed(points):
         if f > search_hz[1]:
@@ -205,8 +247,14 @@ def high_rolloff(points, level: float, search_hz: tuple[float, float], slope: fl
     return search_hz[1]
 
 
-def limit_points(low_hz: float, high_hz: float, top_db: float, high_slope: float,
-                 low_shift: float = 0.0, high_shift: float = 0.0) -> list[tuple[float, float]]:
+def limit_points(
+    low_hz: float,
+    high_hz: float,
+    top_db: float,
+    high_slope: float,
+    low_shift: float = 0.0,
+    high_shift: float = 0.0,
+) -> list[tuple[float, float]]:
     """SoundID's boost limit: 0 dB beyond the roll-offs, ``top_db`` between."""
     low = low_hz * 2 ** (-low_shift / LOW_SLOPE)
     high = high_hz * 2 ** (high_shift / high_slope)
@@ -227,9 +275,12 @@ def limit_points(low_hz: float, high_hz: float, top_db: float, high_slope: float
     return sorted(points.items())
 
 
-def speaker_curves(channels: list[SpeakerChannel], limit_correction_db: float = 12.0,
-                   limit_low: str = "neutral", limit_high: str = "neutral"
-                   ) -> dict[int, list[tuple[float, float]]]:
+def speaker_curves(
+    channels: list[SpeakerChannel],
+    limit_correction_db: float = 12.0,
+    limit_low: str = "neutral",
+    limit_high: str = "neutral",
+) -> dict[int, list[tuple[float, float]]]:
     """{channel index: (frequency, dB)}: the corrections after SoundID's limits.
 
     A channel group shares the roll-offs of its narrowest channel.  Beyond
@@ -239,8 +290,10 @@ def speaker_curves(channels: list[SpeakerChannel], limit_correction_db: float = 
     if limit_correction_db not in LIMIT_CORRECTION_DB:
         raise ValueError("the correction limit must be 12, 6 or 0 dB")
     if limit_low not in LIMIT_LOW or limit_high not in LIMIT_HIGH:
-        raise ValueError(f"limits: low one of {', '.join(LIMIT_LOW)}, "
-                         f"high one of {', '.join(LIMIT_HIGH)}")
+        raise ValueError(
+            f"limits: low one of {', '.join(LIMIT_LOW)}, "
+            f"high one of {', '.join(LIMIT_HIGH)}"
+        )
     low_shift, high_shift = LIMIT_LOW[limit_low], LIMIT_HIGH[limit_high]
     groups: dict[str, list[SpeakerChannel]] = {}
     for c in channels:
@@ -257,12 +310,20 @@ def speaker_curves(channels: list[SpeakerChannel], limit_correction_db: float = 
             points = list(zip(grid, meas[c.index]))
             level = levels[c.index] = level_db(points, rule.level_hz)
             lows[c.index] = low_rolloff(points, level, rule.low_search_hz)
-            highs[c.index] = high_rolloff(points, level, rule.high_search_hz, rule.high_slope)
+            highs[c.index] = high_rolloff(
+                points, level, rule.high_search_hz, rule.high_slope
+            )
         low, high = max(lows.values()), min(highs.values())
-        pts = limit_points(low, high, limit_correction_db, rule.high_slope, low_shift, high_shift)
+        pts = limit_points(
+            low, high, limit_correction_db, rule.high_slope, low_shift, high_shift
+        )
         # The interpolated limit dips below 0 dB next to its corners; it never cuts.
-        limit = [max(0.0, v) for v in dsp.hermite([math.log(f) for f, _ in pts],
-                                                  [v for _, v in pts], logs)]
+        limit = [
+            max(0.0, v)
+            for v in dsp.hermite(
+                [math.log(f) for f, _ in pts], [v for _, v in pts], logs
+            )
+        ]
         for c in members:
             corr[c.index] = [min(g, lim) for g, lim in zip(corr[c.index], limit)]
         low_top = low * 2 ** ((limit_correction_db - low_shift) / LOW_SLOPE)
@@ -271,14 +332,18 @@ def speaker_curves(channels: list[SpeakerChannel], limit_correction_db: float = 
         high_ref = min(highs, key=lambda i: (highs[i], i))
         for c in members:
             values = list(corr[c.index])
-            for ref, detected, below in ((low_ref, low > LIMIT_MIN_HZ, True),
-                                         (high_ref, high < rule.high_search_hz[1], False)):
+            for ref, detected, below in (
+                (low_ref, low > LIMIT_MIN_HZ, True),
+                (high_ref, high < rule.high_search_hz[1], False),
+            ):
                 if not detected:
                     continue
                 for k, f in enumerate(grid):
                     if (f < low_top) if below else (f > high_top):
                         after = meas[ref][k] - levels[ref] + corr[ref][k]
-                        values[k] = min(values[k], after - (meas[c.index][k] - levels[c.index]))
+                        values[k] = min(
+                            values[k], after - (meas[c.index][k] - levels[c.index])
+                        )
             out[c.index] = list(zip(grid, values))
     return out
 
@@ -288,10 +353,17 @@ def spot_samples(delay_ms: float, sample_rate: float) -> int:
     return max(0, math.floor(delay_ms * sample_rate / 1000) - 1)
 
 
-def speaker_fir(project: swproj.SwProj, sample_rate: float = 48000.0, phase: str = "minimum",
-                taps: int | None = None, safe_headroom: bool = True, listening_spot: bool = True,
-                limit_correction_db: float = 12.0, limit_low: str = "neutral",
-                limit_high: str = "neutral") -> tuple[list[SpeakerChannel], list, float]:
+def speaker_fir(
+    project: swproj.SwProj,
+    sample_rate: float = 48000.0,
+    phase: str = "minimum",
+    taps: int | None = None,
+    safe_headroom: bool = True,
+    listening_spot: bool = True,
+    limit_correction_db: float = 12.0,
+    limit_low: str = "neutral",
+    limit_high: str = "neutral",
+) -> tuple[list[SpeakerChannel], list, float]:
     """(channels, impulse responses in channel order, safe headroom gain dB)."""
     channels = speaker_channels(project)
     curves = speaker_curves(channels, limit_correction_db, limit_low, limit_high)
@@ -302,7 +374,9 @@ def speaker_fir(project: swproj.SwProj, sample_rate: float = 48000.0, phase: str
     for c in channels:
         points = curves[c.index]
         g = gain + (c.gain_db - top_gain if listening_spot else 0.0)
-        delay = spot_samples(c.delay_ms - first_delay, sample_rate) if listening_spot else 0
+        delay = (
+            spot_samples(c.delay_ms - first_delay, sample_rate) if listening_spot else 0
+        )
         ir = dsp.design_fir_points(points, sample_rate, phase, taps, EDGE_DB)
         irs.append([0.0] * delay + [v * 10 ** (g / 20) for v in ir])
     return channels, dsp.padded(irs), gain

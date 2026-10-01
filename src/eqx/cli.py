@@ -7,8 +7,9 @@ import os
 import shutil
 import sys
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from . import convert, formats, graph
 from .options import Option
@@ -26,7 +27,9 @@ GRAPH_MAX_WIDTH = 120
 # --------------------------------------------------------------------------
 # per-class options
 # --------------------------------------------------------------------------
-def _add_options(parser: argparse.ArgumentParser, groups: Iterable[tuple[str, tuple]]) -> dict:
+def _add_options(
+    parser: argparse.ArgumentParser, groups: Iterable[tuple[str, tuple]]
+) -> dict:
     """Add every class option to ``parser``; return {dest: flag}.
 
     Values default to absent, so only given options reach the constructor.
@@ -42,12 +45,16 @@ def _add_options(parser: argparse.ArgumentParser, groups: Iterable[tuple[str, tu
                 continue
             if group is None:
                 group = parser.add_argument_group(title)
-            group.add_argument(*option.flags, default=argparse.SUPPRESS, **option.kwargs)
+            group.add_argument(
+                *option.flags, default=argparse.SUPPRESS, **option.kwargs
+            )
             added[option.dest] = option
     return {dest: option.flags[0] for dest, option in added.items()}
 
 
-def _class_options(args: argparse.Namespace, dests: dict, cls, what: str) -> dict[str, Any]:
+def _class_options(
+    args: argparse.Namespace, dests: dict, cls, what: str
+) -> dict[str, Any]:
     own = {option.dest for option in cls.options}
     given = {dest: value for dest, value in vars(args).items() if dest in dests}
     wrong = [dests[dest] for dest in given if dest not in own]
@@ -70,11 +77,16 @@ def _cell(value: Any) -> str:
 def _clip(text: str, full: bool) -> str:
     if full or len(text) <= PREVIEW_WIDTH:
         return text
-    return text[:PREVIEW_WIDTH - 3] + "..."
+    return text[: PREVIEW_WIDTH - 3] + "..."
 
 
-def render(sections: list[Section], full: bool = False, graphs: bool = False,
-           color: bool = False, graph_width: int = 80) -> str:
+def render(
+    sections: list[Section],
+    full: bool = False,
+    graphs: bool = False,
+    color: bool = False,
+    graph_width: int = 80,
+) -> str:
     out: list[str] = []
     for section in sections:
         out.append(f"== {section.title}")
@@ -88,13 +100,24 @@ def render(sections: list[Section], full: bool = False, graphs: bool = False,
             hidden = 0
             if not full and len(rows) > PREVIEW_HEAD + PREVIEW_TAIL + 1:
                 hidden = len(rows) - PREVIEW_HEAD - PREVIEW_TAIL
-                rows = rows[:PREVIEW_HEAD] + [["..."] * len(table.columns)] + rows[-PREVIEW_TAIL:]
-            widths = [max(len(c), *(len(r[i]) for r in rows)) for i, c in enumerate(table.columns)]
-            line = lambda cells: "  " + "  ".join(f"{c:>{w}}" for c, w in zip(cells, widths))
+                rows = (
+                    rows[:PREVIEW_HEAD]
+                    + [["..."] * len(table.columns)]
+                    + rows[-PREVIEW_TAIL:]
+                )
+            widths = [
+                max(len(c), *(len(r[i]) for r in rows))
+                for i, c in enumerate(table.columns)
+            ]
+            line = lambda cells, widths=widths: (
+                "  " + "  ".join(f"{c:>{w}}" for c, w in zip(cells, widths))
+            )
             out.append(line(table.columns))
             out += [line(r) for r in rows]
             if hidden:
-                out.append(f"  ({hidden} of {len(table.rows)} rows hidden; --full shows all)")
+                out.append(
+                    f"  ({hidden} of {len(table.rows)} rows hidden; --full shows all)"
+                )
         curve = section.curve or table
         if graphs and curve is not None:
             for name, points in graph.curves(curve):
@@ -119,7 +142,9 @@ def cmd_inspect(args) -> int:
         # Forced on: a pipe on Windows defaults to the ANSI code page.
         sys.stdout.reconfigure(encoding="utf-8")
     width = min(shutil.get_terminal_size().columns, GRAPH_MAX_WIDTH)
-    sys.stdout.write(render(inspector.inspect(args.file), args.full, graphs, tty, width))
+    sys.stdout.write(
+        render(inspector.inspect(args.file), args.full, graphs, tty, width)
+    )
     return 0
 
 
@@ -149,15 +174,20 @@ def cmd_convert(args) -> int:
     if source is None:
         sources = {formats.detect(path) for path in args.input}
         if len(sources) > 1:
-            raise ValueError(f"inputs of different formats: {', '.join(sorted(sources))}; "
-                             "specify --from")
+            raise ValueError(
+                f"inputs of different formats: {', '.join(sorted(sources))}; "
+                "specify --from"
+            )
         source = sources.pop()
     target = args.target
     if target is None and args.output is not None:
-        target = formats.detect(args.output, (t for s, t in convert.CONVERTERS if s == source))
+        target = formats.detect(
+            args.output, (t for s, t in convert.CONVERTERS if s == source)
+        )
     cls = convert.find(source, target)
-    converter = cls(**_class_options(args, args.option_dests, cls,
-                                     f"{cls.source} -> {cls.target}"))
+    converter = cls(
+        **_class_options(args, args.option_dests, cls, f"{cls.source} -> {cls.target}")
+    )
     result = converter.convert(args.input)
     output = args.output or args.input[0].with_name(result.name)
     size = write_output(output, result.data)
@@ -187,7 +217,8 @@ def _format_list() -> str:
     width = max(len(f) for f in formats.FORMATS)
     return "formats (detected by extension, then by content):\n" + "\n".join(
         f"  {f.id:<{width}} {' '.join(f.extensions):<14} {f.description}"
-        for f in formats.FORMATS.values())
+        for f in formats.FORMATS.values()
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -195,38 +226,83 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
     raw = argparse.RawDescriptionHelpFormatter
 
-    p = sub.add_parser("inspect", help="print the sections of a file with a preview of the values",
-                       formatter_class=raw, epilog=_format_list())
+    p = sub.add_parser(
+        "inspect",
+        help="print the sections of a file with a preview of the values",
+        formatter_class=raw,
+        epilog=_format_list(),
+    )
     p.add_argument("file", type=Path)
-    p.add_argument("--format", choices=formats.FORMATS, help="file format (default: by extension)")
-    p.add_argument("--full", action="store_true",
-                   help="print every value and the raw data, not a preview")
-    p.add_argument("--graph", choices=("auto", "on", "off"), default="auto",
-                   help="draw each curve (default: auto, on a terminal that can show it)")
-    dests = _add_options(p, ((f"{f.id} options", f.inspector.options)
-                             for f in formats.FORMATS.values()))
+    p.add_argument(
+        "--format", choices=formats.FORMATS, help="file format (default: by extension)"
+    )
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help="print every value and the raw data, not a preview",
+    )
+    p.add_argument(
+        "--graph",
+        choices=("auto", "on", "off"),
+        default="auto",
+        help="draw each curve (default: auto, on a terminal that can show it)",
+    )
+    dests = _add_options(
+        p, ((f"{f.id} options", f.inspector.options) for f in formats.FORMATS.values())
+    )
     p.set_defaults(func=cmd_inspect, option_dests=dests)
 
     p = sub.add_parser(
-        "convert", help="convert a file to another format", formatter_class=raw,
-        epilog="conversions:\n" + "\n".join(
-            f"  {s} -> {t}: {c.description}" for (s, t), c in convert.CONVERTERS.items())
-        + "\n\n" + _format_list())
-    p.add_argument("-i", "--input", type=Path, action="append", required=True,
-                   help="input file; repeatable, in the order the conversion takes them")
-    p.add_argument("-o", "--output", type=Path,
-                   help="output file (default: next to the first INPUT, named by the conversion)")
-    p.add_argument("--from", dest="source", choices=formats.FORMATS,
-                   help="input format (default: by INPUT extension)")
-    p.add_argument("--to", dest="target", choices=formats.FORMATS,
-                   help="output format (default: by OUTPUT extension, or the only "
-                        "conversion of the input format)")
-    dests = _add_options(p, ((f"{c.source} -> {c.target} options", c.options)
-                             for c in convert.CONVERTERS.values()))
+        "convert",
+        help="convert a file to another format",
+        formatter_class=raw,
+        epilog="conversions:\n"
+        + "\n".join(
+            f"  {s} -> {t}: {c.description}" for (s, t), c in convert.CONVERTERS.items()
+        )
+        + "\n\n"
+        + _format_list(),
+    )
+    p.add_argument(
+        "-i",
+        "--input",
+        type=Path,
+        action="append",
+        required=True,
+        help="input file; repeatable, in the order the conversion takes them",
+    )
+    p.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="output file (default: next to the first INPUT, named by the conversion)",
+    )
+    p.add_argument(
+        "--from",
+        dest="source",
+        choices=formats.FORMATS,
+        help="input format (default: by INPUT extension)",
+    )
+    p.add_argument(
+        "--to",
+        dest="target",
+        choices=formats.FORMATS,
+        help="output format (default: by OUTPUT extension, or the only "
+        "conversion of the input format)",
+    )
+    dests = _add_options(
+        p,
+        (
+            (f"{c.source} -> {c.target} options", c.options)
+            for c in convert.CONVERTERS.values()
+        ),
+    )
     p.set_defaults(func=cmd_convert, option_dests=dests)
 
-    p = sub.add_parser("computer-id",
-                       help="print this machine's Sonarworks computer IDs (the .swhp passwords)")
+    p = sub.add_parser(
+        "computer-id",
+        help="print this machine's Sonarworks computer IDs (the .swhp passwords)",
+    )
     p.set_defaults(func=cmd_computer_id)
     return parser
 

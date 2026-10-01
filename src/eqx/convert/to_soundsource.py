@@ -28,9 +28,12 @@ class AutoeqToSoundsource(Converter):
     description = "an EQ curve as a SoundSource Headphone EQ profile of bells"
     options = (
         COLUMN_OPTION,
-        Option("--filters", type=int,
-               help=f"maximum number of bells, 1-{soundsource.MAX_FILTERS} "
-                    f"(default: {FILTERS})"),
+        Option(
+            "--filters",
+            type=int,
+            help=f"maximum number of bells, 1-{soundsource.MAX_FILTERS} "
+            f"(default: {FILTERS})",
+        ),
     )
 
     def __init__(self, column: str = response.RAW, filters: int = FILTERS):
@@ -40,8 +43,15 @@ class AutoeqToSoundsource(Converter):
         self.filters = filters
 
     def _convert(self, path: Path) -> Result:
-        c, note = fit_correction(soundsource.CHANNEL, response.load(path).curve(self.column),
-                                 self.filters, soundsource.FREQUENCY_HZ,
-                                 q=(soundsource.MIN_Q, MAX_Q))
-        return Result(soundsource.write(c).encode("utf-8"), f"{path.stem}.txt",
-                      [f"preamp {c.gain_db:+.2f} dB, {note}"])
+        c, note = fit_correction(
+            soundsource.CHANNEL,
+            response.load(path).curve(self.column),
+            self.filters,
+            soundsource.FREQUENCY_HZ,
+            q=(soundsource.MIN_Q, MAX_Q),
+        )
+        return Result(
+            soundsource.write(c).encode("utf-8"),
+            f"{path.stem}.txt",
+            [f"preamp {c.gain_db:+.2f} dB, {note}"],
+        )

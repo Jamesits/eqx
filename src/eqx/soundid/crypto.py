@@ -60,4 +60,3 @@ def encrypt(key: bytes, data: bytes, iv: bytes | None = None) -> bytes:
     pad = 16 - len(data) % 16
     enc = Cipher(algorithms.AES(key), modes.CBC(iv)).encryptor()
     return iv + enc.update(data + bytes([pad]) * pad) + enc.finalize()
-

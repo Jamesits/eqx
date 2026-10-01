@@ -16,7 +16,16 @@ from typing import Any
 
 Schema = dict[str, dict[str, tuple[int, str, str]]]
 
-VARINT_TYPES = ("int32", "int64", "uint32", "uint64", "bool", "enum", "sint32", "sint64")
+VARINT_TYPES = (
+    "int32",
+    "int64",
+    "uint32",
+    "uint64",
+    "bool",
+    "enum",
+    "sint32",
+    "sint64",
+)
 FIXED32 = {"float": "<f", "fixed32": "<I", "sfixed32": "<i"}
 FIXED64 = {"double": "<d", "fixed64": "<Q", "sfixed64": "<q"}
 SCALARS = (*VARINT_TYPES, *FIXED32, *FIXED64, "string", "bytes")
@@ -89,7 +98,9 @@ def decode(schema: Schema, name: str, data: bytes) -> dict[str, Any]:
 
 
 def _decode(schema: Schema, fields, data: bytes) -> dict[str, Any]:
-    by_number = {number: (field, kind, label) for field, (number, kind, label) in fields.items()}
+    by_number = {
+        number: (field, kind, label) for field, (number, kind, label) in fields.items()
+    }
     out: dict[str, Any] = {}
     pos = 0
     while pos < len(data):
@@ -98,12 +109,12 @@ def _decode(schema: Schema, fields, data: bytes) -> dict[str, Any]:
         if wire == 0:
             raw, pos = _varint(data, pos)
         elif wire == 1:
-            raw, pos = data[pos:pos + 8], pos + 8
+            raw, pos = data[pos : pos + 8], pos + 8
         elif wire == 5:
-            raw, pos = data[pos:pos + 4], pos + 4
+            raw, pos = data[pos : pos + 4], pos + 4
         elif wire == 2:
             size, pos = _varint(data, pos)
-            raw, pos = data[pos:pos + size], pos + size
+            raw, pos = data[pos : pos + size], pos + size
         else:
             raise ValueError(f"unsupported wire type {wire}")
         if pos > len(data):
@@ -114,18 +125,27 @@ def _decode(schema: Schema, fields, data: bytes) -> dict[str, Any]:
         if label.startswith("map:"):
             entry = _decode(schema, _map_entry(label, kind), raw)
             value_default = {} if kind not in SCALARS else DEFAULTS.get(kind, 0)
-            out.setdefault(field, {})[entry.get("key", DEFAULTS.get(label[4:], 0))] = \
+            out.setdefault(field, {})[entry.get("key", DEFAULTS.get(label[4:], 0))] = (
                 entry.get("value", value_default)
+            )
             continue
-        if label == "repeated" and wire == 2 and kind in SCALARS and kind not in ("string",
-                                                                                   "bytes"):
+        if (
+            label == "repeated"
+            and wire == 2
+            and kind in SCALARS
+            and kind not in ("string", "bytes")
+        ):
             out.setdefault(field, []).extend(_packed(kind, raw))
             continue
-        value = _scalar(kind, wire, raw) if kind in SCALARS else _decode(schema, schema[kind], raw)
+        value = (
+            _scalar(kind, wire, raw)
+            if kind in SCALARS
+            else _decode(schema, schema[kind], raw)
+        )
         if label == "repeated":
             out.setdefault(field, []).append(value)
         elif kind not in SCALARS and field in out:
-            out[field] = _merge(out[field], value)     # a repeated message field merges
+            out[field] = _merge(out[field], value)  # a repeated message field merges
         else:
             out[field] = value
     return out
@@ -180,20 +200,24 @@ def _encode(schema: Schema, fields, message: dict[str, Any]) -> bytes:
     if unknown:
         raise ValueError(f"unknown fields: {', '.join(sorted(unknown))}")
     out = bytearray()
-    for field, (number, kind, label) in sorted(fields.items(), key=lambda item: item[1][0]):
+    for field, (number, kind, label) in sorted(
+        fields.items(), key=lambda item: item[1][0]
+    ):
         if field not in message:
             continue
         value = message[field]
         if label.startswith("map:"):
             # Map entries always hold both the key and the value.
             for k, v in value.items():
-                out += _length_delimited(number, _field(schema, 1, label[4:], k)
-                                         + _field(schema, 2, kind, v))
+                out += _length_delimited(
+                    number, _field(schema, 1, label[4:], k) + _field(schema, 2, kind, v)
+                )
         elif label == "repeated":
             if kind in SCALARS and kind not in ("string", "bytes"):
                 if value:
-                    out += _length_delimited(number,
-                                             b"".join(_scalar_bytes(kind, v) for v in value))
+                    out += _length_delimited(
+                        number, b"".join(_scalar_bytes(kind, v) for v in value)
+                    )
             else:
                 for v in value:
                     out += _field(schema, number, kind, v)
@@ -215,8 +239,9 @@ def _field(schema: Schema, number: int, kind: str, value) -> bytes:
     if kind not in SCALARS:
         return _length_delimited(number, _encode(schema, schema[kind], value))
     if kind in ("string", "bytes"):
-        return _length_delimited(number,
-                                 value.encode("utf-8") if kind == "string" else bytes(value))
+        return _length_delimited(
+            number, value.encode("utf-8") if kind == "string" else bytes(value)
+        )
     return _encode_varint(number << 3 | _wire_type(kind)) + _scalar_bytes(kind, value)
 
 

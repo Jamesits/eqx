@@ -54,8 +54,9 @@ def _number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def plot(points: list[tuple[float, float]], width: int, height: int,
-         color: bool = False) -> str:
+def plot(
+    points: list[tuple[float, float]], width: int, height: int, color: bool = False
+) -> str:
     """A graph of sorted ``points``, ``width`` x ``height`` characters."""
     # Log frequency on a linear axis: plotext 6.1 squeezes a log axis that has
     # explicit ticks into its first column.
@@ -69,7 +70,9 @@ def plot(points: list[tuple[float, float]], width: int, height: int,
     signal.lines()
     figure.draw(signal)
     ticks = _frequency_ticks(points[0][0], points[-1][0])
-    figure.ruler("x").ticks([math.log10(f) for f in ticks], [_frequency_label(f) for f in ticks])
+    figure.ruler("x").ticks(
+        [math.log10(f) for f in ticks], [_frequency_label(f) for f in ticks]
+    )
     if max(ys) - min(ys) < 1e-9:
         # A flat curve gets a 2 dB range instead of an empty one.
         figure.ruler("y").lim(ys[0] - 1, ys[0] + 1)
@@ -80,10 +83,11 @@ def _frequency_ticks(low: float, high: float) -> list[float]:
     """1-2-5 ticks inside [low, high]; only the decades if there are more than two."""
     decades = range(math.floor(math.log10(low)), math.ceil(math.log10(high)) + 1)
     inside = lambda f: low * (1 - 1e-9) <= f <= high * (1 + 1e-9)
-    ticks = [10.0 ** e for e in decades if inside(10.0 ** e)]
+    ticks = [10.0**e for e in decades if inside(10.0**e)]
     if len(ticks) <= 2:
-        ticks = sorted(f for e in decades for f in (10.0 ** e, 2 * 10.0 ** e, 5 * 10.0 ** e)
-                       if inside(f))
+        ticks = sorted(
+            f for e in decades for f in (10.0**e, 2 * 10.0**e, 5 * 10.0**e) if inside(f)
+        )
     return ticks or [low, high]
 
 

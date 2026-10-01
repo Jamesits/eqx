@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest import mock
 
 from testgen import common
+
 from eqx import cli, convert, formats, graph
 from eqx.fileformat import Format, Inspector
 from eqx.report import Table
@@ -23,10 +24,14 @@ SAMPLES = {
     "mdat": MDAT,
     "rewcal": TESTDATA / "rew/rewcal/TILT01 sensitivity.cal",
     "autoeq": TESTDATA / "autoeq/csv/Bass and treble.csv",
-    "soundid-export-biquad-json": TESTDATA / "soundid/soundid-export-biquad-json/Tilt Fluid.bin",
-    "soundid-export-peq-json": TESTDATA / "soundid/soundid-export-peq-json/Tilt Grace.bin",
-    "soundid-export-biquad-xml": TESTDATA / "soundid/soundid-export-biquad-xml/Tilt.adam",
-    "soundid-export-lvnd": TESTDATA / "soundid/soundid-export-lvnd/Tilt_192000_Left.bin",
+    "soundid-export-biquad-json": TESTDATA
+    / "soundid/soundid-export-biquad-json/Tilt Fluid.bin",
+    "soundid-export-peq-json": TESTDATA
+    / "soundid/soundid-export-peq-json/Tilt Grace.bin",
+    "soundid-export-biquad-xml": TESTDATA
+    / "soundid/soundid-export-biquad-xml/Tilt.adam",
+    "soundid-export-lvnd": TESTDATA
+    / "soundid/soundid-export-lvnd/Tilt_192000_Left.bin",
     "soundid-export-txt": TESTDATA / "soundid/soundid-export-txt/Tilt - Flat.txt",
     "tmreq": TESTDATA / "rme/tmreq/Tilt - Flat.tmreq",
     "soundsource": TESTDATA / "rogueamoeba/soundsource/Tilt - Flat.txt",
@@ -61,22 +66,38 @@ def run(*argv):
 
 def run_error(*argv):
     err = io.StringIO()
-    with contextlib.redirect_stderr(err), unittest.TestCase().assertRaises(SystemExit) as ctx:
+    with (
+        contextlib.redirect_stderr(err),
+        unittest.TestCase().assertRaises(SystemExit) as ctx,
+    ):
         run(*argv)
     return ctx.exception.code, err.getvalue()
 
 
 class FormatTests(unittest.TestCase):
     def test_detect(self):
-        for name, want in (("a.swproj", "swproj"), ("A.SWHP", "peqb"), ("a.eqb", "peqb"),
-                           ("a.mdat", "mdat"), ("a.cal", "rewcal"), ("a.CSV", "autoeq"),
-                           ("a.adam", "soundid-export-biquad-xml"), ("a.tmreq", "tmreq"),
-                           ("a.arcXs", "arcx"), ("a.arcXa", "arcx"), ("a.WAV", "fir"),
-                           ("a.MQX", "mqx"), ("a.fume4", "fuzzmeasure"),
-                           ("a.Fume3", "fuzzmeasure"), ("a.fume", "fuzzmeasure"),
-                           ("a.trf", "smaart-trf"), ("a.SRF", "smaart-srf"),
-                           ("a.ref", "smaart-ref"), ("a.crv", "smaart-curve"),
-                           ("hpc.DAT", "dearvr-hpc")):
+        for name, want in (
+            ("a.swproj", "swproj"),
+            ("A.SWHP", "peqb"),
+            ("a.eqb", "peqb"),
+            ("a.mdat", "mdat"),
+            ("a.cal", "rewcal"),
+            ("a.CSV", "autoeq"),
+            ("a.adam", "soundid-export-biquad-xml"),
+            ("a.tmreq", "tmreq"),
+            ("a.arcXs", "arcx"),
+            ("a.arcXa", "arcx"),
+            ("a.WAV", "fir"),
+            ("a.MQX", "mqx"),
+            ("a.fume4", "fuzzmeasure"),
+            ("a.Fume3", "fuzzmeasure"),
+            ("a.fume", "fuzzmeasure"),
+            ("a.trf", "smaart-trf"),
+            ("a.SRF", "smaart-srf"),
+            ("a.ref", "smaart-ref"),
+            ("a.crv", "smaart-curve"),
+            ("hpc.DAT", "dearvr-hpc"),
+        ):
             self.assertEqual(formats.detect(Path(name)), want)
         with self.assertRaises(ValueError):
             formats.detect(Path("a.xyz"))
@@ -84,9 +105,13 @@ class FormatTests(unittest.TestCase):
     def test_detect_shared_extension(self):
         with with_other_txt():
             with self.assertRaisesRegex(
-                    ValueError, "ambiguous.*rewcal, soundid-export-txt, soundsource, othertxt"):
+                ValueError,
+                "ambiguous.*rewcal, soundid-export-txt, soundsource, othertxt",
+            ):
                 formats.detect(Path("a.txt"))
-            self.assertEqual(formats.detect(Path("a.txt"), ("rewcal", "swproj")), "rewcal")
+            self.assertEqual(
+                formats.detect(Path("a.txt"), ("rewcal", "swproj")), "rewcal"
+            )
             self.assertEqual(formats.detect(Path("a.cal")), "rewcal")
 
     def test_every_converter_has_formats(self):
@@ -95,8 +120,12 @@ class FormatTests(unittest.TestCase):
             self.assertIn(target, formats.FORMATS)
 
     def test_find_converter(self):
-        self.assertIs(convert.find("swmicpkg"), convert.CONVERTERS["swmicpkg", "rewcal"])
-        with self.assertRaisesRegex(ValueError, "2 converters from mdat; specify the target"):
+        self.assertIs(
+            convert.find("swmicpkg"), convert.CONVERTERS["swmicpkg", "rewcal"]
+        )
+        with self.assertRaisesRegex(
+            ValueError, "2 converters from mdat; specify the target"
+        ):
             convert.find("mdat")
         with self.assertRaisesRegex(ValueError, "no converter from mdat to rewcal"):
             convert.find("mdat", "rewcal")
@@ -108,7 +137,7 @@ class InspectTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 code, out = run("inspect", path)
                 self.assertEqual(code, 0)
-                self.assertTrue(out.startswith(f"== file\n  name"))
+                self.assertTrue(out.startswith("== file\n  name"))
 
     def test_preview_and_full(self):
         _, preview = run("inspect", PACKAGE)
@@ -134,8 +163,14 @@ class InspectTests(unittest.TestCase):
         self.assertNotIn("\x1b[", on)
 
     def test_inspector_option(self):
-        _, out = run("inspect", SAMPLES["dearvr-hpc"], "--headphone", "Tilt Studio",
-                     "--graph", "on")
+        _, out = run(
+            "inspect",
+            SAMPLES["dearvr-hpc"],
+            "--headphone",
+            "Tilt Studio",
+            "--graph",
+            "on",
+        )
         self.assertIn("== headphone Tilt Studio", out)
         self.assertIn("-- graph: linear dB", out)
 
@@ -147,13 +182,26 @@ class InspectTests(unittest.TestCase):
                 self.assertIn("-- graph: gain dB", out)
 
     def test_graph_curves(self):
-        table = Table(["frequency Hz", "dB", "group delay s"],
-                      [(0.0, 1.0, 0.0), (20.0, 2.0, 0.0), (None, None, 0.0),
-                       (100.0, float("nan"), 0.0), (1000.0, 3.0, 0.0)])
+        table = Table(
+            ["frequency Hz", "dB", "group delay s"],
+            [
+                (0.0, 1.0, 0.0),
+                (20.0, 2.0, 0.0),
+                (None, None, 0.0),
+                (100.0, float("nan"), 0.0),
+                (1000.0, 3.0, 0.0),
+            ],
+        )
         self.assertEqual(graph.curves(table), [("dB", [(20.0, 2.0), (1000.0, 3.0)])])
-        self.assertEqual(graph.curves(Table(["type", "frequency Hz", "gain dB"],
-                                            [("bell", 100.0, 1.0)] * 2)), [])
-        self.assertEqual(graph.curves(Table(["frequency Hz", "name"], [(1.0, "a")] * 2)), [])
+        self.assertEqual(
+            graph.curves(
+                Table(["type", "frequency Hz", "gain dB"], [("bell", 100.0, 1.0)] * 2)
+            ),
+            [],
+        )
+        self.assertEqual(
+            graph.curves(Table(["frequency Hz", "name"], [(1.0, "a")] * 2)), []
+        )
 
     def test_graph_flat(self):
         text = graph.plot([(20.0, 0.0), (20000.0, 0.0)], 60, 10)
@@ -177,7 +225,9 @@ class InspectTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "p.xml"
             run("inspect", SAMPLES["swproj"], "--xml", out)
-            self.assertEqual(out.read_bytes(), swproj.SwProj.open(SAMPLES["swproj"]).xml)
+            self.assertEqual(
+                out.read_bytes(), swproj.SwProj.open(SAMPLES["swproj"]).xml
+            )
 
 
 class ConvertTests(unittest.TestCase):
@@ -188,7 +238,9 @@ class ConvertTests(unittest.TestCase):
             code, _ = run("convert", "-i", src, "--angle", "degrees_90")
             self.assertEqual(code, 0)
             profile, other = cal.load(Path(tmp) / "TILT01 degrees_90.txt")
-            self.assertEqual(profile.points, swmicpkg.load(PACKAGE, "degrees_90").points)
+            self.assertEqual(
+                profile.points, swmicpkg.load(PACKAGE, "degrees_90").points
+            )
             self.assertEqual(other, ["* SoundID microphone TILT01 degrees_90"])
             _, out = run("inspect", Path(tmp) / "TILT01 degrees_90.txt")
             self.assertIn("  points : 300", out)
@@ -196,15 +248,24 @@ class ConvertTests(unittest.TestCase):
     def test_mdat_to_swproj(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "x.swproj"
-            code, text = run("convert", "-i", MDAT, "-o", out, "--mic-profile", PACKAGE,
-                             "--max-boost-db", "6")
+            code, text = run(
+                "convert",
+                "-i",
+                MDAT,
+                "-o",
+                out,
+                "--mic-profile",
+                PACKAGE,
+                "--max-boost-db",
+                "6",
+            )
             self.assertEqual(code, 0)
             self.assertIn("maximum boost: 6 dB", text)
             self.assertEqual(len(swproj.SwProj.open(out).eqb.curves), 4)
 
     def test_target_from_output_extension(self):
         with tempfile.TemporaryDirectory() as tmp:
-            code, err = run_error("convert", "-i", MDAT, "-o", Path(tmp) / "x.cal")
+            _code, err = run_error("convert", "-i", MDAT, "-o", Path(tmp) / "x.cal")
         self.assertIn("no converter from mdat to rewcal", err)
 
     def test_shared_output_extension(self):
@@ -216,7 +277,7 @@ class ConvertTests(unittest.TestCase):
 
     def test_shared_input_extension(self):
         with with_other_txt():
-            code, err = run_error("inspect", SAMPLES["rewcal"].with_suffix(".txt"))
+            _code, err = run_error("inspect", SAMPLES["rewcal"].with_suffix(".txt"))
         self.assertIn("ambiguous", err)
 
     def test_mic_profile_format_override(self):
@@ -224,15 +285,26 @@ class ConvertTests(unittest.TestCase):
             profile = Path(tmp) / "mic.xyz"
             profile.write_bytes(PACKAGE.read_bytes())
             out = Path(tmp) / "x.swproj"
-            code, err = run_error("convert", "-i", MDAT, "-o", out, "--mic-profile", profile)
+            code, err = run_error(
+                "convert", "-i", MDAT, "-o", out, "--mic-profile", profile
+            )
             self.assertIn("cannot detect the format of 'mic.xyz'", err)
-            code, text = run("convert", "-i", MDAT, "-o", out, "--mic-profile", profile,
-                             "--mic-profile-format", "swmicpkg")
+            code, text = run(
+                "convert",
+                "-i",
+                MDAT,
+                "-o",
+                out,
+                "--mic-profile",
+                profile,
+                "--mic-profile-format",
+                "swmicpkg",
+            )
             self.assertEqual(code, 0)
             self.assertIn("mic table: mic degrees_0", text)
 
     def test_option_of_other_pair_is_rejected(self):
-        code, err = run_error("convert", "-i", PACKAGE, "--mic-angle", "degrees_0")
+        _code, err = run_error("convert", "-i", PACKAGE, "--mic-angle", "degrees_0")
         self.assertIn("--mic-angle does not apply to swmicpkg -> rewcal", err)
 
     def test_autoeq(self):
@@ -240,11 +312,22 @@ class ConvertTests(unittest.TestCase):
         code, err = run_error("convert", "-i", csv)
         self.assertIn("16 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
+            code, text = run(
+                "convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M"
+            )
             self.assertEqual(code, 0)
             self.assertIn("M Bass and treble; 355 points", text)
-            code, _ = run("convert", "-i", SAMPLES["peqb"], "-o", Path(tmp) / "y.csv",
-                          "--computer-id", "g" + "0" * 40, "--channel", "right")
+            code, _ = run(
+                "convert",
+                "-i",
+                SAMPLES["peqb"],
+                "-o",
+                Path(tmp) / "y.csv",
+                "--computer-id",
+                "g" + "0" * 40,
+                "--channel",
+                "right",
+            )
             self.assertEqual(code, 0)
             _, out = run("inspect", Path(tmp) / "y.csv")
             self.assertIn("  points  : 355", out)
@@ -252,9 +335,13 @@ class ConvertTests(unittest.TestCase):
     def test_writers(self):
         csv = SAMPLES["autoeq"]
         with tempfile.TemporaryDirectory() as tmp:
-            for name, want in (("x.mdat", "mdat"), ("x.tmreq", "tmreq"), ("x.arcXa", "arcx")):
+            for name, want in (
+                ("x.mdat", "mdat"),
+                ("x.tmreq", "tmreq"),
+                ("x.arcXa", "arcx"),
+            ):
                 with self.subTest(name):
-                    code, text = run("convert", "-i", csv, "-o", Path(tmp) / name)
+                    code, _text = run("convert", "-i", csv, "-o", Path(tmp) / name)
                     self.assertEqual(code, 0)
                     self.assertEqual(formats.detect(Path(tmp) / name), want)
                     self.assertEqual(run("inspect", Path(tmp) / name)[0], 0)
@@ -262,14 +349,16 @@ class ConvertTests(unittest.TestCase):
             out = Path(tmp) / "x.txt"
             code, err = run_error("convert", "-i", csv, "-o", out)
             self.assertIn("ambiguous", err)
-            self.assertEqual(run("convert", "-i", csv, "-o", out, "--to", "soundsource")[0], 0)
+            self.assertEqual(
+                run("convert", "-i", csv, "-o", out, "--to", "soundsource")[0], 0
+            )
             self.assertEqual(formats.detect(out), "soundsource")
             self.assertEqual(run("convert", "-i", csv, "-o", out)[0], 0)
             self.assertEqual(formats.detect(out), "soundsource")
             # The only conversion of rewcal; the default name is the serial.
             table = Path(tmp) / "t.cal"
             table.write_bytes(SAMPLES["rewcal"].read_bytes())
-            code, text = run("convert", "-i", table, "--serial", "S1")
+            code, _text = run("convert", "-i", table, "--serial", "S1")
             self.assertEqual(code, 0)
             self.assertEqual(swmicpkg.load(Path(tmp) / "S1.swmicpkg").name, "S1")
 
@@ -279,64 +368,166 @@ class ConvertTests(unittest.TestCase):
         self.assertIn("MERGING+ANUBIS key, serial number A000042", out)
         self.assertIn('"channel_config"', out)
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", merging, "-o", Path(tmp) / "x.csv", "--sample-rate",
-                             "44100", "--channel", "right")
+            code, text = run(
+                "convert",
+                "-i",
+                merging,
+                "-o",
+                Path(tmp) / "x.csv",
+                "--sample-rate",
+                "44100",
+                "--channel",
+                "right",
+            )
             self.assertEqual(code, 0)
             self.assertIn("Right correction at 44100 Hz, dB", text)
-            code, err = run_error("convert", "-i", SAMPLES["soundid-export-peq-json"], "-o",
-                                  Path(tmp) / "x.csv",
-                                  "--sample-rate", "48000")
-            self.assertIn("--sample-rate does not apply to soundid-export-peq-json -> autoeq", err)
+            code, err = run_error(
+                "convert",
+                "-i",
+                SAMPLES["soundid-export-peq-json"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--sample-rate",
+                "48000",
+            )
+            self.assertIn(
+                "--sample-rate does not apply to soundid-export-peq-json -> autoeq", err
+            )
 
     def test_arcx(self):
         code, err = run_error("convert", "-i", SAMPLES["arcx"])
         self.assertIn("2 converters from arcx", err)
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", SAMPLES["arcx"], "-o", Path(tmp) / "x.csv",
-                             "--speaker", "right", "--point", "1")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["arcx"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--speaker",
+                "right",
+                "--point",
+                "1",
+            )
             self.assertEqual(code, 0)
             self.assertIn("Right response, point 1", text)
-            code, err = run_error("convert", "-i", SAMPLES["arcx"], "-o", Path(tmp) / "x.csv",
-                                  "--speaker", "Center")
+            code, err = run_error(
+                "convert",
+                "-i",
+                SAMPLES["arcx"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--speaker",
+                "Center",
+            )
             self.assertIn("no Center speaker; available: Left, Right", err)
-            code, err = run_error("convert", "-i", SAMPLES["arcx"], "-o", Path(tmp) / "x.csv",
-                                  "--point", "3")
+            code, err = run_error(
+                "convert",
+                "-i",
+                SAMPLES["arcx"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--point",
+                "3",
+            )
             self.assertIn("point 3 does not exist; points: 0-2", err)
-            code, text = run("convert", "-i", SAMPLES["arcx"], "-o", Path(tmp) / "x.swproj",
-                             "--mic-profile", PACKAGE, "--point", "0")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["arcx"],
+                "-o",
+                Path(tmp) / "x.swproj",
+                "--mic-profile",
+                PACKAGE,
+                "--point",
+                "0",
+            )
             self.assertEqual(code, 0)
             self.assertIn("measurements: 2", text)
             surround = TESTDATA / "ik/arcx/Arc 5.1.arcXs"
-            code, text = run("convert", "-i", surround, "-o", Path(tmp) / "x.swproj",
-                             "--mic-profile", PACKAGE, "--lfe-high-cutoff-hz", "100")
+            code, text = run(
+                "convert",
+                "-i",
+                surround,
+                "-o",
+                Path(tmp) / "x.swproj",
+                "--mic-profile",
+                PACKAGE,
+                "--lfe-high-cutoff-hz",
+                "100",
+            )
             self.assertEqual(code, 0)
             self.assertIn("layout: 5.1; measurements: 6", text)
             self.assertIn("LFE correction band: 60-100 Hz", text)
-            code, text = run("convert", "-i", Path(tmp) / "x.swproj", "-o", Path(tmp) / "x.csv",
-                             "--speaker", "left surround")
+            code, text = run(
+                "convert",
+                "-i",
+                Path(tmp) / "x.swproj",
+                "-o",
+                Path(tmp) / "x.csv",
+                "--speaker",
+                "left surround",
+            )
             self.assertEqual(code, 0)
             self.assertIn("Left Surround measurement", text)
-            code, err = run_error("convert", "-i", Path(tmp) / "x.swproj", "-o", Path(tmp) / "x.csv",
-                                  "--speaker", "Left Wide")
+            code, err = run_error(
+                "convert",
+                "-i",
+                Path(tmp) / "x.swproj",
+                "-o",
+                Path(tmp) / "x.csv",
+                "--speaker",
+                "Left Wide",
+            )
             self.assertIn("no Left Wide channel; available: Left, Right, Center", err)
 
     def test_mqx(self):
         code, err = run_error("convert", "-i", SAMPLES["mqx"])
         self.assertIn("2 converters from mqx", err)
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", SAMPLES["mqx"], "-o", Path(tmp) / "x.csv",
-                             "--speaker", "center", "--position", "2")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["mqx"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--speaker",
+                "center",
+                "--position",
+                "2",
+            )
             self.assertEqual(code, 0)
-            self.assertIn("C response, position 2, dB re full scale, not compensated", text)
-            code, err = run_error("convert", "-i", SAMPLES["mqx"], "-o", Path(tmp) / "x.csv",
-                                  "--point", "1")
+            self.assertIn(
+                "C response, position 2, dB re full scale, not compensated", text
+            )
+            code, err = run_error(
+                "convert",
+                "-i",
+                SAMPLES["mqx"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--point",
+                "1",
+            )
             self.assertIn("--point does not apply to mqx -> autoeq", err)
-            code, text = run("convert", "-i", SAMPLES["mqx"], "-o", Path(tmp) / "x.swproj",
-                             "--mic-profile", PACKAGE)
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["mqx"],
+                "-o",
+                Path(tmp) / "x.swproj",
+                "--mic-profile",
+                PACKAGE,
+            )
             self.assertEqual(code, 0)
             self.assertIn("layout: 5.1; measurements: 6", text)
-            code, text = run("convert", "-i", TESTDATA / "autoeq/csv/Room Left.csv",
-                             "-o", Path(tmp) / "x.mqx")
+            code, text = run(
+                "convert",
+                "-i",
+                TESTDATA / "autoeq/csv/Room Left.csv",
+                "-o",
+                Path(tmp) / "x.mqx",
+            )
             self.assertEqual(code, 0)
             self.assertIn("FL, FR, 1 position", text)
 
@@ -347,23 +538,43 @@ class ConvertTests(unittest.TestCase):
                 self.assertEqual(code, 0)
                 self.assertIn("== measurement 1 Right", text)
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", SAMPLES["fuzzmeasure"], "-o", Path(tmp) / "x.csv",
-                             "--measurement", "right", "--no-mic-calibration", "--spl")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["fuzzmeasure"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--measurement",
+                "right",
+                "--no-mic-calibration",
+                "--spl",
+            )
             self.assertEqual(code, 0)
-            self.assertIn("'Right', dB SPL, microphone calibration 'TILT01 mic' not applied", text)
-            code, err = run_error("convert", "-i", SAMPLES["fuzzmeasure"], "--measurement", "9")
+            self.assertIn(
+                "'Right', dB SPL, microphone calibration 'TILT01 mic' not applied", text
+            )
+            code, err = run_error(
+                "convert", "-i", SAMPLES["fuzzmeasure"], "--measurement", "9"
+            )
             self.assertIn("measurement 9 does not exist", err)
-            inputs = [TESTDATA / "autoeq/csv" / f"Room {side}.csv" for side in ("Left", "Right")]
+            inputs = [
+                TESTDATA / "autoeq/csv" / f"Room {side}.csv"
+                for side in ("Left", "Right")
+            ]
             output = Path(tmp) / "x.fume4"
             for _ in range(2):
-                code, text = run("convert", "-i", inputs[0], "-i", inputs[1], "-o", output)
+                code, text = run(
+                    "convert", "-i", inputs[0], "-i", inputs[1], "-o", output
+                )
                 self.assertEqual(code, 0)
             self.assertIn("2 measurements, 48000 Hz", text)
             self.assertEqual(len(list(output.iterdir())), 3)
             code, text = run("inspect", output)
             self.assertIn("== measurement 1 Room Right", text)
             (Path(tmp) / "y.fume4").write_bytes(b"")
-            code, err = run_error("convert", "-i", inputs[0], "-o", Path(tmp) / "y.fume4")
+            code, err = run_error(
+                "convert", "-i", inputs[0], "-o", Path(tmp) / "y.fume4"
+            )
             self.assertIn("exists and is not a directory", err)
 
     def test_smaart(self):
@@ -372,35 +583,72 @@ class ConvertTests(unittest.TestCase):
         self.assertIn("calibration offset dB  : 100", text)
         csv = SAMPLES["autoeq"]
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", SAMPLES["smaart-trf"], "-o", Path(tmp) / "x.csv",
-                             "--mtw")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["smaart-trf"],
+                "-o",
+                Path(tmp) / "x.csv",
+                "--mtw",
+            )
             self.assertEqual(code, 0)
             self.assertIn("MTW data", text)
-            code, text = run("convert", "-i", SAMPLES["smaart-ascii"], "-o", Path(tmp) / "y.csv",
-                             "--trace", "1")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["smaart-ascii"],
+                "-o",
+                Path(tmp) / "y.csv",
+                "--trace",
+                "1",
+            )
             self.assertIn("trace 'Right'", text)
-            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.trf", "--fft", "1024")
+            code, text = run(
+                "convert", "-i", csv, "-o", Path(tmp) / "x.trf", "--fft", "1024"
+            )
             self.assertIn("513 bins, FFT 1024 at 48000 Hz, minimum phase", text)
             # The output extension selects the trace kind.
-            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.srf", "--fft", "1024",
-                             "--calibration-db", "90")
+            code, text = run(
+                "convert",
+                "-i",
+                csv,
+                "-o",
+                Path(tmp) / "x.srf",
+                "--fft",
+                "1024",
+                "--calibration-db",
+                "90",
+            )
             self.assertIn("calibration offset 90 dB", text)
-            code, text = run("convert", "-i", Path(tmp) / "x.srf", "-o", Path(tmp) / "s.csv",
-                             "--calibrated")
+            code, text = run(
+                "convert",
+                "-i",
+                Path(tmp) / "x.srf",
+                "-o",
+                Path(tmp) / "s.csv",
+                "--calibrated",
+            )
             self.assertIn("dB + calibration offset 90 dB", text)
             code, err = run_error("convert", "-i", Path(tmp) / "x.srf", "--mtw")
             self.assertIn("--mtw", err)
-            code, text = run("convert", "-i", SAMPLES["smaart-ref"], "-o", Path(tmp) / "r.csv")
+            code, text = run(
+                "convert", "-i", SAMPLES["smaart-ref"], "-o", Path(tmp) / "r.csv"
+            )
             self.assertEqual(code, 0)
-            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.crv", "--band", "3")
+            code, text = run(
+                "convert", "-i", csv, "-o", Path(tmp) / "x.crv", "--band", "3"
+            )
             self.assertIn("spectrum, 1/3 octave target curve", text)
             code, err = run_error("convert", "-i", csv, "-o", Path(tmp) / "x.txt")
             self.assertIn("ambiguous", err)
-            code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.txt",
-                             "--to", "smaart-ascii")
+            code, text = run(
+                "convert", "-i", csv, "-o", Path(tmp) / "x.txt", "--to", "smaart-ascii"
+            )
             self.assertEqual(code, 0)
             # The existing output is read as a Smaart table.
-            code, text = run("convert", "-i", Path(tmp) / "x.txt", "-o", Path(tmp) / "z.csv")
+            code, text = run(
+                "convert", "-i", Path(tmp) / "x.txt", "-o", Path(tmp) / "z.csv"
+            )
             self.assertIn("column Magnitude (dB)", text)
 
     def test_fir(self):
@@ -410,35 +658,82 @@ class ConvertTests(unittest.TestCase):
         self.assertIn("  taps           : 4096", out)
         self.assertIn("== channel Right", out)
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", SAMPLES["peqb"], "-o", Path(tmp) / "x.wav",
-                             "--computer-id", "g" + "0" * 40, "--phase", "linear",
-                             "--rate", "44100", "--no-safe-headroom")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["peqb"],
+                "-o",
+                Path(tmp) / "x.wav",
+                "--computer-id",
+                "g" + "0" * 40,
+                "--phase",
+                "linear",
+                "--rate",
+                "44100",
+                "--no-safe-headroom",
+            )
             self.assertEqual(code, 0)
-            self.assertIn("2 channel(s), 4001 taps at 44100 Hz, linear phase, latency 2000", text)
+            self.assertIn(
+                "2 channel(s), 4001 taps at 44100 Hz, linear phase, latency 2000", text
+            )
             self.assertIn("gain 0.00 dB", text)
-            code, text = run("convert", "-i", SAMPLES["autoeq"], "-o", Path(tmp) / "y.wav",
-                             "--taps", "1024")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["autoeq"],
+                "-o",
+                Path(tmp) / "y.wav",
+                "--taps",
+                "1024",
+            )
             self.assertEqual(code, 0)
             self.assertIn("1 channel(s), 1024 taps at 48000 Hz, minimum phase", text)
-            code, text = run("convert", "-i", Path(tmp) / "y.wav", "-o", Path(tmp) / "y.csv")
+            code, text = run(
+                "convert", "-i", Path(tmp) / "y.wav", "-o", Path(tmp) / "y.csv"
+            )
             self.assertEqual(code, 0)
             self.assertIn("Left gain of 1024 taps at 48000 Hz, dB", text)
-            code, err = run_error("convert", "-i", SAMPLES["autoeq"], "-o", Path(tmp) / "y.wav",
-                                  "--phase", "linear", "--taps", "1024")
+            code, err = run_error(
+                "convert",
+                "-i",
+                SAMPLES["autoeq"],
+                "-o",
+                Path(tmp) / "y.wav",
+                "--phase",
+                "linear",
+                "--taps",
+                "1024",
+            )
             self.assertIn("odd for linear phase", err)
-            code, text = run("convert", "-i", SAMPLES["swproj"], "-o", Path(tmp) / "z.wav",
-                             "--limit-correction", "6", "--limit-low", "extended",
-                             "--no-listening-spot")
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["swproj"],
+                "-o",
+                Path(tmp) / "z.wav",
+                "--limit-correction",
+                "6",
+                "--limit-low",
+                "extended",
+                "--no-listening-spot",
+            )
             self.assertEqual(code, 0)
             self.assertIn("limits: 6 dB, low extended, high neutral", text)
 
     def test_multiple_inputs(self):
-        left, right = TESTDATA / "autoeq/csv/Room Left.csv", TESTDATA / "autoeq/csv/Room Right.csv"
+        left, right = (
+            TESTDATA / "autoeq/csv/Room Left.csv",
+            TESTDATA / "autoeq/csv/Room Right.csv",
+        )
         with tempfile.TemporaryDirectory() as tmp:
-            code, text = run("convert", "-i", left, "-i", right, "-o", Path(tmp) / "x.wav")
+            code, text = run(
+                "convert", "-i", left, "-i", right, "-o", Path(tmp) / "x.wav"
+            )
             self.assertEqual(code, 0)
             self.assertIn("2 channel(s)", text)
-        code, err = run_error("convert", "-i", left, "-i", right, "-i", left, "--to", "fir")
+        code, err = run_error(
+            "convert", "-i", left, "-i", right, "-i", left, "--to", "fir"
+        )
         self.assertIn("autoeq -> fir takes 1 to 2 input files, got 3", err)
         code, err = run_error("convert", "-i", PACKAGE, "-i", PACKAGE)
         self.assertIn("swmicpkg -> rewcal takes 1 input file, got 2", err)
@@ -446,7 +741,7 @@ class ConvertTests(unittest.TestCase):
         self.assertIn("inputs of different formats: autoeq, mdat", err)
 
     def test_required_option(self):
-        code, err = run_error("convert", "-i", MDAT, "--to", "swproj")
+        _code, err = run_error("convert", "-i", MDAT, "--to", "swproj")
         self.assertIn("mdat -> swproj needs --mic-profile", err)
 
 

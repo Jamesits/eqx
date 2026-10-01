@@ -16,12 +16,14 @@ COMMENT = "*"
 
 
 def _number(value: float) -> str:
-    return format(value + 0.0, ".6g")       # + 0.0 turns -0.0 into 0.0
+    return format(value + 0.0, ".6g")  # + 0.0 turns -0.0 into 0.0
 
 
 def write(profile: MicProfile, source: str = "") -> str:
     """Calibration file text; ``source`` names the origin in the comment line."""
-    title = " ".join(s for s in (source, "microphone", profile.name, profile.angle) if s)
+    title = " ".join(
+        s for s in (source, "microphone", profile.name, profile.angle) if s
+    )
     lines = [f"{COMMENT} {title}"]
     lines += [f"{_number(f)}\t{_number(g)}" for f, g in profile.points]
     return "\n".join(lines) + "\n"
@@ -55,11 +57,15 @@ class RewcalInspector(Inspector):
         profile, other = read(data.decode("utf-8", errors="replace"), path.stem)
         return [
             file_section(path, data),
-            Section("calibration",
-                    [("points", len(profile.points)),
-                     ("range", frequency_range(profile.points)),
-                     *(("text", line) for line in other)],
-                    Table(["frequency Hz", "gain dB"], profile.points)),
+            Section(
+                "calibration",
+                [
+                    ("points", len(profile.points)),
+                    ("range", frequency_range(profile.points)),
+                    *(("text", line) for line in other),
+                ],
+                Table(["frequency Hz", "gain dB"], profile.points),
+            ),
         ]
 
 
@@ -74,5 +80,10 @@ def sniff(data: bytes) -> bool:
     return False
 
 
-FORMAT = Format("rewcal", (".txt", ".cal"), "REW microphone calibration file", RewcalInspector,
-                sniff)
+FORMAT = Format(
+    "rewcal",
+    (".txt", ".cal"),
+    "REW microphone calibration file",
+    RewcalInspector,
+    sniff,
+)

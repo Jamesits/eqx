@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from .audyssey import mqx
 from .autoeq import response
@@ -17,20 +17,54 @@ from .rme import tmreq
 from .rode import fuzzmeasure
 from .rogueamoeba import soundsource
 from .sennheiser import hpc
-from .soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_peq_json,
-                      export_txt, peqb, swmicpkg, swproj, targetpreset)
+from .soundid import (
+    export_biquad_json,
+    export_biquad_xml,
+    export_lvnd,
+    export_peq_json,
+    export_txt,
+    peqb,
+    swmicpkg,
+    swproj,
+    targetpreset,
+)
 from .wav import fir
 
-FORMATS: dict[str, Format] = {f.id: f for m in (
-    # umik and ascii before cal: their files are also REW calibration files.
-    swproj, peqb, swmicpkg, targetpreset, mdat, umik, ascii, cal, response,
-    # Content checks run in this order: the cheap magics before the
-    # MERGING key search of an encrypted export.
-    filterslot, export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt,
-    soundsource,
-    tmreq,
-    arcx, arc4, fir, targetcurve, mqx, fuzzmeasure, trace, crv, hpc,
-) for f in getattr(m, "FORMATS", None) or (m.FORMAT,)}
+FORMATS: dict[str, Format] = {
+    f.id: f
+    for m in (
+        # umik and ascii before cal: their files are also REW calibration files.
+        swproj,
+        peqb,
+        swmicpkg,
+        targetpreset,
+        mdat,
+        umik,
+        ascii,
+        cal,
+        response,
+        # Content checks run in this order: the cheap magics before the
+        # MERGING key search of an encrypted export.
+        filterslot,
+        export_lvnd,
+        export_peq_json,
+        export_biquad_json,
+        export_biquad_xml,
+        export_txt,
+        soundsource,
+        tmreq,
+        arcx,
+        arc4,
+        fir,
+        targetcurve,
+        mqx,
+        fuzzmeasure,
+        trace,
+        crv,
+        hpc,
+    )
+    for f in getattr(m, "FORMATS", None) or (m.FORMAT,)
+}
 
 
 def detect(path: Path, allowed: Iterable[str] | None = None) -> str:
@@ -52,12 +86,16 @@ def detect(path: Path, allowed: Iterable[str] | None = None) -> str:
         sniffed = _sniff(Path(path), narrowed)
         if sniffed is not None:
             return sniffed
-        raise ValueError(f"the extension of {Path(path).name!r} is ambiguous; "
-                         f"specify its format (one of: {', '.join(matches)})")
+        raise ValueError(
+            f"the extension of {Path(path).name!r} is ambiguous; "
+            f"specify its format (one of: {', '.join(matches)})"
+        )
     if matches:
         return matches[0]
-    raise ValueError(f"cannot detect the format of {Path(path).name!r} from its extension; "
-                     f"specify it (one of: {', '.join(FORMATS)})")
+    raise ValueError(
+        f"cannot detect the format of {Path(path).name!r} from its extension; "
+        f"specify it (one of: {', '.join(FORMATS)})"
+    )
 
 
 def _sniff(path: Path, candidates: list[str]) -> str | None:
@@ -65,5 +103,11 @@ def _sniff(path: Path, candidates: list[str]) -> str | None:
         data = path.read_bytes()
     except OSError:
         return None
-    return next((c for c in candidates if FORMATS[c].sniff is not None and FORMATS[c].sniff(data)),
-                None)
+    return next(
+        (
+            c
+            for c in candidates
+            if FORMATS[c].sniff is not None and FORMATS[c].sniff(data)
+        ),
+        None,
+    )

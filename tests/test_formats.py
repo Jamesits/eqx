@@ -1,8 +1,8 @@
 import unittest
 
 from testgen import common
-from eqx.soundid import crypto, peqb, swproj
 
+from eqx.soundid import crypto, peqb, swproj
 
 TESTDATA = common.ROOT
 PROJECTS = sorted((TESTDATA / "soundid/swproj").glob("*.swproj"))
@@ -32,7 +32,9 @@ class CryptoTests(unittest.TestCase):
 class PeqbTests(unittest.TestCase):
     def test_round_trip(self):
         curves = [
-            peqb.Curve(9, [(20.0, -1.5, None), (40.0, 2.25, None)], {"ChannelIndex": "0"}),
+            peqb.Curve(
+                9, [(20.0, -1.5, None), (40.0, 2.25, None)], {"ChannelIndex": "0"}
+            ),
             peqb.Curve(1, [(20.0, 1.5, 0.5), (40.0, -2.25, -0.25)]),
             peqb.Curve(11),
         ]
@@ -43,8 +45,10 @@ class PeqbTests(unittest.TestCase):
         self.assertEqual(p.parameters, {"k": "v"})
         self.assertEqual([c.flags for c in p.curves], [0b1011, 0b0111, 0])
         for want, got in zip(curves, p.curves):
-            self.assertEqual((got.curve_type, got.points, got.parameters),
-                             (want.curve_type, want.points, want.parameters))
+            self.assertEqual(
+                (got.curve_type, got.points, got.parameters),
+                (want.curve_type, want.points, want.parameters),
+            )
 
     def test_encrypted_without_key_is_not_decoded(self):
         for path in PROFILES:
@@ -63,7 +67,9 @@ class PeqbTests(unittest.TestCase):
                 p = peqb.read(blob, key)
                 self.assertTrue(p.decoded)
                 self.assertEqual(p.trailing, b"")
-                self.assertEqual([c.curve_type for c in p.curves], [1, 2, 5, 6, 6, 7, 7])
+                self.assertEqual(
+                    [c.curve_type for c in p.curves], [1, 2, 5, 6, 6, 7, 7]
+                )
                 self.assertEqual(p.parameters["Headphone_Calibration"], "true")
                 band = float(p.parameters["META_FixedErrorBandRange"])
                 left = p.curves[0].points
@@ -102,7 +108,7 @@ class SwprojTests(unittest.TestCase):
         blob = swproj.write(b"<Project/>", password=b"pw")
         self.assertTrue(swproj.SwProj(blob).header.password_protected)
         with self.assertRaises(ValueError):
-            swproj.SwProj(blob).xml
+            _ = swproj.SwProj(blob).xml
         self.assertEqual(swproj.SwProj(blob, b"pw").xml, b"<Project/>")
 
 

@@ -11,8 +11,9 @@ import json
 import math
 import statistics
 import xml.etree.ElementTree as ET
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 from ..curve import quantile, resample
 from ..model import EPOCH, Measurement, MicProfile, standard_grid
@@ -68,10 +69,14 @@ def estimate_reference_spl(
     high = min(LEVEL_HIGH_HZ, high_cutoff_hz)
     if low >= high:
         low, high = low_cutoff_hz, high_cutoff_hz
-    values = [v for response in responses for f, v in zip(grid, response) if low <= f <= high]
+    values = [
+        v for response in responses for f, v in zip(grid, response) if low <= f <= high
+    ]
     if not values:
         raise ValueError("no frequency points in the level band")
-    return min(statistics.median(values), quantile(values, clip_fraction) + max_boost_db)
+    return min(
+        statistics.median(values), quantile(values, clip_fraction) + max_boost_db
+    )
 
 
 def prepare_speaker_curves(
@@ -105,31 +110,46 @@ def prepare_speaker_curves(
     if not (math.isfinite(lfe_high_cutoff_hz) and lfe_high_cutoff_hz > 0):
         raise ValueError("LFE cutoff must be finite and positive")
     if not (math.isfinite(max_boost_db) and 0 <= max_boost_db <= SOUNDID_MAX_BOOST_DB):
-        raise ValueError(f"maximum boost must be between 0 and {SOUNDID_MAX_BOOST_DB:g} dB")
+        raise ValueError(
+            f"maximum boost must be between 0 and {SOUNDID_MAX_BOOST_DB:g} dB"
+        )
     if not 0 <= clip_fraction <= 1:
         raise ValueError("clip fraction must be between 0 and 1")
 
     lfe = set(lfe)
     bands = {False: _band(grid, low_cutoff_hz, high_cutoff_hz)}
     if any(m.channel in lfe for m in measurements):
-        bands[True] = _band(grid, low_cutoff_hz, min(high_cutoff_hz, lfe_high_cutoff_hz))
-    calibration = resample([f for f, _ in profile_points], [g for _, g in profile_points], grid)
+        bands[True] = _band(
+            grid, low_cutoff_hz, min(high_cutoff_hz, lfe_high_cutoff_hz)
+        )
+    calibration = resample(
+        [f for f, _ in profile_points], [g for _, g in profile_points], grid
+    )
     # Apply microphone calibration over the WHOLE range.  The table is the
     # microphone's own response, so it is subtracted.
     calibrated = [
-        [value - gain for value, gain in
-         zip(resample(m.frequencies, m.response, grid), calibration)]
+        [
+            value - gain
+            for value, gain in zip(
+                resample(m.frequencies, m.response, grid), calibration
+            )
+        ]
         for m in measurements
     ]
     if not all(math.isfinite(value) for spl in calibrated for value in spl):
         raise ValueError("measurement contains non-finite values")
     if reference_spl is None:
         # An LFE channel is far below the others in the level band.
-        pooled = [spl for m, spl in zip(measurements, calibrated) if m.channel not in lfe]
+        pooled = [
+            spl for m, spl in zip(measurements, calibrated) if m.channel not in lfe
+        ]
         reference_spl = estimate_reference_spl(
-            pooled or calibrated, grid,
-            low_cutoff_hz=low_cutoff_hz, high_cutoff_hz=high_cutoff_hz,
-            max_boost_db=max_boost_db, clip_fraction=clip_fraction,
+            pooled or calibrated,
+            grid,
+            low_cutoff_hz=low_cutoff_hz,
+            high_cutoff_hz=high_cutoff_hz,
+            max_boost_db=max_boost_db,
+            clip_fraction=clip_fraction,
         )
     curves: dict[str, SpeakerCurves] = {}
     for measurement, spl in zip(measurements, calibrated):
@@ -144,8 +164,12 @@ def prepare_speaker_curves(
             min(-value, max_boost_db) if first < i < last else 0.0
             for i, value in enumerate(response)
         ]
-        correction_gd = [-value if first < i < last else 0.0 for i, value in enumerate(gd)]
-        curves[measurement.channel] = SpeakerCurves(response, gd, correction, correction_gd)
+        correction_gd = [
+            -value if first < i < last else 0.0 for i, value in enumerate(gd)
+        ]
+        curves[measurement.channel] = SpeakerCurves(
+            response, gd, correction, correction_gd
+        )
     return curves, reference_spl
 
 
@@ -171,8 +195,12 @@ def _signed(value: float, correction: bool) -> str:
     return repr(float(value))
 
 
-def _channel_params(measurement: Measurement, layout: sid_layout.Layout,
-                    correction: bool, spot: dict | None = None) -> dict[str, Any]:
+def _channel_params(
+    measurement: Measurement,
+    layout: sid_layout.Layout,
+    correction: bool,
+    spot: dict | None = None,
+) -> dict[str, Any]:
     """``spot``: {channel: (delay ms, gain dB)}, SoundID's listening spot adjustment."""
     delay_ms, gain_db = (spot or {}).get(measurement.channel, (0.0, 0.0))
     return {
@@ -188,15 +216,18 @@ def _channel_params(measurement: Measurement, layout: sid_layout.Layout,
 
 def _correction_type(measurement: Measurement) -> str:
     """SoundID names the correction of channels 0 and 1 only."""
-    return {0: "CorrectionLeft", 1: "CorrectionRight"}.get(measurement.index, "Correction")
+    return {0: "CorrectionLeft", 1: "CorrectionRight"}.get(
+        measurement.index, "Correction"
+    )
 
 
 def _side(measurement: Measurement) -> str:
     return ("Left", "Right")[measurement.index]
 
 
-def _sonarworks_reference_params(measurement: Measurement, correction: bool,
-                      spot: dict | None = None) -> dict[str, Any]:
+def _sonarworks_reference_params(
+    measurement: Measurement, correction: bool, spot: dict | None = None
+) -> dict[str, Any]:
     """Curve parameters of Sonarworks Reference 3 / 4: the listening spot gain (dB) and
     delay (seconds) on the correction curve only."""
     delay_ms, gain_db = (spot or {}).get(measurement.channel, (0.0, 0.0))
@@ -207,14 +238,20 @@ def _sonarworks_reference_params(measurement: Measurement, correction: bool,
     }
 
 
-def check_app(measurements: list[Measurement], layout: sid_layout.Layout, app: str) -> None:
+def check_app(
+    measurements: list[Measurement], layout: sid_layout.Layout, app: str
+) -> None:
     """Sonarworks Reference 3 / 4 projects are stereo with both channels measured."""
     if app not in APPS:
         raise ValueError(f"app must be one of: {', '.join(APPS)}")
-    if app == "sonarworks-reference" and (layout is not sid_layout.STEREO
-                               or sorted(m.index for m in measurements) != [0, 1]):
-        raise ValueError("a Sonarworks Reference 3 / 4 project needs a stereo layout with Left and Right "
-                         "measured")
+    if app == "sonarworks-reference" and (
+        layout is not sid_layout.STEREO
+        or sorted(m.index for m in measurements) != [0, 1]
+    ):
+        raise ValueError(
+            "a Sonarworks Reference 3 / 4 project needs a stereo layout with Left and Right "
+            "measured"
+        )
 
 
 def _channel_side(measurement: Measurement) -> str:
@@ -226,11 +263,20 @@ def test_signal_config(layout: sid_layout.Layout, sample_rate: int) -> str:
     """Base64 JSON ``TestSignalConfig``: SoundID finds the LFE channels by its
     ``lfeChannelMap`` only.  The other values are those of SoundID's own projects."""
     config = {
-        "endFrequency": 22000.0, "fadeIn": 1440.0, "fadeOut": 240.0, "inputFadeIn": 480.0,
-        "inputFadeOut": 480.0, "interSignalSilence": 31200.0,
-        "lfeChannelMap": [c.is_lfe for c in layout.channels], "lfeEndFrequency": 22000.0,
-        "name": "FFTResponseTestSignal", "roomReverb": 1440.5, "safeSilence": 720.0,
-        "sampleRate": float(sample_rate), "startFrequency": 10.0, "sweepDuration": 48000.0,
+        "endFrequency": 22000.0,
+        "fadeIn": 1440.0,
+        "fadeOut": 240.0,
+        "inputFadeIn": 480.0,
+        "inputFadeOut": 480.0,
+        "interSignalSilence": 31200.0,
+        "lfeChannelMap": [c.is_lfe for c in layout.channels],
+        "lfeEndFrequency": 22000.0,
+        "name": "FFTResponseTestSignal",
+        "roomReverb": 1440.5,
+        "safeSilence": 720.0,
+        "sampleRate": float(sample_rate),
+        "startFrequency": 10.0,
+        "sweepDuration": 48000.0,
         "version": "v1.0.0",
     }
     return base64.b64encode(json.dumps(config, separators=(",", ":")).encode()).decode()
@@ -241,10 +287,14 @@ def check_layout(measurements: list[Measurement], layout: sid_layout.Layout) -> 
     seen = set()
     for m in measurements:
         if not 0 <= m.index < len(layout.channels):
-            raise ValueError(f"{m.channel}: layout {layout.name} has no channel {m.index}")
+            raise ValueError(
+                f"{m.channel}: layout {layout.name} has no channel {m.index}"
+            )
         if m.channel != layout.channels[m.index].name:
-            raise ValueError(f"{m.channel}: channel {m.index} of layout {layout.name} is "
-                             f"{layout.channels[m.index].name}")
+            raise ValueError(
+                f"{m.channel}: channel {m.index} of layout {layout.name} is "
+                f"{layout.channels[m.index].name}"
+            )
         if m.index in seen:
             raise ValueError(f"{m.channel}: channel {m.index} measured twice")
         seen.add(m.index)
@@ -257,7 +307,13 @@ NS_SW = swproj.NS["s"]
 NS_A = swproj.NS["a"]
 NS_L = swproj.NS["l"]
 NS_P = swproj.NS["p"]
-for _prefix, _uri in (("", NS_SW), ("i", swproj.NS["i"]), ("a", NS_A), ("l", NS_L), ("p", NS_P)):
+for _prefix, _uri in (
+    ("", NS_SW),
+    ("i", swproj.NS["i"]),
+    ("a", NS_A),
+    ("l", NS_L),
+    ("p", NS_P),
+):
     ET.register_namespace(_prefix, _uri)
 
 
@@ -286,7 +342,9 @@ def _params(parent: ET.Element, values: Iterable[tuple[str, Any]]) -> None:
     _key_values(_element(parent, "Parameters"), values)
 
 
-def _point_list(parent: ET.Element, grid: list[float], response: list[float], gd: list[float]) -> None:
+def _point_list(
+    parent: ET.Element, grid: list[float], response: list[float], gd: list[float]
+) -> None:
     point_list = ET.SubElement(_element(parent, "Points"), f"{{{NS_L}}}list")
     for frequency, value, group_delay in zip(grid, response, gd):
         point = _element(point_list, "AflPoint")
@@ -337,22 +395,50 @@ def build_project_xml(
         index = measurement.index
         if sonarworks:
             measurement_type = f"Measurement{_side(measurement)}"
-            params = [_sonarworks_reference_params(measurement, c, spot) for c in (False, True)]
+            params = [
+                _sonarworks_reference_params(measurement, c, spot)
+                for c in (False, True)
+            ]
         else:
             measurement_type = "Measurement"
-            params = [_channel_params(measurement, layout, c, spot) for c in (False, True)]
-        _curve(curves, measurement_type, f"Balanced Measurement CH {index}", grid,
-               speaker.response, speaker.group_delay, params[0].items())
-        _curve(curves, _correction_type(measurement), f"Correction CH {index}", grid,
-               speaker.correction, speaker.correction_group_delay, params[1].items())
+            params = [
+                _channel_params(measurement, layout, c, spot) for c in (False, True)
+            ]
+        _curve(
+            curves,
+            measurement_type,
+            f"Balanced Measurement CH {index}",
+            grid,
+            speaker.response,
+            speaker.group_delay,
+            params[0].items(),
+        )
+        _curve(
+            curves,
+            _correction_type(measurement),
+            f"Correction CH {index}",
+            grid,
+            speaker.correction,
+            speaker.correction_group_delay,
+            params[1].items(),
+        )
 
     mic_freq = [p[0] for p in profile.points]
     mic_response = [p[1] for p in profile.points]
-    _curve(curves, "Correction", f"{profile.name} {profile.angle}", mic_freq, mic_response,
-           [0.0] * len(mic_freq), (("MicDegrees", profile.angle),))
+    _curve(
+        curves,
+        "Correction",
+        f"{profile.name} {profile.angle}",
+        mic_freq,
+        mic_response,
+        [0.0] * len(mic_freq),
+        (("MicDegrees", profile.angle),),
+    )
 
     frequency_collections = _element(root, "FrequencyCollections")
-    frequency_collection = ET.SubElement(frequency_collections, f"{{{NS_P}}}FrequencyCollection")
+    frequency_collection = ET.SubElement(
+        frequency_collections, f"{{{NS_P}}}FrequencyCollection"
+    )
     info = _element(frequency_collection, "CollectionInfo")
     _element(info, "Custom", "false")
     _element(info, "Name", GRID_NAME)
@@ -406,8 +492,16 @@ def build_project_xml(
             ("Size_H", "0.35"),
             ("Size_W", "0.35"),
             # Written only with an LFE, so stereo projects stay as they were.
-            *((("TestSignalConfig", test_signal_config(layout, measurements[0].sample_rate)),)
-              if any(c.is_lfe for c in layout.channels) and not sonarworks else ()),
+            *(
+                (
+                    (
+                        "TestSignalConfig",
+                        test_signal_config(layout, measurements[0].sample_rate),
+                    ),
+                )
+                if any(c.is_lfe for c in layout.channels) and not sonarworks
+                else ()
+            ),
         ),
     )
     room_points = _element(rm, "Points")
@@ -431,7 +525,11 @@ def build_project_xml(
         _element(m, "RawData")  # optional audio samples intentionally omitted
         _element(m, "Time", measurement.timestamp)
         _element(m, "Transfer", "0")
-    _element(rm, "Time", max((m.timestamp for m in measurements if m.timestamp), default=EPOCH))
+    _element(
+        rm,
+        "Time",
+        max((m.timestamp for m in measurements if m.timestamp), default=EPOCH),
+    )
 
     values = _element(root, "Values")
     if not sonarworks:
@@ -452,8 +550,11 @@ def build_project_xml(
 # PEQb part
 # ---------------------------------------------------------------------------
 def build_eqb(
-    measurements: list[Measurement], grid: list[float], corrected: dict[str, SpeakerCurves],
-    layout: sid_layout.Layout = sid_layout.STEREO, spot: dict | None = None,
+    measurements: list[Measurement],
+    grid: list[float],
+    corrected: dict[str, SpeakerCurves],
+    layout: sid_layout.Layout = sid_layout.STEREO,
+    spot: dict | None = None,
 ) -> bytes:
     # PEQb v3.0.0.2 stores each speaker's Measurement together with its
     # correction curve. Use the same constrained correction
@@ -462,23 +563,34 @@ def build_eqb(
     curves = []
     for measurement in measurements:
         speaker = corrected[measurement.channel]
-        curves.append(peqb.Curve(
-            peqb.CURVE_TYPE_ID["Measurement"],
-            list(zip(grid, speaker.response, speaker.group_delay)),
-            _channel_params(measurement, layout, False, spot),
-            flags=peqb.F_FREQUENCY | peqb.F_RESPONSE | peqb.F_PARAMETERS,
-        ))
-        curves.append(peqb.Curve(
-            peqb.CURVE_TYPE_ID[_correction_type(measurement)],
-            list(zip(grid, speaker.correction, speaker.correction_group_delay)),
-            _channel_params(measurement, layout, True, spot),
-            flags=peqb.F_FREQUENCY | peqb.F_RESPONSE | peqb.F_GROUP_DELAY | peqb.F_PARAMETERS,
-        ))
+        curves.append(
+            peqb.Curve(
+                peqb.CURVE_TYPE_ID["Measurement"],
+                list(zip(grid, speaker.response, speaker.group_delay)),
+                _channel_params(measurement, layout, False, spot),
+                flags=peqb.F_FREQUENCY | peqb.F_RESPONSE | peqb.F_PARAMETERS,
+            )
+        )
+        curves.append(
+            peqb.Curve(
+                peqb.CURVE_TYPE_ID[_correction_type(measurement)],
+                list(zip(grid, speaker.correction, speaker.correction_group_delay)),
+                _channel_params(measurement, layout, True, spot),
+                flags=peqb.F_FREQUENCY
+                | peqb.F_RESPONSE
+                | peqb.F_GROUP_DELAY
+                | peqb.F_PARAMETERS,
+            )
+        )
     return peqb.write(curves)
 
 
-def build_sonarworks_reference_eqb(measurements: list[Measurement], grid: list[float],
-                        corrected: dict[str, SpeakerCurves], spot: dict | None = None) -> bytes:
+def build_sonarworks_reference_eqb(
+    measurements: list[Measurement],
+    grid: list[float],
+    corrected: dict[str, SpeakerCurves],
+    spot: dict | None = None,
+) -> bytes:
     """PEQb 3.0.0.0, as Sonarworks Reference 4 Measure writes it: CorrectionLeft,
     CorrectionRight, MeasurementLeft, MeasurementRight.  A correction's
     ``transfer`` is its gain less the larger gain of the two; ``delay_ms`` is
@@ -498,8 +610,14 @@ def build_sonarworks_reference_eqb(measurements: list[Measurement], grid: list[f
             else:
                 points = zip(grid, speaker.response, speaker.group_delay)
                 transfer, delay = 0.0, 0.0
-            curves.append(peqb.Curve(peqb.CURVE_TYPE_ID[kind + side], list(points),
-                                     transfer=transfer, delay_ms=delay))
+            curves.append(
+                peqb.Curve(
+                    peqb.CURVE_TYPE_ID[kind + side],
+                    list(points),
+                    transfer=transfer,
+                    delay_ms=delay,
+                )
+            )
     return peqb.write_v1(curves, version=(3, 0, 0, 0))
 
 
@@ -508,10 +626,10 @@ def build_sonarworks_reference_eqb(measurements: list[Measurement], grid: list[f
 # ---------------------------------------------------------------------------
 @dataclass
 class Conversion:
-    data: bytes                         # complete .swproj file
+    data: bytes  # complete .swproj file
     grid: list[float]
     curves: dict[str, SpeakerCurves]
-    reference_spl: float                # calibrated SPL mapped to 0 dB
+    reference_spl: float  # calibrated SPL mapped to 0 dB
 
 
 def convert(
@@ -538,7 +656,9 @@ def convert(
     check_app(measurements, layout, app)
     unknown = set(spot or {}) - {m.channel for m in measurements}
     if unknown:
-        raise ValueError(f"listening spot of unmeasured channel(s): {', '.join(sorted(unknown))}")
+        raise ValueError(
+            f"listening spot of unmeasured channel(s): {', '.join(sorted(unknown))}"
+        )
     grid = standard_grid()
     corrected, reference_spl = prepare_speaker_curves(
         measurements,
@@ -552,10 +672,15 @@ def convert(
         lfe=[c.name for c in layout.channels if c.is_lfe],
         lfe_high_cutoff_hz=lfe_high_cutoff_hz,
     )
-    xml = build_project_xml(measurements, grid, profile, corrected, name, layout, spot, app)
+    xml = build_project_xml(
+        measurements, grid, profile, corrected, name, layout, spot, app
+    )
     if app == "sonarworks-reference":
-        data = swproj.write(xml, build_sonarworks_reference_eqb(measurements, grid, corrected, spot),
-                            version=swproj.SONARWORKS_REFERENCE_VERSION)
+        data = swproj.write(
+            xml,
+            build_sonarworks_reference_eqb(measurements, grid, corrected, spot),
+            version=swproj.SONARWORKS_REFERENCE_VERSION,
+        )
     else:
         data = swproj.write(xml, build_eqb(measurements, grid, corrected, layout, spot))
     return Conversion(data, grid, corrected, reference_spl)

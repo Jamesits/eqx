@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, ClassVar
+from typing import ClassVar
 
 from .options import Option
 from .report import Section, Table
@@ -26,7 +27,7 @@ class Inspector:
 @dataclass(frozen=True)
 class Format:
     id: str
-    extensions: tuple[str, ...]             # lower case
+    extensions: tuple[str, ...]  # lower case
     description: str
     inspector: type[Inspector]
     # Content check; picks the format when several share an extension.
@@ -34,7 +35,9 @@ class Format:
 
 
 def file_section(path: Path, data: bytes, *fields) -> Section:
-    return Section("file", [("name", Path(path).name), ("size", f"{len(data):,} bytes"), *fields])
+    return Section(
+        "file", [("name", Path(path).name), ("size", f"{len(data):,} bytes"), *fields]
+    )
 
 
 def head_text(data: bytes) -> str:
@@ -63,5 +66,8 @@ def response_section(title: str, fields: list, compute: Callable[[], tuple]) -> 
     except ValueError as exc:
         return Section(title, [*fields, ("response", str(exc))])
     frequencies, db = columns[:2]
-    return Section(title, [*fields, ("range", frequency_range(list(zip(frequencies, db))))],
-                   Table(RESPONSE_COLUMNS[:len(columns)], list(zip(*columns))))
+    return Section(
+        title,
+        [*fields, ("range", frequency_range(list(zip(frequencies, db))))],
+        Table(RESPONSE_COLUMNS[: len(columns)], list(zip(*columns))),
+    )

@@ -20,8 +20,9 @@ BELL_TYPES = ("Peak", "Parametric")
 
 
 def read(data: bytes) -> Export:
-    plain, encryption = export_partners.open_as(data, ID, "parametric EQ JSON export",
-                                                search=False)
+    plain, encryption = export_partners.open_as(
+        data, ID, "parametric EQ JSON export", search=False
+    )
     try:
         root = json.loads(plain)
         corrections = []
@@ -31,18 +32,35 @@ def read(data: bytes) -> Export:
             for f in ch["peqFilters"]:
                 if f["type"] not in BELL_TYPES:
                     raise ValueError(f"{where}: unsupported filter type {f['type']!r}")
-                peqs.append(Peq(number(f["frequency"], where), number(f["gain"], where),
-                                number(f["qFactor"], where)))
+                peqs.append(
+                    Peq(
+                        number(f["frequency"], where),
+                        number(f["gain"], where),
+                        number(f["qFactor"], where),
+                    )
+                )
             spot = ch["listeningSpotCompensationData"]
-            corrections.append(Correction(ch["name"], number(spot["gain"], where),
-                                          number(spot["delay"], where), peqs=peqs))
+            corrections.append(
+                Correction(
+                    ch["name"],
+                    number(spot["gain"], where),
+                    number(spot["delay"], where),
+                    peqs=peqs,
+                )
+            )
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError(f"not a parametric EQ JSON export: {exc!r}") from None
-    return Export(corrections,
-                  [("name", root.get("name")), ("target mode", root.get("targetMode")),
-                   ("layout", root.get("layoutType")),
-                   ("safe headroom dB", root.get("safeHeadroomDb"))],
-                  encryption, plain.decode("utf-8"))
+    return Export(
+        corrections,
+        [
+            ("name", root.get("name")),
+            ("target mode", root.get("targetMode")),
+            ("layout", root.get("layoutType")),
+            ("safe headroom dB", root.get("safeHeadroomDb")),
+        ],
+        encryption,
+        plain.decode("utf-8"),
+    )
 
 
 def load(path) -> Export:
@@ -53,6 +71,10 @@ class PeqJsonInspector(ExportInspector):
     load = load
 
 
-FORMAT = Format(ID, (".bin",),
-                "SoundID export: parametric EQ JSON (Grace Design, Lynx)", PeqJsonInspector,
-                lambda data: export_partners.partner_format(data) == ID)
+FORMAT = Format(
+    ID,
+    (".bin",),
+    "SoundID export: parametric EQ JSON (Grace Design, Lynx)",
+    PeqJsonInspector,
+    lambda data: export_partners.partner_format(data) == ID,
+)

@@ -38,12 +38,12 @@ SWEEP = re.compile(r"step(\d+)/(?:sweep(\d+)|tail)ch(\d+)\.wav")
 @dataclass
 class Arc4:
     pak_version: int
-    sizes: dict[str, int]                   # pak entry name -> size
-    info: ET.Element                        # SerializedMeasure
+    sizes: dict[str, int]  # pak entry name -> size
+    info: ET.Element  # SerializedMeasure
     info_text: str
     sample_rate: float
-    spectra: list[list[float]]              # [channel] packed real FFT
-    steps: dict[int, tuple[int, int]]       # step -> (sweep files, tail files)
+    spectra: list[list[float]]  # [channel] packed real FFT
+    steps: dict[int, tuple[int, int]]  # step -> (sweep files, tail files)
 
     @property
     def fft_size(self) -> int:
@@ -64,9 +64,11 @@ def read(data: bytes) -> Arc4:
     info_text = arcx.xml_text(entries[INFO], INFO)
     info = arcx.xml_root(info_text, INFO, "SerializedMeasure")
     if _version(info.get("Version", "")) < MIN_VERSION or not info.get("SHA"):
-        raise ValueError(f"ARC 4 analysis version {info.get('Version')!r} is older than "
-                         "4.0.0 or has no SHA; ARC 4 rebuilds such an analysis from its "
-                         "sweeps, which is not supported")
+        raise ValueError(
+            f"ARC 4 analysis version {info.get('Version')!r} is older than "
+            "4.0.0 or has no SHA; ARC 4 rebuilds such an analysis from its "
+            "sweeps, which is not supported"
+        )
     sample_rate = arcx.number_attribute(info, "SampleRate", INFO)
 
     spectra = []
@@ -76,7 +78,9 @@ def read(data: bytes) -> Arc4:
             raise ValueError(f"ARC 4 analysis has no {name}")
         spectrum = arcx.read_wav(entries[name], name)[1]
         if len(spectrum) < 4 or len(spectrum) % 2:
-            raise ValueError(f"{name}: {len(spectrum)} values, expected an even FFT size")
+            raise ValueError(
+                f"{name}: {len(spectrum)} values, expected an even FFT size"
+            )
         spectra.append(spectrum)
     if len(spectra[0]) != len(spectra[1]):
         raise ValueError("ch0.wav and ch1.wav differ in length")
@@ -87,8 +91,15 @@ def read(data: bytes) -> Arc4:
         if m:
             sweeps, tails = steps.get(int(m[1]), (0, 0))
             steps[int(m[1])] = (sweeps + 1, tails) if m[2] else (sweeps, tails + 1)
-    return Arc4(version, {k: len(v) for k, v in entries.items()}, info, info_text, sample_rate,
-                spectra, dict(sorted(steps.items())))
+    return Arc4(
+        version,
+        {k: len(v) for k, v in entries.items()},
+        info,
+        info_text,
+        sample_rate,
+        spectra,
+        dict(sorted(steps.items())),
+    )
 
 
 def load(path) -> Arc4:
@@ -108,27 +119,38 @@ def _version(text: str) -> tuple[int, ...]:
 def power(spectrum: list[float]) -> list[float]:
     """Power of FFT bins 0 .. n/2 of a packed real FFT."""
     n = len(spectrum)
-    return ([spectrum[0] ** 2]
-            + [spectrum[2 * k] ** 2 + spectrum[2 * k + 1] ** 2 for k in range(1, n // 2)]
-            + [spectrum[1] ** 2])
+    return (
+        [spectrum[0] ** 2]
+        + [spectrum[2 * k] ** 2 + spectrum[2 * k + 1] ** 2 for k in range(1, n // 2)]
+        + [spectrum[1] ** 2]
+    )
 
 
-def response(arc4: Arc4, channel: int,
-             frequencies: list[float] | None = None) -> tuple[list[float], list[float]]:
+def response(
+    arc4: Arc4, channel: int, frequencies: list[float] | None = None
+) -> tuple[list[float], list[float]]:
     """(frequencies, dB) of one channel; 0 dB is the mean power over 40 Hz-10 kHz."""
     if frequencies is None:
         frequencies = impulse.log_grid(arc4.sample_rate)
     p = power(arc4.spectra[channel])
-    bands = impulse.spectrum_bands(p, [0.0] * len(p), arc4.sample_rate / arc4.fft_size,
-                                frequencies)
+    bands = impulse.spectrum_bands(
+        p, [0.0] * len(p), arc4.sample_rate / arc4.fft_size, frequencies
+    )
     return frequencies, [impulse.power_db(b[0]) for b in bands]
 
 
 def measurement(arc4: Arc4, channel: str, name: str = "") -> Measurement:
     c = arc4.channel(channel)
     frequencies, db = response(arc4, c)
-    return Measurement(CHANNELS[c], c, frequencies, db, [0.0] * len(frequencies),
-                       sample_rate=int(arc4.sample_rate), name=f"{CHANNELS[c]} {name}".strip())
+    return Measurement(
+        CHANNELS[c],
+        c,
+        frequencies,
+        db,
+        [0.0] * len(frequencies),
+        sample_rate=int(arc4.sample_rate),
+        name=f"{CHANNELS[c]} {name}".strip(),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -140,14 +162,27 @@ class Arc4Inspector(Inspector):
         data = path.read_bytes()
         a = read(data)
         sections = [pak.file_section(path, data, a.pak_version, a.sizes)]
-        sections.append(Section("SerializedMeasure", list(a.info.attrib.items()),
-                                raw=a.info_text))
-        sections.append(Section("measurement points", [("points", len(a.steps))], Table(
-            ["point", "sweep files", "tail files"],
-            [(s, sweeps, tails) for s, (sweeps, tails) in a.steps.items()])))
+        sections.append(
+            Section("SerializedMeasure", list(a.info.attrib.items()), raw=a.info_text)
+        )
+        sections.append(
+            Section(
+                "measurement points",
+                [("points", len(a.steps))],
+                Table(
+                    ["point", "sweep files", "tail files"],
+                    [(s, sweeps, tails) for s, (sweeps, tails) in a.steps.items()],
+                ),
+            )
+        )
         for c, channel in enumerate(CHANNELS):
-            sections.append(response_section(f"channel {c} {channel}", [("FFT size", a.fft_size)],
-                                             lambda: response(a, c)))
+            sections.append(
+                response_section(
+                    f"channel {c} {channel}",
+                    [("FFT size", a.fft_size)],
+                    lambda c=c: response(a, c),
+                )
+            )
         return sections
 
 

@@ -28,8 +28,11 @@ def resample(xs: list[float], ys: list[float], grid) -> list[float]:
 def log_resample(points, frequencies) -> list[float]:
     """(frequency, value) ``points`` at ``frequencies``: linear in log frequency,
     clamped to the end values."""
-    return resample([math.log(f) for f, _ in points], [v for _, v in points],
-                    [math.log(f) for f in frequencies])
+    return resample(
+        [math.log(f) for f, _ in points],
+        [v for _, v in points],
+        [math.log(f) for f in frequencies],
+    )
 
 
 def quantile(values: list[float], q: float) -> float:

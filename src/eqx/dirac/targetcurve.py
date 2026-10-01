@@ -24,6 +24,7 @@ Header lines match exactly, without trimming.
 
 from __future__ import annotations
 
+import itertools
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,16 +38,21 @@ EXTENSION = ".targetcurve"
 DEFAULT_LOW_HZ, DEFAULT_HIGH_HZ = 10.0, 24000.0
 # Dirac Live extends the breakpoints to these ends and clamps the high limit.
 MIN_HZ, MAX_HZ = 0.0, 24000.0
-NAME, DEVICE, BREAKPOINTS, LOW, HIGH = "NAME", "DEVICENAME", "BREAKPOINTS", "LOWLIMITHZ", \
-    "HIGHLIMITHZ"
+NAME, DEVICE, BREAKPOINTS, LOW, HIGH = (
+    "NAME",
+    "DEVICENAME",
+    "BREAKPOINTS",
+    "LOWLIMITHZ",
+    "HIGHLIMITHZ",
+)
 
 
 @dataclass
 class TargetCurve:
     name: str = ""
     device_name: str = ""
-    breakpoints: list[tuple[float, float]] = field(default_factory=list)   # (Hz, dB)
-    low_hz: float = DEFAULT_LOW_HZ          # correction range
+    breakpoints: list[tuple[float, float]] = field(default_factory=list)  # (Hz, dB)
+    low_hz: float = DEFAULT_LOW_HZ  # correction range
     high_hz: float = DEFAULT_HIGH_HZ
 
     def validate(self) -> None:
@@ -56,12 +62,14 @@ class TargetCurve:
             raise ValueError("no breakpoints")
         if frequencies[0] < MIN_HZ:
             raise ValueError(f"negative frequency {frequencies[0]:g} Hz")
-        for f0, f1 in zip(frequencies, frequencies[1:]):
+        for f0, f1 in itertools.pairwise(frequencies):
             if not f0 < f1:
                 raise ValueError(f"frequencies not increasing at {f1:g} Hz")
         if not MIN_HZ <= self.low_hz < min(self.high_hz, MAX_HZ):
-            raise ValueError(f"limits {self.low_hz:g}-{self.high_hz:g} Hz: "
-                             f"need {MIN_HZ:g} <= low < high")
+            raise ValueError(
+                f"limits {self.low_hz:g}-{self.high_hz:g} Hz: "
+                f"need {MIN_HZ:g} <= low < high"
+            )
         if not any(MIN_HZ < f < MAX_HZ for f in frequencies):
             raise ValueError(f"no breakpoint inside {MIN_HZ:g}-{MAX_HZ:g} Hz")
 
@@ -91,7 +99,11 @@ def _float(text: str) -> float | None:
     except ValueError:
         return None
     # Out of float range fails in Qt.
-    return value if not math.isfinite(value) or abs(value) <= 3.4028234663852886e38 else None
+    return (
+        value
+        if not math.isfinite(value) or abs(value) <= 3.4028234663852886e38
+        else None
+    )
 
 
 def _after(lines: list[str], i: int, key: str) -> int | None:
@@ -107,7 +119,7 @@ def read(text: str) -> TargetCurve:
     text = text.lstrip("﻿")
     # QTextStream::readLine strips "\n" and "\r\n" only.
     lines = text.split("\n")
-    lines = [line[:-1] if line.endswith("\r") else line for line in lines]
+    lines = [line.removesuffix("\r") for line in lines]
     if lines and lines[-1] == "":
         lines.pop()
     curve = TargetCurve()
@@ -167,7 +179,9 @@ def write(curve: TargetCurve) -> str:
     return "\n".join(lines) + "\n"
 
 
-def simplify(points: list[tuple[float, float]], tolerance_db: float) -> list[tuple[float, float]]:
+def simplify(
+    points: list[tuple[float, float]], tolerance_db: float
+) -> list[tuple[float, float]]:
     """The fewest points whose log-frequency interpolation stays within
     ``tolerance_db`` of ``points`` (Ramer-Douglas-Peucker on dB)."""
     if len(points) <= 2:
@@ -200,14 +214,25 @@ class TargetCurveInspector(Inspector):
         except ValueError as exc:
             status = f"rejected by Dirac Live: {exc}"
         return [
-            file_section(path, data, ("curve name", curve.name), ("device", curve.device_name),
-                         ("correction range", f"{curve.low_hz:g}-{curve.high_hz:g} Hz"),
-                         ("status", status)),
-            Section("breakpoints", [("points", len(curve.breakpoints)),
-                                    ("frequency range", frequency_range(curve.breakpoints))],
-                    Table(["frequency Hz", "gain dB"], curve.breakpoints)),
+            file_section(
+                path,
+                data,
+                ("curve name", curve.name),
+                ("device", curve.device_name),
+                ("correction range", f"{curve.low_hz:g}-{curve.high_hz:g} Hz"),
+                ("status", status),
+            ),
+            Section(
+                "breakpoints",
+                [
+                    ("points", len(curve.breakpoints)),
+                    ("frequency range", frequency_range(curve.breakpoints)),
+                ],
+                Table(["frequency Hz", "gain dB"], curve.breakpoints),
+            ),
         ]
 
 
-FORMAT = Format("targetcurve", (EXTENSION,), "Dirac Live target curve", TargetCurveInspector,
-                sniff)
+FORMAT = Format(
+    "targetcurve", (EXTENSION,), "Dirac Live target curve", TargetCurveInspector, sniff
+)

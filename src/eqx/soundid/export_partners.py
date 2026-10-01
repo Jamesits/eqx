@@ -17,23 +17,39 @@ from . import crypto
 
 @dataclass(frozen=True)
 class Partner:
-    id: str                                 # SoundID's partner id
+    id: str  # SoundID's partner id
     name: str
-    format: str                             # eqx format id of the plaintext
-    key: str | None                         # None: the key is the device serial number
+    format: str  # eqx format id of the plaintext
+    key: str | None  # None: the key is the device serial number
 
 
 PARTNERS = (
-    Partner("fluid", "Fluid Audio", "soundid-export-biquad-json",
-            "5F3DD05ABB3B8FB122885C75E01B73560F8C01D930879FD183796F7DDD94F69A"),
+    Partner(
+        "fluid",
+        "Fluid Audio",
+        "soundid-export-biquad-json",
+        "5F3DD05ABB3B8FB122885C75E01B73560F8C01D930879FD183796F7DDD94F69A",
+    ),
     Partner("merging", "MERGING+ANUBIS", "soundid-export-biquad-json", None),
-    Partner("grace-design", "Grace Design m908", "soundid-export-peq-json",
-            "2sh3g08azj2cllsg5tato4wmdec8kpwj8etn6uxk76c4i5w5p36p71sw39vlm86h"),
-    Partner("lynx-aurora", "Lynx Aurora", "soundid-export-peq-json",
-            "sjvajtcac1abjrr2w2zx3k1ambn6ljhk"),
+    Partner(
+        "grace-design",
+        "Grace Design m908",
+        "soundid-export-peq-json",
+        "2sh3g08azj2cllsg5tato4wmdec8kpwj8etn6uxk76c4i5w5p36p71sw39vlm86h",
+    ),
+    Partner(
+        "lynx-aurora",
+        "Lynx Aurora",
+        "soundid-export-peq-json",
+        "sjvajtcac1abjrr2w2zx3k1ambn6ljhk",
+    ),
     # SoundID stores the key string only hashed: lower-case hex SHA-256 of this.
-    Partner("adam", "ADAM Audio A Series", "soundid-export-biquad-xml",
-            hashlib.sha256(b"6ABE9E4A59EB434B997B4B6FD2B1055F").hexdigest()),
+    Partner(
+        "adam",
+        "ADAM Audio A Series",
+        "soundid-export-biquad-xml",
+        hashlib.sha256(b"6ABE9E4A59EB434B997B4B6FD2B1055F").hexdigest(),
+    ),
 )
 MERGING = next(p for p in PARTNERS if p.id == "merging")
 # SoundID accepts "A" and six digits, adds a missing "A" and upper-cases it.
@@ -65,7 +81,9 @@ def _first_block(aes_key: bytes, data: bytes) -> bytes:
 
 def _plausible(block: bytes) -> bool:
     """The first plaintext block of every known export: JSON or XML text."""
-    return block[:1] in (b"{", b"<") and all(32 <= c < 127 or c in (9, 10, 13) for c in block)
+    return block[:1] in (b"{", b"<") and all(
+        32 <= c < 127 or c in (9, 10, 13) for c in block
+    )
 
 
 def _decrypt(key_string: str, data: bytes) -> bytes | None:
@@ -85,20 +103,27 @@ def find_serial(data: bytes) -> str | None:
         return None
     for n in range(SERIAL_COUNT):
         serial = f"A{n:06d}"
-        if _plausible(_first_block(key(serial), data)) and _decrypt(serial, data) is not None:
+        if (
+            _plausible(_first_block(key(serial), data))
+            and _decrypt(serial, data) is not None
+        ):
             return serial
     return None
 
 
-def open_export(data: bytes, serial: str | None = None,
-                search: bool = True) -> tuple[bytes, Partner, str]:
+def open_export(
+    data: bytes, serial: str | None = None, search: bool = True
+) -> tuple[bytes, Partner, str]:
     """Return (plaintext, partner, key string).
 
     ``serial`` is tried as the MERGING key; without it every serial number is
     searched (a few seconds) unless ``search`` is false.
     """
     for partner in PARTNERS:
-        if partner.key is not None and (plain := _decrypt(partner.key, data)) is not None:
+        if (
+            partner.key is not None
+            and (plain := _decrypt(partner.key, data)) is not None
+        ):
             return plain, partner, partner.key
     if serial is not None:
         serial = serial_number(serial)
@@ -110,8 +135,13 @@ def open_export(data: bytes, serial: str | None = None,
     raise ValueError("not an encrypted SoundID export, or its key is not known")
 
 
-def open_as(data: bytes, format_id: str, kind: str, serial: str | None = None,
-            search: bool = True) -> tuple[bytes, str]:
+def open_as(
+    data: bytes,
+    format_id: str,
+    kind: str,
+    serial: str | None = None,
+    search: bool = True,
+) -> tuple[bytes, str]:
     """(plaintext, encryption description) of an export of the format ``format_id``,
     named ``kind`` in the error."""
     plain, partner, key = open_export(data, serial, search)
@@ -124,7 +154,7 @@ def open_as(data: bytes, format_id: str, kind: str, serial: str | None = None,
 def partner_format(data: bytes) -> str | None:
     """The eqx format id of an encrypted export, or None."""
     try:
-        plain, partner, _key = open_export(data)
+        _plain, partner, _key = open_export(data)
     except ValueError:
         return None
     return partner.format

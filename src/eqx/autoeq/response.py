@@ -7,6 +7,7 @@ separators, no header, and REW text exports (``* Freq(Hz), SPL(dB), ...``).
 
 from __future__ import annotations
 
+import itertools
 import math
 import re
 from dataclasses import dataclass
@@ -20,8 +21,8 @@ RAW = "raw"
 # The column separators AutoEq detects; whitespace is the fallback.
 SEPARATORS = (",", ";", "\t", "|")
 _NUMERIC = re.compile(r"^[-+]?(\d|\.\d)")
-_FREQUENCY_NAME = re.compile(r"^freq", re.I)
-_VALUE_NAME = re.compile(r"^(raw|spl|gain|ampl)", re.I)
+_FREQUENCY_NAME = re.compile(r"^freq", re.IGNORECASE)
+_VALUE_NAME = re.compile(r"^(raw|spl|gain|ampl)", re.IGNORECASE)
 
 
 @dataclass
@@ -29,20 +30,23 @@ class Response:
     """Every column of one file; missing values are NaN."""
 
     name: str
-    columns: dict[str, list[float]]         # "frequency" first
+    columns: dict[str, list[float]]  # "frequency" first
 
     def curve(self, column: str = RAW) -> list[tuple[float, float]]:
         """Sorted (frequency, value) points of ``column``; NaN values are left out."""
         if column not in self.columns:
-            raise ValueError(f"{self.name}: no {column!r} column; "
-                             f"available: {', '.join(list(self.columns)[1:])}")
+            raise ValueError(
+                f"{self.name}: no {column!r} column; "
+                f"available: {', '.join(list(self.columns)[1:])}"
+            )
         points = sorted(
-            (f, v) for f, v in zip(self.columns[FREQUENCY], self.columns[column])
+            (f, v)
+            for f, v in zip(self.columns[FREQUENCY], self.columns[column])
             if math.isfinite(f) and math.isfinite(v)
         )
         if len(points) < 2:
             raise ValueError(f"{self.name}: {column!r} has fewer than two values")
-        for (f0, _), (f1, _) in zip(points, points[1:]):
+        for (f0, _), (f1, _) in itertools.pairwise(points):
             if f0 == f1:
                 raise ValueError(f"{self.name}: duplicate frequency {f0:g} Hz")
         return points
@@ -65,7 +69,9 @@ def _separators(rows: list[str]) -> tuple[str | None, str]:
 
 
 def _split(line: str, separator: str | None) -> list[str]:
-    return [cell.strip() for cell in (line.split(separator) if separator else line.split())]
+    return [
+        cell.strip() for cell in (line.split(separator) if separator else line.split())
+    ]
 
 
 def _number(cell: str, decimal: str, where: str) -> float:
@@ -76,7 +82,11 @@ def _number(cell: str, decimal: str, where: str) -> float:
 
 
 def read(text: str, name: str = "") -> Response:
-    lines = [(i + 1, line.strip()) for i, line in enumerate(text.splitlines()) if line.strip()]
+    lines = [
+        (i + 1, line.strip())
+        for i, line in enumerate(text.splitlines())
+        if line.strip()
+    ]
     rows = [(n, line) for n, line in lines if _NUMERIC.match(line)]
     if not rows:
         raise ValueError(f"{name}: no numeric rows")
@@ -103,8 +113,10 @@ def read(text: str, name: str = "") -> Response:
         freq = next((i for i, c in enumerate(header) if _FREQUENCY_NAME.match(c)), 0)
         value = next((i for i, c in enumerate(header) if c == RAW), None)
         if value is None:
-            value = next((i for i, c in enumerate(header)
-                          if i != freq and _VALUE_NAME.match(c)), 1 if freq != 1 else 0)
+            value = next(
+                (i for i, c in enumerate(header) if i != freq and _VALUE_NAME.match(c)),
+                1 if freq != 1 else 0,
+            )
         header[freq], header[value] = FREQUENCY, RAW
         order = [freq] + [i for i in range(width) if i != freq]
         header = [header[i] for i in order]
@@ -163,11 +175,15 @@ class AutoeqInspector(Inspector):
         rows = list(zip(*response.columns.values()))
         return [
             file_section(path, data),
-            Section("frequency response",
-                    [("columns", ", ".join(columns)),
-                     ("points", len(rows)),
-                     ("range", frequency_range(sorted(rows)))],
-                    Table(columns, rows)),
+            Section(
+                "frequency response",
+                [
+                    ("columns", ", ".join(columns)),
+                    ("points", len(rows)),
+                    ("range", frequency_range(sorted(rows))),
+                ],
+                Table(columns, rows),
+            ),
         ]
 
 

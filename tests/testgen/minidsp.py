@@ -14,7 +14,11 @@ UMIK_SECTIONS = {
 UMIK = {
     # serial: (header, row format, trailing empty line) of the 0 degree file
     "7000042": ('"Sens Factor =-5.5dB, SERNO: 7000042"', "{:.3f}\t{:.4f}", False),
-    "8100042": ('"Sens Factor =-14.5dB, AGain =18dB, SERNO: 8100042"', "{:.6g}\t{:.6g}", True),
+    "8100042": (
+        '"Sens Factor =-14.5dB, AGain =18dB, SERNO: 8100042"',
+        "{:.6g}\t{:.6g}",
+        True,
+    ),
 }
 
 
@@ -30,5 +34,8 @@ def write_umik(serial: str, angle: str) -> bytes:
 
 
 def files() -> dict[str, bytes]:
-    return {f"{UMIK_DIR}/{serial}{suffix}.txt": write_umik(serial, angle)
-            for serial in UMIK for angle, suffix in (("degrees_0", ""), ("degrees_90", "_90deg"))}
+    return {
+        f"{UMIK_DIR}/{serial}{suffix}.txt": write_umik(serial, angle)
+        for serial in UMIK
+        for angle, suffix in (("degrees_0", ""), ("degrees_90", "_90deg"))
+    }

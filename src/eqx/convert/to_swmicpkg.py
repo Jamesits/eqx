@@ -12,8 +12,11 @@ from ..rew import cal
 from ..soundid import swmicpkg
 from .base import Converter, Result
 
-SERIAL_OPTION = Option("--serial", help="microphone serial, the package name (default: the "
-                                        "serial in a UMIK file, else the first input name)")
+SERIAL_OPTION = Option(
+    "--serial",
+    help="microphone serial, the package name (default: the "
+    "serial in a UMIK file, else the first input name)",
+)
 
 
 def package(serial: str, tables: dict[str, MicProfile]) -> tuple[bytes, list[str]]:
@@ -28,7 +31,9 @@ def package(serial: str, tables: dict[str, MicProfile]) -> tuple[bytes, list[str
             gains = log_resample(tables[angle].points, grid)
             profiles[angle] = MicProfile(serial, angle, list(zip(grid, gains)))
         else:
-            profiles[angle] = MicProfile(serial, angle, profiles[swmicpkg.PLAIN_ANGLE].points)
+            profiles[angle] = MicProfile(
+                serial, angle, profiles[swmicpkg.PLAIN_ANGLE].points
+            )
             notes.append(f"{angle}: copy of {swmicpkg.PLAIN_ANGLE}")
     return swmicpkg.write(list(profiles.values())), notes
 
@@ -42,8 +47,10 @@ class RewcalToSwmicpkg(Converter):
 
     source = "rewcal"
     target = "swmicpkg"
-    description = ("microphone calibration (inputs: 0, optional 30 and 90 degrees) as a "
-                   "SoundID microphone package")
+    description = (
+        "microphone calibration (inputs: 0, optional 30 and 90 degrees) as a "
+        "SoundID microphone package"
+    )
     options = (SERIAL_OPTION,)
     inputs = len(swmicpkg.ANGLES)
 
@@ -56,8 +63,10 @@ class RewcalToSwmicpkg(Converter):
         for angle, path in zip(swmicpkg.ANGLES, paths):
             table, other = cal.load(path)
             tables[angle] = table
-            notes.append(f"{angle}: {path.name}, {len(table.points)} points"
-                         + (f"; {len(other)} other lines ignored" if other else ""))
+            notes.append(
+                f"{angle}: {path.name}, {len(table.points)} points"
+                + (f"; {len(other)} other lines ignored" if other else "")
+            )
         data, copies = package(serial, tables)
         return Result(data, f"{serial}.swmicpkg", notes + copies)
 
@@ -72,8 +81,10 @@ class UmikToSwmicpkg(Converter):
 
     source = "umik"
     target = "swmicpkg"
-    description = ("UMIK calibration (inputs: 0, optional 90 degrees) as a SoundID "
-                   "microphone package")
+    description = (
+        "UMIK calibration (inputs: 0, optional 90 degrees) as a SoundID "
+        "microphone package"
+    )
     options = (SERIAL_OPTION,)
     inputs = 2
 
@@ -84,8 +95,9 @@ class UmikToSwmicpkg(Converter):
         files = [(path, umik.load(path)) for path in paths]
         serials = {u.serial for _, u in files}
         if len(serials) > 1:
-            raise ValueError("the inputs are of different microphones: "
-                             f"{', '.join(sorted(serials))}")
+            raise ValueError(
+                f"the inputs are of different microphones: {', '.join(sorted(serials))}"
+            )
         tables, notes = {}, []
         for path, u in files:
             angle = u.profile.angle
@@ -94,10 +106,21 @@ class UmikToSwmicpkg(Converter):
             tables[angle] = u.profile
             notes.append(f"{angle}: {path.name}, {len(u.profile.points)} points")
         if umik.PLAIN_ANGLE not in tables:
-            raise ValueError(f"no {umik.PLAIN_ANGLE} table; add the {files[0][1].serial}.txt file")
+            raise ValueError(
+                f"no {umik.PLAIN_ANGLE} table; add the {files[0][1].serial}.txt file"
+            )
         u = files[0][1]
         serial = self.serial or u.serial
         data, copies = package(serial, tables)
-        return Result(data, f"{serial}.swmicpkg",
-                      [f"{u.model} {u.serial}, sensitivity {u.sensitivity_db:g} dBFS "
-                       "(not stored)"] + notes + copies)
+        return Result(
+            data,
+            f"{serial}.swmicpkg",
+            [
+                (
+                    f"{u.model} {u.serial}, sensitivity {u.sensitivity_db:g} dBFS "
+                    "(not stored)"
+                )
+            ]
+            + notes
+            + copies,
+        )

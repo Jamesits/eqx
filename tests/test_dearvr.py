@@ -5,6 +5,7 @@ from pathlib import Path
 
 from helpers import csv_points
 from testgen import common, sennheiser
+
 from eqx import cli, dsp, formats, impulse
 from eqx.autoeq import response
 from eqx.convert import CONVERTERS
@@ -16,8 +17,14 @@ from eqx.wav import fir
 ROOT = common.ROOT
 HPC = ROOT / sennheiser.HPC_DIR / "hpc.dat"
 REAL = ROOT / "real" / "Sennheiser" / "hpc.dat"
-MINIMUM_TAPS = {44100: 4500, 48000: 4800, 88200: 9000, 96000: 9600, 176400: 18000,
-                192000: 19200}
+MINIMUM_TAPS = {
+    44100: 4500,
+    48000: 4800,
+    88200: 9000,
+    96000: 9600,
+    176400: 18000,
+    192000: 19200,
+}
 
 
 def gains(ir, rate, frequencies):
@@ -30,12 +37,18 @@ class ReaderTests(unittest.TestCase):
 
     def test_headphones(self):
         self.assertEqual(self.library.version, 1)
-        self.assertEqual([(h.id, h.name) for h in self.library.headphones],
-                         [(i, n) for i, n, _, _ in sennheiser.HEADPHONES])
-        for h, (_, _, phases, sides) in zip(self.library.headphones, sennheiser.HEADPHONES):
+        self.assertEqual(
+            [(h.id, h.name) for h in self.library.headphones],
+            [(i, n) for i, n, _, _ in sennheiser.HEADPHONES],
+        )
+        for h, (_, _, phases, sides) in zip(
+            self.library.headphones, sennheiser.HEADPHONES
+        ):
             with self.subTest(h.name):
-                self.assertEqual({(f.phase, f.sample_rate) for f in h.filters},
-                                 {(p, r) for p, rates in phases.items() for r in rates})
+                self.assertEqual(
+                    {(f.phase, f.sample_rate) for f in h.filters},
+                    {(p, r) for p, rates in phases.items() for r in rates},
+                )
                 for f in h.filters:
                     self.assertEqual(f.taps, sennheiser.TAPS[f.phase])
                     self.assertEqual(f.channel_count, max(1, len(sides)))
@@ -46,8 +59,12 @@ class ReaderTests(unittest.TestCase):
             for f in h.filters:
                 want = sennheiser.impulse(sides, f.phase, f.sample_rate)
                 for got, w in zip(f.channels(), want, strict=True):
-                    self.assertEqual(got, list(struct.unpack(f"<{len(w)}f",
-                                                             struct.pack(f"<{len(w)}f", *w))))
+                    self.assertEqual(
+                        got,
+                        list(
+                            struct.unpack(f"<{len(w)}f", struct.pack(f"<{len(w)}f", *w))
+                        ),
+                    )
 
     def test_phase(self):
         h = self.library.headphone("Tilt Studio")
@@ -62,19 +79,25 @@ class ReaderTests(unittest.TestCase):
         f = self.library.headphone("Tilt Stereo").filter("minimum", 48000)
         frequencies = [200, 1000, 4000, 8000, 15000]
         for ir, side in zip(f.channels(), ("Left", "Right"), strict=True):
-            want = [dsp.cascade_db(common.bells(side, 48000), x, 48000) for x in frequencies]
+            want = [
+                dsp.cascade_db(common.bells(side, 48000), x, 48000) for x in frequencies
+            ]
             for g, w in zip(gains(ir, 48000, frequencies), want):
                 self.assertAlmostEqual(g, w, delta=0.1)
 
     def test_select(self):
         self.assertEqual(self.library.headphone("  tilt STUDIO ").id, 0x3E22D390)
-        with self.assertRaisesRegex(ValueError, "specify --headphone, one of: Flat Flat, "
-                                                "Tilt Stereo, Tilt Studio"):
+        with self.assertRaisesRegex(
+            ValueError,
+            "specify --headphone, one of: Flat Flat, Tilt Stereo, Tilt Studio",
+        ):
             self.library.headphone(None)
         with self.assertRaisesRegex(ValueError, "no headphone 'x'"):
             self.library.headphone("x")
         h = self.library.headphone("Tilt Stereo")
-        with self.assertRaisesRegex(ValueError, "no linear phase filter; available: minimum"):
+        with self.assertRaisesRegex(
+            ValueError, "no linear phase filter; available: minimum"
+        ):
             h.filter("linear", 48000)
         with self.assertRaisesRegex(ValueError, "at 44100 Hz; available: 48000"):
             h.filter("minimum", 44100)
@@ -84,14 +107,18 @@ class ReaderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no HPIR identifier"):
             hpc.read(data[:4] + b"XXXX" + data[8:])
         with self.assertRaisesRegex(ValueError, "outside the file"):
-            hpc.read(data[:len(data) // 2])
+            hpc.read(data[: len(data) // 2])
 
     def test_unknown_phase(self):
         rate = [("u32", 48000), ("tables", [[("floats", [1.0])]])]
         groups = [[("u8", 5), ("tables", [rate])], [None, ("tables", [rate])]]
         data = sennheiser._Builder().finish(
-            [("u32", 1), ("tables", [[("u32", 7), ("string", "Odd"), ("tables", groups)]])],
-            hpc.IDENTIFIER)
+            [
+                ("u32", 1),
+                ("tables", [[("u32", 7), ("string", "Odd"), ("tables", groups)]]),
+            ],
+            hpc.IDENTIFIER,
+        )
         self.assertEqual(hpc.read(data).headphones[0].phases, ["minimum", "type 5"])
 
 
@@ -106,15 +133,23 @@ class FormatTests(unittest.TestCase):
         inspector = formats.FORMATS["dearvr-hpc"].inspector
         sections = inspector().inspect(HPC)
         self.assertEqual([s.title for s in sections], ["file", "library", "headphones"])
-        self.assertEqual([r[1] for r in sections[2].table.rows],
-                         ["Flat Flat", "Tilt Stereo", "Tilt Studio"])
-        self.assertEqual(sections[2].table.rows[2],
-                         ("3e22d390", "Tilt Studio", "minimum, linear", "44.1, 48 kHz"))
+        self.assertEqual(
+            [r[1] for r in sections[2].table.rows],
+            ["Flat Flat", "Tilt Stereo", "Tilt Studio"],
+        )
+        self.assertEqual(
+            sections[2].table.rows[2],
+            ("3e22d390", "Tilt Studio", "minimum, linear", "44.1, 48 kHz"),
+        )
         section = inspector(headphone="tilt studio", rate=44100).inspect(HPC)[-1]
         self.assertEqual(section.title, "headphone Tilt Studio")
-        self.assertEqual(section.table.columns, ["frequency Hz", "minimum dB", "linear dB"])
-        self.assertIn(("linear 44100 Hz", "2049 taps, 1 channel(s), peak sample 1024 (23.22 ms)"),
-                      section.fields)
+        self.assertEqual(
+            section.table.columns, ["frequency Hz", "minimum dB", "linear dB"]
+        )
+        self.assertIn(
+            ("linear 44100 Hz", "2049 taps, 1 channel(s), peak sample 1024 (23.22 ms)"),
+            section.fields,
+        )
         flat = inspector(headphone="Flat Flat").inspect(HPC)[-1]
         self.assertTrue(all(abs(v) < 1e-6 for row in flat.table.rows for v in row[1:]))
         with self.assertRaisesRegex(ValueError, "at 44100 Hz"):
@@ -128,14 +163,20 @@ class ConversionTests(unittest.TestCase):
         got = fir.read(result.data)
         f = hpc.load(HPC).headphone("Tilt Stereo").filter("minimum", 48000)
         self.assertEqual((got.sample_rate, got.channels), (48000.0, f.channels()))
-        self.assertIn("2 channel(s), 2048 taps at 48000 Hz, minimum phase, latency 0 samples "
-                      "(0.00 ms)", result.notes)
+        self.assertIn(
+            "2 channel(s), 2048 taps at 48000 Hz, minimum phase, latency 0 samples "
+            "(0.00 ms)",
+            result.notes,
+        )
 
     def test_fir_linear_pcm(self):
-        result = DearvrHpcToFir(headphone="Tilt Studio", phase="linear", rate=44100,
-                                encoding="pcm24").convert([HPC])
+        result = DearvrHpcToFir(
+            headphone="Tilt Studio", phase="linear", rate=44100, encoding="pcm24"
+        ).convert([HPC])
         got = fir.read(result.data)
-        self.assertEqual((got.sample_rate, len(got.channels), got.taps), (44100.0, 1, 2049))
+        self.assertEqual(
+            (got.sample_rate, len(got.channels), got.taps), (44100.0, 1, 2049)
+        )
         self.assertEqual(impulse.peak_index(got.channels[0]), 1024)
         self.assertTrue(any("latency 1024 samples" in n for n in result.notes))
 
@@ -160,13 +201,27 @@ class ConversionTests(unittest.TestCase):
     def test_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "x.csv"
-            self.assertEqual(cli.main(["convert", "-i", str(HPC), "-o", str(out),
-                                       "--headphone", "Flat Flat"]), 0)
+            self.assertEqual(
+                cli.main(
+                    [
+                        "convert",
+                        "-i",
+                        str(HPC),
+                        "-o",
+                        str(out),
+                        "--headphone",
+                        "Flat Flat",
+                    ]
+                ),
+                0,
+            )
             points = response.read(out.read_text()).curve(response.RAW)
             self.assertTrue(all(abs(v) < 1e-6 for _, v in points))
 
 
-@unittest.skipUnless(REAL.is_file(), "no dearVR MIX hpc.dat in testdata/real/Sennheiser")
+@unittest.skipUnless(
+    REAL.is_file(), "no dearVR MIX hpc.dat in testdata/real/Sennheiser"
+)
 class RealFileTests(unittest.TestCase):
     def test_library(self):
         library = hpc.load(REAL)
@@ -175,8 +230,11 @@ class RealFileTests(unittest.TestCase):
         for h in library.headphones:
             self.assertEqual((h.phases, h.rates), (["minimum", "linear"], rates))
             for f in h.filters:
-                taps = (MINIMUM_TAPS[f.sample_rate] if f.phase == "minimum"
-                        else f.sample_rate // 10 + 2)
+                taps = (
+                    MINIMUM_TAPS[f.sample_rate]
+                    if f.phase == "minimum"
+                    else f.sample_rate // 10 + 2
+                )
                 self.assertEqual((f.taps, f.channel_count), (taps, 1))
         f = library.headphone("Sennheiser HD 600")
         frequencies = [100, 1000, 3000, 10000, 20000]

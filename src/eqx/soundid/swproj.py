@@ -56,13 +56,13 @@ def parse_xml(raw: bytes) -> ET.Element:
     if m is None:
         raise ValueError("project XML has an unbound prefix and no <Project> root")
     declared = m.group() + f' xmlns:a="{NS["a"]}"'.encode()
-    return ET.fromstring(raw[:m.start()] + declared + raw[m.end():])
+    return ET.fromstring(raw[: m.start()] + declared + raw[m.end() :])
 
 
 def _inflate(data: bytes) -> bytes:
-    if data[:2] == b"\x1f\x8b":                 # gzip
+    if data[:2] == b"\x1f\x8b":  # gzip
         return zlib.decompress(data, 16 + zlib.MAX_WBITS)
-    if data[:1] == b"\x78":                     # zlib
+    if data[:1] == b"\x78":  # zlib
         return zlib.decompress(data)
     return zlib.decompress(data, -zlib.MAX_WBITS)  # raw deflate
 
@@ -77,9 +77,9 @@ class ProjectHeader:
     compressed: bool
     encrypted: bool
     password_protected: bool
-    parts: list          # [(type, declared_size)]
+    parts: list  # [(type, declared_size)]
     text: str
-    size: int            # bytes consumed, terminator included
+    size: int  # bytes consumed, terminator included
 
 
 def parse_header(blob: bytes) -> ProjectHeader:
@@ -98,12 +98,18 @@ def parse_header(blob: bytes) -> ProjectHeader:
 
     parts = []
     for p in root.findall("s:Parts/s:ProjectHeaderPart", NS):
-        parts.append((p.findtext("s:Type", namespaces=NS),
-                      int(p.findtext("s:Size", namespaces=NS))))
+        parts.append(
+            (
+                p.findtext("s:Type", namespaces=NS),
+                int(p.findtext("s:Size", namespaces=NS)),
+            )
+        )
 
     return ProjectHeader(
         version=txt("Version"),
-        supported_versions=[e.text for e in root.findall("s:SupportedVersions/a:string", NS)],
+        supported_versions=[
+            e.text for e in root.findall("s:SupportedVersions/a:string", NS)
+        ],
         compressed=flag("Compressed"),
         encrypted=flag("Encrypted"),
         password_protected=flag("PasswordProtected"),
@@ -146,7 +152,9 @@ def password_bytes(text: str | None) -> bytes | None:
 
 
 def _derive_key(password: bytes | None) -> bytes:
-    return crypto.derive_key(password if password is not None else crypto.DEFAULT_PASSWORD)
+    return crypto.derive_key(
+        password if password is not None else crypto.DEFAULT_PASSWORD
+    )
 
 
 def _key(header: ProjectHeader, password: bytes | None) -> bytes:
@@ -155,7 +163,9 @@ def _key(header: ProjectHeader, password: bytes | None) -> bytes:
     return _derive_key(password)
 
 
-def decode_part(data: bytes, header: ProjectHeader, password: bytes | None = None) -> bytes:
+def decode_part(
+    data: bytes, header: ProjectHeader, password: bytes | None = None
+) -> bytes:
     """Decrypt (AES-128-CBC) and/or decompress (gzip) a part payload."""
     if header.encrypted:
         data = crypto.decrypt(_key(header, password), data)
@@ -174,12 +184,12 @@ class SwProj:
         self._eqb = None
 
     @classmethod
-    def open(cls, path, password: bytes | None = None) -> "SwProj":
+    def open(cls, path, password: bytes | None = None) -> SwProj:
         return cls(Path(path).read_bytes(), password)
 
     def part(self, name: str) -> bytes:
         off, size = self.layout[name]
-        return self.blob[off:off + size]
+        return self.blob[off : off + size]
 
     @property
     def xml(self) -> bytes:
@@ -202,23 +212,36 @@ class SwProj:
     def recordings(self):
         """Yield (index, params, float32 samples) for every <RawData> present."""
         raw = self.xml.decode("utf-8")
-        for i, m in enumerate(re.finditer(r"<Measurement>(.*?)</Measurement>", raw, re.S)):
+        for i, m in enumerate(
+            re.finditer(r"<Measurement>(.*?)</Measurement>", raw, re.DOTALL)
+        ):
             body = m.group(1)
-            rd = re.search(r"<RawData>(.*?)</RawData>", body, re.S)
+            rd = re.search(r"<RawData>(.*?)</RawData>", body, re.DOTALL)
             if not rd:
                 continue
             pcm = base64.b64decode(rd.group(1))
-            params = dict(re.findall(r"<a:Key>(.*?)</a:Key>\s*<a:Value>(.*?)</a:Value>", body))
+            params = dict(
+                re.findall(r"<a:Key>(.*?)</a:Key>\s*<a:Value>(.*?)</a:Value>", body)
+            )
             ch = re.search(r"<Channel>(.*?)</Channel>", body)
             params["Channel"] = ch.group(1) if ch else ""
-            yield i, params, struct.unpack("<%df" % (len(pcm) // 4), pcm[: len(pcm) // 4 * 4])
+            yield (
+                i,
+                params,
+                struct.unpack(f"<{len(pcm) // 4}f", pcm[: len(pcm) // 4 * 4]),
+            )
 
 
 # --------------------------------------------------------------------------
 # writer
 # --------------------------------------------------------------------------
-def write(xml: bytes, eqb: bytes | None = None, password: bytes | None = None,
-          iv: bytes = bytes(16), version: str = VERSION) -> bytes:
+def write(
+    xml: bytes,
+    eqb: bytes | None = None,
+    password: bytes | None = None,
+    iv: bytes = bytes(16),
+    version: str = VERSION,
+) -> bytes:
     """Build a compressed, encrypted container.
 
     ``password`` None uses the built-in default and marks the project as not
@@ -226,19 +249,26 @@ def write(xml: bytes, eqb: bytes | None = None, password: bytes | None = None,
     part first and no supported versions, as Sonarworks Reference 3 does.
     """
     if version not in (VERSION, SONARWORKS_REFERENCE_VERSION):
-        raise ValueError(f"project version must be {VERSION} or {SONARWORKS_REFERENCE_VERSION}")
+        raise ValueError(
+            f"project version must be {VERSION} or {SONARWORKS_REFERENCE_VERSION}"
+        )
     key = _derive_key(password)
     # A fixed IV keeps the output reproducible.  SoundID also writes projects
     # with a zero IV; the key is public, so a random IV protects nothing.
     swproj = crypto.encrypt(key, gzip.compress(xml, mtime=0), iv)
-    parts = ["\t\t<ProjectHeaderPart><Type>swproj</Type><Size>-1</Size></ProjectHeaderPart>\n"]
+    parts = [
+        "\t\t<ProjectHeaderPart><Type>swproj</Type><Size>-1</Size></ProjectHeaderPart>\n"
+    ]
     if eqb is not None:
         part = f"\t\t<ProjectHeaderPart><Type>eqb</Type><Size>{len(eqb)}</Size></ProjectHeaderPart>\n"
         # The Sonarworks Reference 3 plug-in adds every earlier Size, -1 included, to the
         # eqb offset, so there the eqb part must be listed first.
         parts.insert(0 if version == SONARWORKS_REFERENCE_VERSION else 1, part)
-    supported = "".join(f"\t\t<a:string>{v}</a:string>\n" for v in SUPPORTED_VERSIONS
-                        if version == VERSION)
+    supported = "".join(
+        f"\t\t<a:string>{v}</a:string>\n"
+        for v in SUPPORTED_VERSIONS
+        if version == VERSION
+    )
     header = (
         f'<ProjectHeader xmlns="{NS["s"]}" xmlns:a="{NS["a"]}">\n'
         f"\t<Version>{version}</Version>\n"
@@ -248,7 +278,7 @@ def write(xml: bytes, eqb: bytes | None = None, password: bytes | None = None,
         f"\t<PasswordProtected>{'false' if password is None else 'true'}</PasswordProtected>\n"
         f"\t<Parts>\n{''.join(parts)}\t</Parts>\n"
         "</ProjectHeader>\n\n"
-    ).encode("utf-8")
+    ).encode()
     # The Size=-1 part is physically last, after every sized part.
     return header + bytes([HEADER_TERMINATOR]) + (eqb or b"") + swproj
 
@@ -256,11 +286,14 @@ def write(xml: bytes, eqb: bytes | None = None, password: bytes | None = None,
 # --------------------------------------------------------------------------
 # curves
 # --------------------------------------------------------------------------
-def key_values(element: ET.Element,
-               path: str = "a:KeyValueOfstringstring") -> list[tuple[str, str]]:
+def key_values(
+    element: ET.Element, path: str = "a:KeyValueOfstringstring"
+) -> list[tuple[str, str]]:
     """The DataContract string pairs at ``path`` below ``element``, in order."""
-    return [(kv.findtext("a:Key", namespaces=NS), kv.findtext("a:Value", namespaces=NS))
-            for kv in element.findall(path, NS)]
+    return [
+        (kv.findtext("a:Key", namespaces=NS), kv.findtext("a:Value", namespaces=NS))
+        for kv in element.findall(path, NS)
+    ]
 
 
 def _curve_params(curve: ET.Element) -> dict[str, str]:
@@ -282,10 +315,12 @@ def mic_profiles(project: SwProj) -> list[MicProfile]:
         if not angle:
             continue
         name = curve.findtext("s:Name", default="", namespaces=NS)
-        serial = name[:-len(angle)].strip() if name.endswith(angle) else name
+        serial = name[: -len(angle)].strip() if name.endswith(angle) else name
         points = [
-            (float(p.findtext("s:Frequency", namespaces=NS)),
-             float(p.findtext("s:Response", namespaces=NS)))
+            (
+                float(p.findtext("s:Frequency", namespaces=NS)),
+                float(p.findtext("s:Response", namespaces=NS)),
+            )
             for p in _afl_points(curve.find("s:Points", NS))
         ]
         profiles.append(MicProfile.from_points(serial, angle, points))
@@ -321,7 +356,9 @@ def mic_profile(project: SwProj, angle: str) -> MicProfile:
         if profile.angle == angle:
             return profile
     available = ", ".join(p.angle for p in profiles) or "none"
-    raise ValueError(f"project has no microphone {angle!r} table; available: {available}")
+    raise ValueError(
+        f"project has no microphone {angle!r} table; available: {available}"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -339,8 +376,10 @@ def _afl_points(elem: ET.Element) -> list[ET.Element]:
 
 def _points(elem: ET.Element) -> list[tuple]:
     return [
-        tuple(float(p.findtext(f"s:{name}", default="nan", namespaces=NS))
-              for name in ("Frequency", "Response", "GroupDelay"))
+        tuple(
+            float(p.findtext(f"s:{name}", default="nan", namespaces=NS))
+            for name in ("Frequency", "Response", "GroupDelay")
+        )
         for p in _afl_points(elem)
     ]
 
@@ -378,8 +417,13 @@ def _xml_sections(elem: ET.Element, title: str, trail: str = "") -> list[Section
             fields += [(f"param {key}", value) for key, value in key_values(child)]
         elif tag == "Points" and _afl_points(child):
             table = Table(peqb.POINT_COLUMNS, _points(child))
-            fields += [("points", len(table.rows)), ("range", frequency_range(table.rows))]
-        elif len({_local(c.tag) for c in child}) == 1 and all(len(c) == 0 for c in child):
+            fields += [
+                ("points", len(table.rows)),
+                ("range", frequency_range(table.rows)),
+            ]
+        elif len({_local(c.tag) for c in child}) == 1 and all(
+            len(c) == 0 for c in child
+        ):
             values = [(c.text or "").strip() for c in child]
             fields.append((tag, f"{len(values)} values: {' '.join(values)}"))
         else:
@@ -388,7 +432,9 @@ def _xml_sections(elem: ET.Element, title: str, trail: str = "") -> list[Section
     if fields or table:
         name = elem.findtext("s:Name", namespaces=NS)
         heading = trail + title
-        sections.append(Section(f"{heading} {name}" if name else heading, fields, table))
+        sections.append(
+            Section(f"{heading} {name}" if name else heading, fields, table)
+        )
     if title.endswith("]"):
         trail += title + "/"
     for child, label in children:
@@ -401,20 +447,34 @@ def _write_wav(path: Path, samples, rate: int = 48000) -> None:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(rate)
-        w.writeframes(b"".join(
-            struct.pack("<h", max(-32768, min(32767, int(s * 32767)))) for s in samples))
+        w.writeframes(
+            b"".join(
+                struct.pack("<h", max(-32768, min(32767, int(s * 32767))))
+                for s in samples
+            )
+        )
 
 
 class SwprojInspector(Inspector):
     options = (
         PASSWORD_OPTION,
-        Option("--xml", type=Path, metavar="FILE", help="write the project XML to FILE"),
-        Option("--wav", type=Path, metavar="DIR",
-               help="write each recording (RawData) as WAV to DIR"),
+        Option(
+            "--xml", type=Path, metavar="FILE", help="write the project XML to FILE"
+        ),
+        Option(
+            "--wav",
+            type=Path,
+            metavar="DIR",
+            help="write each recording (RawData) as WAV to DIR",
+        ),
     )
 
-    def __init__(self, password: str | None = None, xml: Path | None = None,
-                 wav: Path | None = None):
+    def __init__(
+        self,
+        password: str | None = None,
+        xml: Path | None = None,
+        wav: Path | None = None,
+    ):
         self.password = password_bytes(password)
         self.xml = xml
         self.wav = wav
@@ -423,16 +483,22 @@ class SwprojInspector(Inspector):
         proj = SwProj.open(path, self.password)
         h = proj.header
         declared = dict(h.parts)
-        container = Section("container", [
-            ("version", h.version),
-            ("supported versions", ", ".join(h.supported_versions)),
-            ("compressed", h.compressed),
-            ("encrypted", h.encrypted),
-            ("password protected", h.password_protected),
-            ("payload XML", f"{len(proj.xml):,} bytes"),
-        ], Table(["part", "offset", "size", "declared size"],
-                 [(t, o, s, declared[t]) for t, (o, s) in proj.layout.items()]),
-            raw=h.text)
+        container = Section(
+            "container",
+            [
+                ("version", h.version),
+                ("supported versions", ", ".join(h.supported_versions)),
+                ("compressed", h.compressed),
+                ("encrypted", h.encrypted),
+                ("password protected", h.password_protected),
+                ("payload XML", f"{len(proj.xml):,} bytes"),
+            ],
+            Table(
+                ["part", "offset", "size", "declared size"],
+                [(t, o, s, declared[t]) for t, (o, s) in proj.layout.items()],
+            ),
+            raw=h.text,
+        )
         sections = [file_section(Path(path), proj.blob), container]
         sections += _xml_sections(proj.tree(), "Project")
         if proj.eqb is not None:
@@ -456,5 +522,9 @@ class SwprojInspector(Inspector):
         return sections
 
 
-FORMAT = Format("swproj", (".swproj",), "SoundID / Sonarworks Reference 3, 4 measurement project",
-                SwprojInspector)
+FORMAT = Format(
+    "swproj",
+    (".swproj",),
+    "SoundID / Sonarworks Reference 3, 4 measurement project",
+    SwprojInspector,
+)

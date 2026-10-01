@@ -9,9 +9,18 @@ from pathlib import Path
 from unittest import mock
 
 from testgen import common, sonarworks_reference
+
 from eqx.convert import to_autoeq, to_fir, to_swproj
 from eqx.rew import mdat
-from eqx.soundid import computerid, layout, peqb, playback, speakerproject, swmicpkg, swproj
+from eqx.soundid import (
+    computerid,
+    layout,
+    peqb,
+    playback,
+    speakerproject,
+    swmicpkg,
+    swproj,
+)
 
 TESTDATA = common.ROOT
 SONARWORKS_PROJ = TESTDATA / sonarworks_reference.SONARWORKS_PROJ_DIR
@@ -44,22 +53,30 @@ class ComputerIdTests(unittest.TestCase):
         self.assertEqual(self.CID.sonarworks_reference3_value, want)
         self.assertRegex(self.CID.sonarworks_reference3_value, r"^[0-9a-f]{40}$")
         no_volume = computerid.ComputerId(b"0009", b"", b"")
-        self.assertEqual(no_volume.sonarworks_reference3_value,
-                         hashlib.sha1("00092\n".encode("utf-16-le")).hexdigest())
+        self.assertEqual(
+            no_volume.sonarworks_reference3_value,
+            hashlib.sha1("00092\n".encode("utf-16-le")).hexdigest(),
+        )
 
     def test_reference4_dynamic_disk(self):
         self.assertEqual(self.CID.sonarworks_reference4_value, self.CID.value)
-        dynamic = computerid.ComputerId(b"0009", b"", b"BOARD", b"77", dynamic_disk=True)
+        dynamic = computerid.ComputerId(
+            b"0009", b"", b"BOARD", b"77", dynamic_disk=True
+        )
         self.assertEqual(dynamic.source, b"00092\nBOARD3\n")
-        self.assertEqual(dynamic.sonarworks_reference4_value,
-                         "g" + hashlib.sha1("00092\n773\n".encode("utf-16-le")).hexdigest())
+        self.assertEqual(
+            dynamic.sonarworks_reference4_value,
+            "g" + hashlib.sha1("00092\n773\n".encode("utf-16-le")).hexdigest(),
+        )
 
     def test_values(self):
         values = self.CID.values()
         self.assertEqual(list(values), list(computerid.APPS))
         # Without a disk or board serial only the Sonarworks Reference 3 ID exists.
-        self.assertEqual(list(computerid.ComputerId(b"0009", b"", b"", b"1").values()),
-                         ["Sonarworks Reference 3"])
+        self.assertEqual(
+            list(computerid.ComputerId(b"0009", b"", b"", b"1").values()),
+            ["Sonarworks Reference 3"],
+        )
 
     def test_local_ids_are_tried(self):
         blob = (SONARWORKS_PEQB / "Tilt Tilt Wired Average.swhp").read_bytes()
@@ -68,15 +85,20 @@ class ComputerIdTests(unittest.TestCase):
             p, why = peqb.read_local(blob)
             self.assertFalse(p.decoded)
             self.assertIn(cid.sonarworks_reference3_value, why)
-            with mock.patch.object(computerid.ComputerId, "sonarworks_reference3_value",
-                                   sonarworks_reference.SONARWORKS_REFERENCE3_COMPUTER_ID):
+            with mock.patch.object(
+                computerid.ComputerId,
+                "sonarworks_reference3_value",
+                sonarworks_reference.SONARWORKS_REFERENCE3_COMPUTER_ID,
+            ):
                 self.assertTrue(peqb.open_decoded(blob).decoded)
 
 
 class PeqbTests(unittest.TestCase):
     def test_reference3_profile(self):
         blob = (SONARWORKS_PEQB / "Tilt Tilt Wired Average.swhp").read_bytes()
-        p = peqb.open_decoded(blob, sonarworks_reference.SONARWORKS_REFERENCE3_COMPUTER_ID)
+        p = peqb.open_decoded(
+            blob, sonarworks_reference.SONARWORKS_REFERENCE3_COMPUTER_ID
+        )
         self.assertEqual(len(p.curves), 7)
         self.assertEqual(p.parameters["Headphone_Calibration"], "true")
         with self.assertRaises(ValueError):
@@ -84,14 +106,20 @@ class PeqbTests(unittest.TestCase):
 
     def test_legacy_versions(self):
         want = sonarworks_reference.sonarworks_reference_curves()
-        for name, version, ntypes in (("Tilt 2.0.13.30", (2, 0, 13, 30), 2),
-                                      ("Tilt 2.0.14.10", (2, 0, 14, 10), 4),
-                                      ("Tilt 2.1.3.14", (2, 1, 3, 14), 4),
-                                      ("Tilt PEQB", (), 2)):
+        for name, version, ntypes in (
+            ("Tilt 2.0.13.30", (2, 0, 13, 30), 2),
+            ("Tilt 2.0.14.10", (2, 0, 14, 10), 4),
+            ("Tilt 2.1.3.14", (2, 1, 3, 14), 4),
+            ("Tilt PEQB", (), 2),
+        ):
             with self.subTest(name):
                 p = peqb.read((SONARWORKS_PEQB / f"{name}.eqb").read_bytes())
-                self.assertEqual((p.version, p.encrypted, p.trailing), (version, False, b""))
-                self.assertEqual([c.curve_type for c in p.curves], [1, 2, 3, 4][:ntypes])
+                self.assertEqual(
+                    (p.version, p.encrypted, p.trailing), (version, False, b"")
+                )
+                self.assertEqual(
+                    [c.curve_type for c in p.curves], [1, 2, 3, 4][:ntypes]
+                )
                 c = corrections(p)
                 for side in common.SIDES:
                     curve = c[f"Correction{side}"]
@@ -99,14 +127,16 @@ class PeqbTests(unittest.TestCase):
                     self.assertEqual(curve.delay_ms, SPOT[side][0])
                     if version:
                         self.assertEqual(curve.points, want[side][1])
-        self.assertEqual(peqb.read((SONARWORKS_PEQB / "Tilt 2.1.3.14.eqb").read_bytes()).parameters,
-                         {"META_SonarworksCalibrated": "true"})
+        self.assertEqual(
+            peqb.read((SONARWORKS_PEQB / "Tilt 2.1.3.14.eqb").read_bytes()).parameters,
+            {"META_SonarworksCalibrated": "true"},
+        )
 
     def test_legacy_grid(self):
         p = peqb.read((SONARWORKS_PEQB / "Tilt PEQB.eqb").read_bytes())
         grid = [f for f, _, _ in p.curves[0].points]
         self.assertEqual(len(grid), 355)
-        self.assertAlmostEqual(grid[0], 20 + 21980 / 357 ** 2)
+        self.assertAlmostEqual(grid[0], 20 + 21980 / 357**2)
         self.assertAlmostEqual(grid[-1], 20 + 21980 * (355 / 357) ** 2)
         self.assertEqual(peqb.Peqb((), False, 4, None, 0).version_str, "PEQB")
 
@@ -131,8 +161,10 @@ class ProjectReaderTests(unittest.TestCase):
         curves = swproj.measurement_curves(p)
         want = sonarworks_reference.sonarworks_reference_curves()
         self.assertEqual(curves, {side: want[side][0] for side in common.SIDES})
-        transfers = {swproj._curve_params(c).get("Transfer")
-                     for c in p.tree().findall("s:Curves/s:Curve", NS)}
+        transfers = {
+            swproj._curve_params(c).get("Transfer")
+            for c in p.tree().findall("s:Curves/s:Curve", NS)
+        }
         self.assertEqual(transfers, {None, "-0.500000", "0.000000"})
         self.assertEqual(swproj.mic_profiles(p), [])
 
@@ -144,13 +176,23 @@ class ProjectReaderTests(unittest.TestCase):
         self.assertEqual(set(swproj.measurement_curves(p)), {"Left", "Right"})
 
     def test_playback_channels(self):
-        for name in ("Tilt Sonarworks Reference 3", "Tilt Sonarworks Reference 4", "Bandpass"):
+        for name in (
+            "Tilt Sonarworks Reference 3",
+            "Tilt Sonarworks Reference 4",
+            "Bandpass",
+        ):
             with self.subTest(name):
-                channels = playback.speaker_channels(swproj.SwProj.open(SONARWORKS_PROJ / f"{name}.swproj"))
-                self.assertEqual([(c.index, c.name, c.group) for c in channels],
-                                 [(0, "Left", "Front"), (1, "Right", "Front")])
-                self.assertEqual([(c.delay_ms, c.gain_db) for c in channels],
-                                 [(0.0, -0.5), (0.15, 0.0)])
+                channels = playback.speaker_channels(
+                    swproj.SwProj.open(SONARWORKS_PROJ / f"{name}.swproj")
+                )
+                self.assertEqual(
+                    [(c.index, c.name, c.group) for c in channels],
+                    [(0, "Left", "Front"), (1, "Right", "Front")],
+                )
+                self.assertEqual(
+                    [(c.delay_ms, c.gain_db) for c in channels],
+                    [(0.0, -0.5), (0.15, 0.0)],
+                )
                 for c in channels:
                     self.assertEqual(len(c.measurement), 355)
 
@@ -179,33 +221,54 @@ class ProjectWriterTests(unittest.TestCase):
         self.assertEqual([t for t, _ in h.parts], ["eqb", "swproj"])
         for positive_only in (False, True):
             offset = eqb_offset(h, positive_only)
-            self.assertEqual(self.project.blob[offset:offset + 8], b"PEQb\x03\x00\x00\x00")
+            self.assertEqual(
+                self.project.blob[offset : offset + 8], b"PEQb\x03\x00\x00\x00"
+            )
 
     def test_soundid_header_breaks_reference3(self):
         h = swproj.SwProj.open(TESTDATA / "soundid/swproj/Bandpass.swproj").header
         offset = eqb_offset(h, positive_only=False)
-        self.assertNotEqual(self.project.blob[offset:offset + 4], b"PEQb")
+        self.assertNotEqual(self.project.blob[offset : offset + 4], b"PEQb")
         self.assertEqual(h.size - 1, offset)
 
     def test_eqb(self):
         eqb = self.project.eqb
         self.assertEqual([c.curve_type for c in eqb.curves], [1, 2, 3, 4])
         c = corrections(eqb)
-        self.assertEqual((c["CorrectionLeft"].transfer, c["CorrectionLeft"].delay_ms), (-0.5, 0.0))
-        self.assertEqual((c["CorrectionRight"].transfer, c["CorrectionRight"].delay_ms), (0.0, 0.15))
-        xml = {cv.findtext("s:CurveType", namespaces=NS): (swproj._curve_params(cv),
-                                                            swproj._points(cv.find("s:Points", NS)))
-               for cv in self.project.tree().findall("s:Curves/s:Curve", NS)}
+        self.assertEqual(
+            (c["CorrectionLeft"].transfer, c["CorrectionLeft"].delay_ms), (-0.5, 0.0)
+        )
+        self.assertEqual(
+            (c["CorrectionRight"].transfer, c["CorrectionRight"].delay_ms), (0.0, 0.15)
+        )
+        xml = {
+            cv.findtext("s:CurveType", namespaces=NS): (
+                swproj._curve_params(cv),
+                swproj._points(cv.find("s:Points", NS)),
+            )
+            for cv in self.project.tree().findall("s:Curves/s:Curve", NS)
+        }
         for name, curve in c.items():
             self.assertEqual(curve.points, xml[name][1])
-        self.assertEqual(xml["CorrectionRight"][0],
-                         {"Delay": "0.00015", "Frequency": speakerproject.GRID_NAME, "Transfer": "0.0"})
+        self.assertEqual(
+            xml["CorrectionRight"][0],
+            {
+                "Delay": "0.00015",
+                "Frequency": speakerproject.GRID_NAME,
+                "Transfer": "0.0",
+            },
+        )
         self.assertNotIn("ChannelName", xml["MeasurementLeft"][0])
 
     def test_xml(self):
         raw = self.project.xml.decode()
-        for absent in ("ChannelLayout", "VersionHistory", "TestSignalConfig", "ChannelIndex",
-                       "<CurveType>Measurement<"):
+        for absent in (
+            "ChannelLayout",
+            "VersionHistory",
+            "TestSignalConfig",
+            "ChannelIndex",
+            "<CurveType>Measurement<",
+        ):
             self.assertNotIn(absent, raw)
         self.assertEqual(len(re.findall("<CurveType>Measurement(Left|Right)<", raw)), 2)
 
@@ -213,7 +276,9 @@ class ProjectWriterTests(unittest.TestCase):
         measurements = mdat.load(TESTDATA / "rew/mdat/Left only.mdat")
         profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg")
         with self.assertRaisesRegex(ValueError, "stereo"):
-            speakerproject.convert(measurements, profile, "x", app="sonarworks-reference")
+            speakerproject.convert(
+                measurements, profile, "x", app="sonarworks-reference"
+            )
         both = mdat.load(TESTDATA / "rew/mdat/Flat.mdat")
         with self.assertRaisesRegex(ValueError, "stereo"):
             speakerproject.check_app(both, layout.LAYOUTS[11], "sonarworks-reference")

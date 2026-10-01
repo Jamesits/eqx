@@ -21,5 +21,5 @@ class Option:
     def dest(self) -> str:
         return self.kwargs.get("dest") or self.flags[-1].lstrip("-").replace("-", "_")
 
-    def same_as(self, other: "Option") -> bool:
+    def same_as(self, other: Option) -> bool:
         return self.flags == other.flags and self.kwargs == other.kwargs

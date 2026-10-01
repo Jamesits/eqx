@@ -30,8 +30,9 @@ class Biquad:
 
     def h(self, frequency: float, sample_rate: float) -> complex:
         z = cmath.exp(-2j * math.pi * frequency / sample_rate)
-        return ((self.b0 + self.b1 * z + self.b2 * z * z)
-                / (self.a0 + self.a1 * z + self.a2 * z * z))
+        return (self.b0 + self.b1 * z + self.b2 * z * z) / (
+            self.a0 + self.a1 * z + self.a2 * z * z
+        )
 
 
 def cascade_db(biquads, frequency: float, sample_rate: float) -> float:
@@ -48,46 +49,65 @@ def _cookbook(frequency: float, q: float, sample_rate: float) -> tuple[float, fl
     return math.cos(w0), math.sin(w0) / (2 * q)
 
 
-def bell(frequency: float, gain_db: float, q: float,
-         sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
+def bell(
+    frequency: float, gain_db: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE
+) -> Biquad:
     a = 10 ** (gain_db / 40)
     cos, alpha = _cookbook(frequency, q, sample_rate)
-    return Biquad(1 + alpha * a, -2 * cos, 1 - alpha * a, 1 + alpha / a, -2 * cos, 1 - alpha / a)
+    return Biquad(
+        1 + alpha * a, -2 * cos, 1 - alpha * a, 1 + alpha / a, -2 * cos, 1 - alpha / a
+    )
 
 
-def shelf(high: bool, frequency: float, gain_db: float, slope: float,
-          sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
+def shelf(
+    high: bool,
+    frequency: float,
+    gain_db: float,
+    slope: float,
+    sample_rate: float = PEQ_SAMPLE_RATE,
+) -> Biquad:
     """Cookbook shelf; ``slope`` is the shelf slope S, not Q.
 
     S = 1 is the steepest shelf without overshoot.
     """
     a = 10 ** (gain_db / 40)
-    return _shelf(high, frequency, a, math.sqrt((a + 1 / a) * (1 / slope - 1) + 2), sample_rate)
+    return _shelf(
+        high, frequency, a, math.sqrt((a + 1 / a) * (1 / slope - 1) + 2), sample_rate
+    )
 
 
-def shelf_q(high: bool, frequency: float, gain_db: float, q: float,
-            sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
+def shelf_q(
+    high: bool,
+    frequency: float,
+    gain_db: float,
+    q: float,
+    sample_rate: float = PEQ_SAMPLE_RATE,
+) -> Biquad:
     """Cookbook shelf with its steepness given as Q."""
     return _shelf(high, frequency, 10 ** (gain_db / 40), 1 / q, sample_rate)
 
 
-def _shelf(high: bool, frequency: float, a: float, alpha_factor: float,
-           sample_rate: float) -> Biquad:
+def _shelf(
+    high: bool, frequency: float, a: float, alpha_factor: float, sample_rate: float
+) -> Biquad:
     w0 = 2 * math.pi * frequency / sample_rate
     cos = math.cos(w0)
     alpha = math.sin(w0) / 2 * alpha_factor
-    s = -1 if high else 1                   # high shelf: cos -> -cos
+    s = -1 if high else 1  # high shelf: cos -> -cos
     root = 2 * math.sqrt(a) * alpha
-    return Biquad(a * ((a + 1) - s * (a - 1) * cos + root),
-                  s * 2 * a * ((a - 1) - s * (a + 1) * cos),
-                  a * ((a + 1) - s * (a - 1) * cos - root),
-                  (a + 1) + s * (a - 1) * cos + root,
-                  -s * 2 * ((a - 1) + s * (a + 1) * cos),
-                  (a + 1) + s * (a - 1) * cos - root)
+    return Biquad(
+        a * ((a + 1) - s * (a - 1) * cos + root),
+        s * 2 * a * ((a - 1) - s * (a + 1) * cos),
+        a * ((a + 1) - s * (a - 1) * cos - root),
+        (a + 1) + s * (a - 1) * cos + root,
+        -s * 2 * ((a - 1) + s * (a + 1) * cos),
+        (a + 1) + s * (a - 1) * cos - root,
+    )
 
 
-def pass_filter(high: bool, frequency: float, q: float,
-                sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
+def pass_filter(
+    high: bool, frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE
+) -> Biquad:
     """Cookbook second-order high pass (``high``) or low pass."""
     cos, alpha = _cookbook(frequency, q, sample_rate)
     b1 = -(1 + cos) if high else 1 - cos
@@ -99,7 +119,9 @@ def notch(frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE) -> B
     return Biquad(1, -2 * cos, 1, 1 + alpha, -2 * cos, 1 - alpha)
 
 
-def all_pass(frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE) -> Biquad:
+def all_pass(
+    frequency: float, q: float, sample_rate: float = PEQ_SAMPLE_RATE
+) -> Biquad:
     cos, alpha = _cookbook(frequency, q, sample_rate)
     return Biquad(1 - alpha, -2 * cos, 1 + alpha, 1 + alpha, -2 * cos, 1 - alpha)
 
@@ -171,9 +193,11 @@ def hermite(xs: list[float], ys: list[float], queries) -> list[float]:
     h = [xs[i + 1] - xs[i] for i in range(n - 1)]
     if min(h) <= 0:
         raise ValueError("curve points must be strictly increasing")
-    m = ([(ys[1] - ys[0]) / h[0]]
-         + [(ys[i + 1] - ys[i - 1]) / (xs[i + 1] - xs[i - 1]) for i in range(1, n - 1)]
-         + [(ys[-1] - ys[-2]) / h[-1]])
+    m = (
+        [(ys[1] - ys[0]) / h[0]]
+        + [(ys[i + 1] - ys[i - 1]) / (xs[i + 1] - xs[i - 1]) for i in range(1, n - 1)]
+        + [(ys[-1] - ys[-2]) / h[-1]]
+    )
     out = []
     for x in queries:
         if x <= xs[0]:
@@ -184,8 +208,12 @@ def hermite(xs: list[float], ys: list[float], queries) -> list[float]:
             continue
         i = bisect.bisect_right(xs, x) - 1
         t = (x - xs[i]) / h[i]
-        out.append((2 * t ** 3 - 3 * t ** 2 + 1) * ys[i] + (t ** 3 - 2 * t ** 2 + t) * h[i] * m[i]
-                   + (3 * t ** 2 - 2 * t ** 3) * ys[i + 1] + (t ** 3 - t ** 2) * h[i] * m[i + 1])
+        out.append(
+            (2 * t**3 - 3 * t**2 + 1) * ys[i]
+            + (t**3 - 2 * t**2 + t) * h[i] * m[i]
+            + (3 * t**2 - 2 * t**3) * ys[i + 1]
+            + (t**3 - t**2) * h[i] * m[i + 1]
+        )
     return out
 
 
@@ -197,8 +225,12 @@ def minimum_phase(magnitude: list[float]) -> list[float]:
     n = 2 * (len(magnitude) - 1)
     log = [math.log(max(g, 1e-15)) for g in magnitude]
     cepstrum = [c.real for c in ifft(log + log[-2:0:-1])]
-    folded = ([cepstrum[0]] + [2 * c for c in cepstrum[1:n // 2]] + [cepstrum[n // 2]]
-              + [0.0] * (n // 2 - 1))
+    folded = (
+        [cepstrum[0]]
+        + [2 * c for c in cepstrum[1 : n // 2]]
+        + [cepstrum[n // 2]]
+        + [0.0] * (n // 2 - 1)
+    )
     return [v.real for v in ifft([cmath.exp(c) for c in fft(folded)])]
 
 
@@ -211,9 +243,14 @@ def _blackman(x: float) -> float:
     return 0.42 + 0.5 * math.cos(math.pi * x) + 0.08 * math.cos(2 * math.pi * x)
 
 
-def design_fir(frequencies: list[float], gains_db: list[float], sample_rate: float,
-               phase: str = "minimum", taps: int | None = None,
-               edge_db: float | None = None) -> list[float]:
+def design_fir(
+    frequencies: list[float],
+    gains_db: list[float],
+    sample_rate: float,
+    phase: str = "minimum",
+    taps: int | None = None,
+    edge_db: float | None = None,
+) -> list[float]:
     """FIR filter with the gain ``gains_db`` at ``frequencies`` (Hz, increasing).
 
     The curve is interpolated with ``hermite`` over log frequency, flat
@@ -239,21 +276,36 @@ def design_fir(frequencies: list[float], gains_db: list[float], sample_rate: flo
     if phase == "minimum":
         ir = minimum_phase(magnitude)[:taps]
         start = taps // 2
-        return [v * (_blackman((i - start) / (taps - start)) if i >= start else 1.0)
-                for i, v in enumerate(ir)]
+        return [
+            v * (_blackman((i - start) / (taps - start)) if i >= start else 1.0)
+            for i, v in enumerate(ir)
+        ]
     half = taps // 2
     ir = zero_phase(magnitude)
     width = LINEAR_TAPER_WIDTH * half
-    return [ir[i % n] * (0.54 + 0.46 * math.cos(math.pi * i / width))
-            for i in range(-half, half + 1)]
+    return [
+        ir[i % n] * (0.54 + 0.46 * math.cos(math.pi * i / width))
+        for i in range(-half, half + 1)
+    ]
 
 
-def design_fir_points(points, sample_rate: float, phase: str = "minimum",
-                      taps: int | None = None, edge_db: float | None = None,
-                      level_db: float = 0.0) -> list[float]:
+def design_fir_points(
+    points,
+    sample_rate: float,
+    phase: str = "minimum",
+    taps: int | None = None,
+    edge_db: float | None = None,
+    level_db: float = 0.0,
+) -> list[float]:
     """``design_fir`` of (frequency, gain dB) ``points``, less ``level_db``."""
-    return design_fir([f for f, _ in points], [g - level_db for _, g in points], sample_rate,
-                      phase, taps, edge_db)
+    return design_fir(
+        [f for f, _ in points],
+        [g - level_db for _, g in points],
+        sample_rate,
+        phase,
+        taps,
+        edge_db,
+    )
 
 
 def padded(irs: list[list[float]]) -> list[list[float]]:
@@ -266,7 +318,7 @@ def fir_gain_db(ir: list[float], sample_rate: float, frequencies) -> list[float]
     """Gain of an impulse response at ``frequencies``, dB (interpolated FFT bins)."""
     n = 1 << max(16, (len(ir) - 1).bit_length() + 2)
     spectrum = fft(list(ir) + [0.0] * (n - len(ir)))
-    power = [abs(v) ** 2 for v in spectrum[:n // 2 + 1]]
+    power = [abs(v) ** 2 for v in spectrum[: n // 2 + 1]]
     out = []
     for f in frequencies:
         x = min(max(f * n / sample_rate, 0.0), n / 2)
@@ -281,9 +333,9 @@ def fir_gain_db(ir: list[float], sample_rate: float, frequencies) -> list[float]
 # --------------------------------------------------------------------------
 @dataclass
 class BellFit:
-    gain_db: float                          # broadband gain
-    bells: list[tuple[float, float, float]]     # (frequency Hz, gain dB, Q), by frequency
-    rms_db: float                           # error over the fitted points
+    gain_db: float  # broadband gain
+    bells: list[tuple[float, float, float]]  # (frequency Hz, gain dB, Q), by frequency
+    rms_db: float  # error over the fitted points
     max_db: float
 
 
@@ -299,12 +351,20 @@ class _Bells:
     def db(self, log_frequency: float, gain_db: float, log_q: float) -> list[float]:
         bq = bell(math.exp(log_frequency), gain_db, math.exp(log_q), self.sample_rate)
         # |H|^2 of a real biquad: (c0 + c1 cos w + c2 cos 2w) / (same for the poles).
-        n0, n1, n2 = (bq.b0 ** 2 + bq.b1 ** 2 + bq.b2 ** 2, 2 * (bq.b0 * bq.b1 + bq.b1 * bq.b2),
-                      2 * bq.b0 * bq.b2)
-        d0, d1, d2 = (bq.a0 ** 2 + bq.a1 ** 2 + bq.a2 ** 2, 2 * (bq.a0 * bq.a1 + bq.a1 * bq.a2),
-                      2 * bq.a0 * bq.a2)
-        return [10 * math.log10((n0 + n1 * c1 + n2 * c2) / (d0 + d1 * c1 + d2 * c2))
-                for c1, c2 in zip(self.cos1, self.cos2)]
+        n0, n1, n2 = (
+            bq.b0**2 + bq.b1**2 + bq.b2**2,
+            2 * (bq.b0 * bq.b1 + bq.b1 * bq.b2),
+            2 * bq.b0 * bq.b2,
+        )
+        d0, d1, d2 = (
+            bq.a0**2 + bq.a1**2 + bq.a2**2,
+            2 * (bq.a0 * bq.a1 + bq.a1 * bq.a2),
+            2 * bq.a0 * bq.a2,
+        )
+        return [
+            10 * math.log10((n0 + n1 * c1 + n2 * c2) / (d0 + d1 * c1 + d2 * c2))
+            for c1, c2 in zip(self.cos1, self.cos2)
+        ]
 
 
 def _solve(a: list[list[float]], b: list[float]) -> list[float]:
@@ -325,11 +385,17 @@ def _solve(a: list[list[float]], b: list[float]) -> list[float]:
     return x
 
 
-def fit_bells(frequencies, gains_db, count: int, *,
-              frequency_hz: tuple[float, float] = (20.0, 20000.0),
-              gain_db: tuple[float, float] = (-20.0, 20.0),
-              q: tuple[float, float] = (0.4, 9.9),
-              sample_rate: float = PEQ_SAMPLE_RATE, tolerance_db: float = 0.05) -> BellFit:
+def fit_bells(
+    frequencies,
+    gains_db,
+    count: int,
+    *,
+    frequency_hz: tuple[float, float] = (20.0, 20000.0),
+    gain_db: tuple[float, float] = (-20.0, 20.0),
+    q: tuple[float, float] = (0.4, 9.9),
+    sample_rate: float = PEQ_SAMPLE_RATE,
+    tolerance_db: float = 0.05,
+) -> BellFit:
     """A gain and up to ``count`` bells whose sum follows ``gains_db``, least squares.
 
     Each bell starts at the largest remaining error, then all parameters are
@@ -342,11 +408,16 @@ def fit_bells(frequencies, gains_db, count: int, *,
     high = [gain_db[1], math.log(frequency_hz[1]), gain_db[1], math.log(q[1])]
 
     def clip(params: list[float]) -> list[float]:
-        return [min(max(v, low[1 + (i - 1) % 3] if i else low[0]),
-                    high[1 + (i - 1) % 3] if i else high[0]) for i, v in enumerate(params)]
+        return [
+            min(
+                max(v, low[1 + (i - 1) % 3] if i else low[0]),
+                high[1 + (i - 1) % 3] if i else high[0],
+            )
+            for i, v in enumerate(params)
+        ]
 
     def bands(params: list[float]) -> list[list[float]]:
-        return [curves.db(*params[i:i + 3]) for i in range(1, len(params), 3)]
+        return [curves.db(*params[i : i + 3]) for i in range(1, len(params), 3)]
 
     def errors(params: list[float], curves_db: list[list[float]]) -> list[float]:
         return [t - params[0] - sum(c) for t, *c in zip(target, *curves_db)]
@@ -360,14 +431,21 @@ def fit_bells(frequencies, gains_db, count: int, *,
             columns = [[1.0] * len(target)]
             for k, base in enumerate(curves_db):
                 for j in range(3):
-                    p = params[1 + 3 * k:4 + 3 * k]
+                    p = params[1 + 3 * k : 4 + 3 * k]
                     p[j] += 1e-4
-                    columns.append([(v - b) / 1e-4 for v, b in zip(curves.db(*p), base)])
+                    columns.append(
+                        [(v - b) / 1e-4 for v, b in zip(curves.db(*p), base)]
+                    )
             jtj = [[sum(map(operator.mul, a, b)) for b in columns] for a in columns]
             jtr = [sum(map(operator.mul, a, r)) for a in columns]
             while True:
-                m = [[v * (1 + damping) + 1e-9 if i == j else v for j, v in enumerate(row)]
-                     for i, row in enumerate(jtj)]
+                m = [
+                    [
+                        v * (1 + damping) + 1e-9 if i == j else v
+                        for j, v in enumerate(row)
+                    ]
+                    for i, row in enumerate(jtj)
+                ]
                 new = clip([p + d for p, d in zip(params, _solve(m, jtr))])
                 new_curves = bands(new)
                 new_r = errors(new, new_curves)
@@ -394,15 +472,29 @@ def fit_bells(frequencies, gains_db, count: int, *,
         lo = hi = i
         while lo > 0 and r[lo - 1] * r[i] > 0 and abs(r[lo - 1]) > abs(r[i]) / 2:
             lo -= 1
-        while hi < len(r) - 1 and r[hi + 1] * r[i] > 0 and abs(r[hi + 1]) > abs(r[i]) / 2:
+        while (
+            hi < len(r) - 1 and r[hi + 1] * r[i] > 0 and abs(r[hi + 1]) > abs(r[i]) / 2
+        ):
             hi += 1
         octaves = max(math.log2(frequencies[hi] / frequencies[lo]), 1 / 12)
-        params = clip(params + [math.log(frequencies[i]), r[i],
-                                math.log(2 ** (octaves / 2) / (2 ** octaves - 1))])
+        params = clip(
+            params
+            + [
+                math.log(frequencies[i]),
+                r[i],
+                math.log(2 ** (octaves / 2) / (2**octaves - 1)),
+            ]
+        )
         params = refine(params, 10)
     params = refine(params, 200)
     r = errors(params, bands(params))
-    bells = sorted((math.exp(params[i]), params[i + 1], math.exp(params[i + 2]))
-                   for i in range(1, len(params), 3))
-    return BellFit(params[0], bells, math.sqrt(sum(e * e for e in r) / len(r)),
-                   max(abs(e) for e in r))
+    bells = sorted(
+        (math.exp(params[i]), params[i + 1], math.exp(params[i + 2]))
+        for i in range(1, len(params), 3)
+    )
+    return BellFit(
+        params[0],
+        bells,
+        math.sqrt(sum(e * e for e in r) / len(r)),
+        max(abs(e) for e in r),
+    )

@@ -41,8 +41,8 @@ _ROW = re.compile(r"[\t,]")
 class Curve:
     name: str
     points: list[tuple[float, float]]
-    header: dict[str, str] = field(default_factory=dict)   # KEYS -> value text
-    other: list[str] = field(default_factory=list)         # comments and other text lines
+    header: dict[str, str] = field(default_factory=dict)  # KEYS -> value text
+    other: list[str] = field(default_factory=list)  # comments and other text lines
 
     @property
     def kind(self) -> str:
@@ -105,7 +105,7 @@ def load(path) -> Curve:
 
 
 def _number(value: float) -> str:
-    return format(value + 0.0, ".6g")       # + 0.0 turns -0.0 into 0.0
+    return format(value + 0.0, ".6g")  # + 0.0 turns -0.0 into 0.0
 
 
 def write(points, band: int | None = None) -> str:
@@ -130,16 +130,35 @@ class SmaartCurveInspector(Inspector):
         status = None
         if c.header:
             problems = c.problems()
-            status = "valid" if not problems else f"rejected by Smaart: {'; '.join(problems)}"
-        kind = c.kind if c.header else "table without header (microphone correction curve)"
+            status = (
+                "valid"
+                if not problems
+                else f"rejected by Smaart: {'; '.join(problems)}"
+            )
+        kind = (
+            c.kind if c.header else "table without header (microphone correction curve)"
+        )
         return [
-            file_section(path, data, ("curve name", c.name), ("kind", kind), ("status", status),
-                         *((key, value) for key, value in c.header.items()),
-                         *(("text", line) for line in c.other)),
-            Section("points", [("points", len(c.points)), ("range", frequency_range(c.points))],
-                    Table(["frequency Hz", "dB"], c.points)),
+            file_section(
+                path,
+                data,
+                ("curve name", c.name),
+                ("kind", kind),
+                ("status", status),
+                *((key, value) for key, value in c.header.items()),
+                *(("text", line) for line in c.other),
+            ),
+            Section(
+                "points",
+                [("points", len(c.points)), ("range", frequency_range(c.points))],
+                Table(["frequency Hz", "dB"], c.points),
+            ),
         ]
 
 
-FORMAT = Format("smaart-curve", (".crv",), "Smaart target / microphone correction curve",
-                SmaartCurveInspector)
+FORMAT = Format(
+    "smaart-curve",
+    (".crv",),
+    "Smaart target / microphone correction curve",
+    SmaartCurveInspector,
+)

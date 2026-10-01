@@ -2,9 +2,11 @@ import struct
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 from helpers import csv_points
 from testgen import common, dirac
+
 from eqx import dsp, formats, protobuf
 from eqx.autoeq import response
 from eqx.convert import DiracFilterToAutoeq, DiracFilterToFir, FirToDiracFilter
@@ -30,39 +32,83 @@ def section_ir(n: int) -> list[float]:
     y = []
     for i in range(n):
         x = s["b0"] if i == 0 else s["b1"] if i == 1 else 0.0
-        y.append(x - s["a1"] * (y[i - 1] if i > 0 else 0) - s["a2"] * (y[i - 2] if i > 1 else 0))
+        y.append(
+            x
+            - s["a1"] * (y[i - 1] if i > 0 else 0)
+            - s["a2"] * (y[i - 2] if i > 1 else 0)
+        )
     return y
 
 
 class ProtobufTests(unittest.TestCase):
-    SCHEMA = {
-        "M": {"i": (1, "int32", ""), "f": (2, "float", ""), "s": (3, "string", ""),
-              "r": (4, "float", "repeated"), "m": (5, "N", "map:int32"),
-              "n": (6, "N", "repeated"), "u": (7, "uint64", "")},
+    SCHEMA: ClassVar[dict] = {
+        "M": {
+            "i": (1, "int32", ""),
+            "f": (2, "float", ""),
+            "s": (3, "string", ""),
+            "r": (4, "float", "repeated"),
+            "m": (5, "N", "map:int32"),
+            "n": (6, "N", "repeated"),
+            "u": (7, "uint64", ""),
+        },
         "N": {"v": (1, "int32", "")},
     }
 
     def test_encoding(self):
-        data = protobuf.encode(self.SCHEMA, "M", {
-            "i": -1, "f": 0.0, "s": "é", "r": [1.0, 2.0], "m": {0: {}}, "n": [{"v": 3}],
-            "u": 2 ** 64 - 1})
-        want = (b"\x08" + b"\xff" * 9 + b"\x01"           # negative int32: 10-byte varint
-                + b"\x1a\x02" + "é".encode()               # 0.0 is left out
-                + b"\x22\x08" + struct.pack("<2f", 1, 2)   # packed
-                + b"\x2a\x04\x08\x00\x12\x00"              # map entry keeps both fields
-                + b"\x32\x02\x08\x03"
-                + b"\x38" + b"\xff" * 9 + b"\x01")
+        data = protobuf.encode(
+            self.SCHEMA,
+            "M",
+            {
+                "i": -1,
+                "f": 0.0,
+                "s": "é",
+                "r": [1.0, 2.0],
+                "m": {0: {}},
+                "n": [{"v": 3}],
+                "u": 2**64 - 1,
+            },
+        )
+        want = (
+            b"\x08"
+            + b"\xff" * 9
+            + b"\x01"  # negative int32: 10-byte varint
+            + b"\x1a\x02"
+            + "é".encode()  # 0.0 is left out
+            + b"\x22\x08"
+            + struct.pack("<2f", 1, 2)  # packed
+            + b"\x2a\x04\x08\x00\x12\x00"  # map entry keeps both fields
+            + b"\x32\x02\x08\x03"
+            + b"\x38"
+            + b"\xff" * 9
+            + b"\x01"
+        )
         self.assertEqual(data, want)
-        self.assertEqual(protobuf.decode(self.SCHEMA, "M", data), {
-            "i": -1, "s": "é", "r": [1.0, 2.0], "m": {0: {}}, "n": [{"v": 3}],
-            "u": 2 ** 64 - 1})
+        self.assertEqual(
+            protobuf.decode(self.SCHEMA, "M", data),
+            {
+                "i": -1,
+                "s": "é",
+                "r": [1.0, 2.0],
+                "m": {0: {}},
+                "n": [{"v": 3}],
+                "u": 2**64 - 1,
+            },
+        )
 
     def test_negative_zero_is_kept(self):
-        self.assertEqual(protobuf.encode(self.SCHEMA, "M", {"f": -0.0}),
-                         b"\x15" + struct.pack("<f", -0.0))
+        self.assertEqual(
+            protobuf.encode(self.SCHEMA, "M", {"f": -0.0}),
+            b"\x15" + struct.pack("<f", -0.0),
+        )
 
     def test_unpacked_and_unknown(self):
-        data = b"\x25" + struct.pack("<f", 1.5) + b"\x25" + struct.pack("<f", 2.5) + b"\x48\x05"
+        data = (
+            b"\x25"
+            + struct.pack("<f", 1.5)
+            + b"\x25"
+            + struct.pack("<f", 2.5)
+            + b"\x48\x05"
+        )
         self.assertEqual(protobuf.decode(self.SCHEMA, "M", data), {"r": [1.5, 2.5]})
 
     def test_rejected(self):
@@ -94,14 +140,18 @@ class ContainerTests(unittest.TestCase):
 
     def test_rejected(self):
         data = FIIR.read_bytes()
-        for bad, message in ((b"XARD" + data[4:], "incorrect format"),
-                             (data[:4] + b"XTRP" + data[8:], "incorrect product"),
-                             (data[:8] + struct.pack("<I", 3) + data[12:], "incorrect version"),
-                             (data[:12] + struct.pack("<I", 1) + data[16:], "signature error"),
-                             (data[:16] + b"\x0a\x7f", "Failed to parse")):
-            with self.subTest(message):
-                with self.assertRaisesRegex(ValueError, message):
-                    filterslot.read(bad)
+        for bad, message in (
+            (b"XARD" + data[4:], "incorrect format"),
+            (data[:4] + b"XTRP" + data[8:], "incorrect product"),
+            (data[:8] + struct.pack("<I", 3) + data[12:], "incorrect version"),
+            (data[:12] + struct.pack("<I", 1) + data[16:], "signature error"),
+            (data[:16] + b"\x0a\x7f", "Failed to parse"),
+        ):
+            with (
+                self.subTest(message),
+                self.assertRaisesRegex(ValueError, message),
+            ):
+                filterslot.read(bad)
 
     def test_sniff(self):
         self.assertEqual(formats.detect(FIIR), "dirac-filter")
@@ -124,7 +174,7 @@ class PlaybackTests(unittest.TestCase):
         ir, cross = playback.impulse_response(slot, 1, 48000)
         gain = 10 ** (-6 / 20)
         self.assertEqual(cross, 1)
-        self.assertEqual(ir[:24], [0.0] * 24)       # 0.5 ms at 48 kHz
+        self.assertEqual(ir[:24], [0.0] * 24)  # 0.5 ms at 48 kHz
         want = [gain * v for v in [1.0, 1.0, 0.25] + section_ir(2)]
         for got, w in zip(ir[24:29], want, strict=True):
             self.assertAlmostEqual(got, w, places=12)
@@ -133,7 +183,9 @@ class PlaybackTests(unittest.TestCase):
         slot = dirac.fiir_slot()
         with self.assertRaisesRegex(ValueError, "no 44100 Hz filter; available: 48000"):
             playback.impulse_response(slot, 0, 44100)
-        slot["sections"][0]["filter_type"] = filterslot.FILTER_TYPES.index("MULTI_RATE_FILTER")
+        slot["sections"][0]["filter_type"] = filterslot.FILTER_TYPES.index(
+            "MULTI_RATE_FILTER"
+        )
         with self.assertRaisesRegex(ValueError, "MULTI_RATE_FILTER live filters"):
             playback.impulse_response(slot, 0, 48000)
         slot["sections"][0]["disposition"] = 2
@@ -144,14 +196,26 @@ class PlaybackTests(unittest.TestCase):
         c = playback.chain()
         self.assertAlmostEqual(sum(c), 1, delta=0.003)
         self.assertEqual(max(range(len(c)), key=lambda i: c[i]), playback.CHAIN_LATENCY)
-        for i in range(len(c)):                     # linear phase
+        for i in range(len(c)):  # linear phase
             self.assertAlmostEqual(c[i], c[2 * playback.CHAIN_LATENCY - i], places=12)
 
     def test_drfir(self):
-        cell = {"drfir": {"fir_hi": {"fir_taps": [0.5, 0.25]}, "fir_lo": {"fir_taps": [0, 2.0]},
-                          "delay_hi": 60}}
-        slot = {"sections": {0: {"disposition": 1, "filter_type": 3,
-                                 "rates": {48000: {"cells": [cell]}}}}}
+        cell = {
+            "drfir": {
+                "fir_hi": {"fir_taps": [0.5, 0.25]},
+                "fir_lo": {"fir_taps": [0, 2.0]},
+                "delay_hi": 60,
+            }
+        }
+        slot = {
+            "sections": {
+                0: {
+                    "disposition": 1,
+                    "filter_type": 3,
+                    "rates": {48000: {"cells": [cell]}},
+                }
+            }
+        }
         ir, _ = playback.impulse_response(slot, 0, 48000)
         want = [2.0 * v for v in [0.0] * 16 + playback.chain()]
         want[8] += 0.5
@@ -160,15 +224,18 @@ class PlaybackTests(unittest.TestCase):
             self.assertAlmostEqual(got, w, places=12)
 
     def test_design(self):
-        target = dsp.design_fir([20, 60, 200, 2000, 20000], [6, -8, 0, 2, -4], 44100, "minimum",
-                                16384)
+        target = dsp.design_fir(
+            [20, 60, 200, 2000, 20000], [6, -8, 0, 2, -4], 44100, "minimum", 16384
+        )
         d = playback.design(target, 44100)
         self.assertEqual((len(d.fir_hi), len(d.fir_lo)), (playback.TAPS, playback.TAPS))
         self.assertLess(d.lost, 1e-6)
         slot = playback.dual_rate_slot("x", ["Mono"], {44100: [d]})
         ir, _ = playback.impulse_response(slot, 0, 44100)
         want = [0.0] * playback.LATENCY + target
-        error = sum((g - (want[i] if i < len(want) else 0.0)) ** 2 for i, g in enumerate(ir))
+        error = sum(
+            (g - (want[i] if i < len(want) else 0.0)) ** 2 for i, g in enumerate(ir)
+        )
         self.assertLess(error / sum(v * v for v in target), 1e-6)
 
 
@@ -178,7 +245,9 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual(result.name, "Bass and treble Right.csv")
         got = csv_points(result)
         source = response.load(CSV).curve()
-        want = resample([f for f, _ in source], [v for _, v in source], [f for f, _ in got])
+        want = resample(
+            [f for f, _ in source], [v for _, v in source], [f for f, _ in got]
+        )
         self.assertLess(max(abs(g - w) for (_, g), w in zip(got, want)), 0.05)
 
     def test_to_fir(self):
@@ -189,7 +258,9 @@ class ConversionTests(unittest.TestCase):
             self.assertAlmostEqual(got, w, places=6)
 
     def test_speaker(self):
-        with self.assertRaisesRegex(ValueError, "no speaker 'Center'; outputs: Left, Right"):
+        with self.assertRaisesRegex(
+            ValueError, "no speaker 'Center'; outputs: Left, Right"
+        ):
             DiracFilterToAutoeq(speaker="Center").convert([DRFIR])
         with self.assertRaisesRegex(ValueError, "--rate must be one of"):
             DiracFilterToAutoeq(rate=96000)
@@ -198,11 +269,15 @@ class ConversionTests(unittest.TestCase):
         wav = ROOT / common.FIR_DIR / "Room.wav"
         source = fir.load(wav)
         slot = filterslot.read(FirToDiracFilter().convert([wav]).data).slot
-        self.assertEqual(sorted(playback.live_section(slot)["rates"]), list(playback.RATES))
+        self.assertEqual(
+            sorted(playback.live_section(slot)["rates"]), list(playback.RATES)
+        )
         rate = round(source.sample_rate)
         ir, _ = playback.impulse_response(slot, 1, rate)
         want = [0.0] * playback.LATENCY + source.channels[1]
-        error = sum((g - (want[i] if i < len(want) else 0.0)) ** 2 for i, g in enumerate(ir))
+        error = sum(
+            (g - (want[i] if i < len(want) else 0.0)) ** 2 for i, g in enumerate(ir)
+        )
         self.assertLess(error / sum(v * v for v in source.channels[1]), 1e-6)
         other = 44100 if rate != 44100 else 48000
         ir, _ = playback.impulse_response(slot, 0, other)
@@ -216,7 +291,9 @@ class ConversionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             wav = Path(tmp) / "x.wav"
             wav.write_bytes(fir.write(fir.Fir(96000.0, [[1.0]])))
-            with self.assertRaisesRegex(ValueError, "a slot takes 32000, 44100, 48000 Hz"):
+            with self.assertRaisesRegex(
+                ValueError, "a slot takes 32000, 44100, 48000 Hz"
+            ):
                 FirToDiracFilter().convert([wav])
 
 

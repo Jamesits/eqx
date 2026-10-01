@@ -56,11 +56,13 @@ def read(text: str) -> Export:
                 if columns not in (["Freq", "Gain"], ["Type", "Freq", "Gain", "Q"]):
                     raise ValueError(f"{where}: unknown table columns {columns}")
             elif all(set(c) <= set(":-") for c in cells):
-                continue                    # the Markdown separator row
+                continue  # the Markdown separator row
             elif len(cells) != len(columns):
                 raise ValueError(f"{where}: expected {len(columns)} cells")
             elif len(columns) == 2:
-                current.points.append((number(cells[0], where), number(cells[1], where)))
+                current.points.append(
+                    (number(cells[0], where), number(cells[1], where))
+                )
             else:
                 if not cells[0].startswith("Parametric Eq"):
                     raise ValueError(f"{where}: unsupported filter type {cells[0]!r}")
@@ -80,6 +82,10 @@ class TextExportInspector(ExportInspector):
     load = load
 
 
-FORMAT = Format("soundid-export-txt", (".txt",),
-                "SoundID export: text (Dolby Atmos Renderer, SPQ DSP)", TextExportInspector,
-                lambda data: data.lstrip(b"\xef\xbb\xbf").startswith(FIRST_KEY.encode()))
+FORMAT = Format(
+    "soundid-export-txt",
+    (".txt",),
+    "SoundID export: text (Dolby Atmos Renderer, SPQ DSP)",
+    TextExportInspector,
+    lambda data: data.lstrip(b"\xef\xbb\xbf").startswith(FIRST_KEY.encode()),
+)

@@ -2,6 +2,7 @@ import math
 import unittest
 
 from testgen import common, ik, soundid
+
 from eqx import dsp, formats
 from eqx.convert import to_swproj
 from eqx.ik import arc4, pak
@@ -32,24 +33,39 @@ class ReaderTests(unittest.TestCase):
         odd = fir.write(fir.Fir(48000, [[1.0] * 5]))
         short = fir.write(fir.Fir(48000, [[1.0] * 8]))
         for bad, message in (
-                ({**entries, "info.xml": info.replace(b'"4.0.0"', b'"3.9.9"')}, "older than"),
-                ({**entries, "info.xml": info.replace(b'Version="4.0.0" ', b"")}, "older than"),
-                ({**entries, "info.xml": info.replace(ik.ARC4_ID.encode() + b'"/>',
-                                                      b'"/>')}, "no SHA"),
-                ({k: v for k, v in entries.items() if k != "ch1.wav"}, "no ch1.wav"),
-                ({**entries, "ch0.wav": odd}, "5 values"),
-                ({**entries, "ch1.wav": short}, "differ in length"),
-                ({k: v for k, v in entries.items() if k != "info.xml"}, "no info.xml")):
+            (
+                {**entries, "info.xml": info.replace(b'"4.0.0"', b'"3.9.9"')},
+                "older than",
+            ),
+            (
+                {**entries, "info.xml": info.replace(b'Version="4.0.0" ', b"")},
+                "older than",
+            ),
+            (
+                {
+                    **entries,
+                    "info.xml": info.replace(ik.ARC4_ID.encode() + b'"/>', b'"/>'),
+                },
+                "no SHA",
+            ),
+            ({k: v for k, v in entries.items() if k != "ch1.wav"}, "no ch1.wav"),
+            ({**entries, "ch0.wav": odd}, "5 values"),
+            ({**entries, "ch1.wav": short}, "differ in length"),
+            ({k: v for k, v in entries.items() if k != "info.xml"}, "no info.xml"),
+        ):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 arc4.read(pak.write(bad))
         # A newer version is read.
-        arc4.read(pak.write({**entries,
-                                          "info.xml": info.replace(b'"4.0.0"', b'"4.10.0"')}))
+        arc4.read(
+            pak.write({**entries, "info.xml": info.replace(b'"4.0.0"', b'"4.10.0"')})
+        )
 
 
 class ResponseTests(unittest.TestCase):
     def test_power(self):
-        self.assertEqual(arc4.power([1.0, 2.0, 3.0, 4.0, 5.0, 0.0]), [1.0, 25.0, 25.0, 4.0])
+        self.assertEqual(
+            arc4.power([1.0, 2.0, 3.0, 4.0, 5.0, 0.0]), [1.0, 25.0, 25.0, 4.0]
+        )
 
     def test_generated(self):
         # The response is the bells' up to the normalisation offset, which
@@ -59,19 +75,26 @@ class ResponseTests(unittest.TestCase):
         for c, side in enumerate(arc4.CHANNELS):
             with self.subTest(side):
                 p = arc4.power(a.spectra[c])
-                band = p[int(40 * n / rate):int(10000 * n / rate) + 1]
+                band = p[int(40 * n / rate) : int(10000 * n / rate) + 1]
                 self.assertAlmostEqual(sum(band) / len(band), 1, places=5)
                 filters = common.bells(side, rate)
-                offsets = [db - dsp.cascade_db(filters, f, rate)
-                           for f, db in zip(*arc4.response(a, c)) if 30 <= f <= 16000]
+                offsets = [
+                    db - dsp.cascade_db(filters, f, rate)
+                    for f, db in zip(*arc4.response(a, c))
+                    if 30 <= f <= 16000
+                ]
                 self.assertLess(max(offsets) - min(offsets), 0.1)
                 self.assertLess(abs(offsets[0]), 3)
 
     def test_swproj(self):
-        target, measurements = to_swproj.Arc4ToSwproj(mic_profile=MIC).measurements(ANALYSIS)
+        target, measurements = to_swproj.Arc4ToSwproj(mic_profile=MIC).measurements(
+            ANALYSIS
+        )
         self.assertEqual(target.name, "2.0 (Stereo)")
-        self.assertEqual([(m.index, m.channel, m.name) for m in measurements],
-                         [(0, "Left", "Left Arc4"), (1, "Right", "Right Arc4")])
+        self.assertEqual(
+            [(m.index, m.channel, m.name) for m in measurements],
+            [(0, "Left", "Left Arc4"), (1, "Right", "Right Arc4")],
+        )
         self.assertTrue(all(g == 0 for m in measurements for g in m.group_delay))
         self.assertTrue(all(math.isfinite(r) for m in measurements for r in m.response))
 

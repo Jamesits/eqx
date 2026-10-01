@@ -55,7 +55,7 @@ def read(data: bytes) -> tuple[int, dict[str, bytes]]:
         pos += struct.calcsize(number)
         if offset + size > len(data):
             raise ValueError(f"pak entry {name!r} lies outside the file")
-        entries[name] = data[offset:offset + size]
+        entries[name] = data[offset : offset + size]
     if version == 3 and pos != end:
         raise ValueError("pak entry table size does not match its entries")
     return version, entries
@@ -71,7 +71,11 @@ def write(entries: dict[str, bytes]) -> bytes:
     offset = 26 + table_size
     table, body = b"", b""
     for name in names:
-        table += name.encode() + b"\0" + struct.pack("<QQ", offset + len(body), len(entries[name]))
+        table += (
+            name.encode()
+            + b"\0"
+            + struct.pack("<QQ", offset + len(body), len(entries[name]))
+        )
         body += entries[name]
     return MAGIC + struct.pack("<IQQ", 3, len(names), table_size) + table + body
 
@@ -82,10 +86,12 @@ def _unpack(fmt: str, data: bytes, pos: int) -> tuple:
     return struct.unpack_from(fmt, data, pos)
 
 
-def file_section(path: Path, data: bytes, version: int, sizes: dict[str, int],
-                 *fields) -> Section:
+def file_section(
+    path: Path, data: bytes, version: int, sizes: dict[str, int], *fields
+) -> Section:
     """The inspector's file section of a pak: ``fields``, the version and the entry sizes."""
-    section = _file_section(path, data, *fields, ("pak version", version),
-                            ("entries", len(sizes)))
+    section = _file_section(
+        path, data, *fields, ("pak version", version), ("entries", len(sizes))
+    )
     section.table = Table(["entry", "size"], sorted(sizes.items()))
     return section

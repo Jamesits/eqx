@@ -17,5 +17,5 @@ class Section:
     title: str
     fields: list[tuple[str, Any]] = field(default_factory=list)
     table: Table | None = None
-    raw: str | None = None                  # verbatim text, shown in full mode only
-    curve: Table | None = None              # computed response, graphed instead of the table
+    raw: str | None = None  # verbatim text, shown in full mode only
+    curve: Table | None = None  # computed response, graphed instead of the table

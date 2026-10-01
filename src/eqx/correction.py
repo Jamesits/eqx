@@ -14,9 +14,9 @@ from .report import Section, Table
 @dataclass
 class Export:
     corrections: list[Correction]
-    fields: list[tuple[str, Any]] = field(default_factory=list)     # file metadata
-    encryption: str = ""                    # how the file was decrypted; "" if plain
-    text: str = ""                          # the plaintext, if it is text
+    fields: list[tuple[str, Any]] = field(default_factory=list)  # file metadata
+    encryption: str = ""  # how the file was decrypted; "" if plain
+    text: str = ""  # the plaintext, if it is text
 
     def select(self, channel: str, sample_rate: float | None = None) -> Correction:
         """The correction of ``channel`` ("Left", "Right") at ``sample_rate``.
@@ -26,19 +26,25 @@ class Export:
         matches = [c for c in self.corrections if channel_name(c.channel) == channel]
         if not matches:
             names = sorted({c.channel for c in self.corrections})
-            raise ValueError(f"no {channel} channel; available: {', '.join(names) or 'none'}")
+            raise ValueError(
+                f"no {channel} channel; available: {', '.join(names) or 'none'}"
+            )
         rates = sorted({c.sample_rate for c in matches if c.sample_rate})
         if sample_rate is None:
             sample_rate = 48000.0 if 48000.0 in rates else (rates[0] if rates else None)
         elif float(sample_rate) not in rates:
-            raise ValueError(f"no {sample_rate:g} Hz filters; available: "
-                             f"{', '.join(f'{r:g}' for r in rates) or 'none'}")
+            raise ValueError(
+                f"no {sample_rate:g} Hz filters; available: "
+                f"{', '.join(f'{r:g}' for r in rates) or 'none'}"
+            )
         return next(c for c in matches if c.sample_rate == sample_rate or not rates)
 
 
 def channel_name(name: str) -> str:
     """Exports name the stereo channels "L"/"R" or "Left"/"Right"."""
-    return {"l": "Left", "left": "Left", "r": "Right", "right": "Right"}.get(name.lower(), name)
+    return {"l": "Left", "left": "Left", "r": "Right", "right": "Right"}.get(
+        name.lower(), name
+    )
 
 
 def number(text: str, where: str) -> float:
@@ -52,15 +58,22 @@ def correction_sections(corrections: list[Correction]) -> list[Section]:
     sections = []
     for c in corrections:
         title = c.channel + (f" {c.sample_rate:g} Hz" if c.sample_rate else "")
-        fields: list[tuple[str, Any]] = [("gain dB", c.gain_db), ("delay ms", c.delay_ms)]
+        fields: list[tuple[str, Any]] = [
+            ("gain dB", c.gain_db),
+            ("delay ms", c.delay_ms),
+        ]
         if c.biquads:
             fields.append(("biquads", len(c.biquads)))
-            table = Table(["b0", "b1", "b2", "a0", "a1", "a2"],
-                          [(b.b0, b.b1, b.b2, b.a0, b.a1, b.a2) for b in c.biquads])
+            table = Table(
+                ["b0", "b1", "b2", "a0", "a1", "a2"],
+                [(b.b0, b.b1, b.b2, b.a0, b.a1, b.a2) for b in c.biquads],
+            )
         elif c.peqs:
             fields.append(("filters", len(c.peqs)))
-            table = Table(["type", "frequency Hz", "gain dB", "q"],
-                          [(p.kind, p.frequency, p.gain_db, p.q) for p in c.peqs])
+            table = Table(
+                ["type", "frequency Hz", "gain dB", "q"],
+                [(p.kind, p.frequency, p.gain_db, p.q) for p in c.peqs],
+            )
         else:
             fields.append(("points", len(c.points)))
             table = Table(["frequency Hz", "gain dB"], c.points)
@@ -69,7 +82,9 @@ def correction_sections(corrections: list[Correction]) -> list[Section]:
         if c.biquads or c.peqs:
             nyquist = (c.sample_rate or float("inf")) / 2
             grid = [f for f in standard_grid() if f < nyquist]
-            curve = Table(["frequency Hz", "gain dB"], list(zip(grid, c.response(grid))))
+            curve = Table(
+                ["frequency Hz", "gain dB"], list(zip(grid, c.response(grid)))
+            )
         sections.append(Section(f"channel {title}", fields, table, curve=curve))
     return sections
 

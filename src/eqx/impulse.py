@@ -25,8 +25,9 @@ def peak_index(ir: list[float]) -> int:
     return max(range(len(ir)), key=lambda i: abs(ir[i]))
 
 
-def point_bands(ir: list[float], sample_rate: float,
-                frequencies: list[float]) -> list[tuple[float, float]]:
+def point_bands(
+    ir: list[float], sample_rate: float, frequencies: list[float]
+) -> list[tuple[float, float]]:
     """(power, group delay s) of one impulse response in the band around each frequency.
 
     The peak is moved to sample 0 first, so the delay before it (time of
@@ -35,7 +36,7 @@ def point_bands(ir: list[float], sample_rate: float,
     n = 1 << max(1, (len(ir) - 1).bit_length())
     padded = list(ir) + [0.0] * (n - len(ir))
     peak = peak_index(padded)
-    spectrum = dsp.fft(padded[peak:] + padded[:peak])[:n // 2 + 1]
+    spectrum = dsp.fft(padded[peak:] + padded[:peak])[: n // 2 + 1]
     step = sample_rate / n
     power = [abs(x) ** 2 for x in spectrum]
     # Central phase difference; its angle stays in (-pi, pi] without unwrapping.
@@ -47,8 +48,9 @@ def point_bands(ir: list[float], sample_rate: float,
     return spectrum_bands(power, delay, step, frequencies)
 
 
-def spectrum_bands(power: list[float], delay: list[float], step: float,
-                   frequencies: list[float]) -> list[tuple[float, float]]:
+def spectrum_bands(
+    power: list[float], delay: list[float], step: float, frequencies: list[float]
+) -> list[tuple[float, float]]:
     """(mean power, power-weighted delay) of the FFT bins within +-1/96 octave.
 
     Bin k is at k * ``step`` Hz.  A band with no bin interpolates the two
@@ -60,20 +62,28 @@ def spectrum_bands(power: list[float], delay: list[float], step: float,
         first = math.ceil(f / half / step)
         last = min(math.ceil(f * half / step) - 1, len(power) - 1)
         if last >= first:
-            p = sum(power[first:last + 1])
-            gd = (sum(power[k] * delay[k] for k in range(first, last + 1)) / p if p
-                  else sum(delay[first:last + 1]) / (last - first + 1))
+            p = sum(power[first : last + 1])
+            gd = (
+                sum(power[k] * delay[k] for k in range(first, last + 1)) / p
+                if p
+                else sum(delay[first : last + 1]) / (last - first + 1)
+            )
             out.append((p / (last - first + 1), gd))
         else:
             k = min(int(f / step), len(power) - 2)
             t = f / step - k
-            out.append((power[k] + t * (power[k + 1] - power[k]),
-                        delay[k] + t * (delay[k + 1] - delay[k])))
+            out.append(
+                (
+                    power[k] + t * (power[k + 1] - power[k]),
+                    delay[k] + t * (delay[k + 1] - delay[k]),
+                )
+            )
     return out
 
 
-def average(irs: list[list[float]], sample_rate: float,
-            frequencies: list[float]) -> tuple[list[float], list[float]]:
+def average(
+    irs: list[list[float]], sample_rate: float, frequencies: list[float]
+) -> tuple[list[float], list[float]]:
     """(dB, group delay s): power average of the impulse responses' bands."""
     bands = [point_bands(ir, sample_rate, frequencies) for ir in irs]
     db, gd = [], []
@@ -81,6 +91,9 @@ def average(irs: list[list[float]], sample_rate: float,
         powers = [b[i][0] for b in bands]
         total = sum(powers)
         db.append(power_db(total / len(bands)))
-        gd.append(sum(p * b[i][1] for p, b in zip(powers, bands)) / total if total
-                  else sum(b[i][1] for b in bands) / len(bands))
+        gd.append(
+            sum(p * b[i][1] for p, b in zip(powers, bands)) / total
+            if total
+            else sum(b[i][1] for b in bands) / len(bands)
+        )
     return db, gd

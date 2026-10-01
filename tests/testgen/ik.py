@@ -42,9 +42,20 @@ def write_arcx(layout: int, points: int, rate: int, session: bool) -> bytes:
         speaker = arcx.POSITIONS[position]
         delay = ARCX_DELAY.get(speaker, ARCX_OTHER_DELAY)
         cc = impulse_response(arcx.IR_LENGTH, delay, 0.0, [])
-        channels.append([arcx.Point(impulse_response(arcx.IR_LENGTH, delay, ARCX_POINT_GAINS[p],
-                                                     arcx_filters(speaker, rate)), cc)
-                         for p in range(points)])
+        channels.append(
+            [
+                arcx.Point(
+                    impulse_response(
+                        arcx.IR_LENGTH,
+                        delay,
+                        ARCX_POINT_GAINS[p],
+                        arcx_filters(speaker, rate),
+                    ),
+                    cc,
+                )
+                for p in range(points)
+            ]
+        )
     return arcx.write(rate, channels, layout, session)
 
 
@@ -65,10 +76,12 @@ def arc4_spectrum(side: str, rate: float) -> list[float]:
     """Packed real FFT of the device export bells; mean power over 40 Hz-10 kHz is 1."""
     half = ARC4_FFT_SIZE // 2
     filters = bells(side, rate)
-    magnitude = [10 ** (dsp.cascade_db(filters, max(k, 1e-3) * rate / ARC4_FFT_SIZE, rate) / 20)
-                 for k in range(half + 1)]
+    magnitude = [
+        10 ** (dsp.cascade_db(filters, max(k, 1e-3) * rate / ARC4_FFT_SIZE, rate) / 20)
+        for k in range(half + 1)
+    ]
     low, high = int(40 * ARC4_FFT_SIZE / rate), int(10000 * ARC4_FFT_SIZE / rate)
-    scale = (sum(m * m for m in magnitude[low:high + 1]) / (high - low + 1)) ** -0.5
+    scale = (sum(m * m for m in magnitude[low : high + 1]) / (high - low + 1)) ** -0.5
     packed = [magnitude[0] * scale, magnitude[half] * scale]
     for k in range(1, half):
         packed += [magnitude[k] * scale, 0.0]
@@ -76,15 +89,29 @@ def arc4_spectrum(side: str, rate: float) -> list[float]:
 
 
 def write_arc4(version: str = "4.0.0", sha: str = ARC4_ID) -> bytes:
-    entries = {"info.xml": arcx.juce_xml(arcx.value_tree("SerializedMeasure", [
-        ("Version", version), ("SampleRate", f"{ARC4_RATE:.1f}"), ("SelectedMicType", "MEMS"),
-        ("CorrectionSpeaker", ARC4_ID), ("SHA", sha)]))}
+    entries = {
+        "info.xml": arcx.juce_xml(
+            arcx.value_tree(
+                "SerializedMeasure",
+                [
+                    ("Version", version),
+                    ("SampleRate", f"{ARC4_RATE:.1f}"),
+                    ("SelectedMicType", "MEMS"),
+                    ("CorrectionSpeaker", ARC4_ID),
+                    ("SHA", sha),
+                ],
+            )
+        )
+    }
     for c, side in enumerate(SPEAKER):
-        entries[f"ch{c}.wav"] = fir.write(fir.Fir(ARC4_RATE, [arc4_spectrum(side, ARC4_RATE)]))
+        entries[f"ch{c}.wav"] = fir.write(
+            fir.Fir(ARC4_RATE, [arc4_spectrum(side, ARC4_RATE)])
+        )
         for step in range(ARC4_STEPS):
             for name in (f"sweep0ch{c}", f"tailch{c}"):
-                entries[f"step{step}/{name}.wav"] = fir.write(fir.Fir(ARC4_RATE,
-                                                                      [ARC4_RECORDING]))
+                entries[f"step{step}/{name}.wav"] = fir.write(
+                    fir.Fir(ARC4_RATE, [ARC4_RECORDING])
+                )
     return pak.write(entries)
 
 

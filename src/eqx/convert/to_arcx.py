@@ -9,7 +9,14 @@ from ..autoeq import response
 from ..ik import arcx
 from ..options import Option
 from .base import Converter, Result
-from .common import COLUMN_OPTION, DEFAULT_RATE, RATE_OPTION, impulse_response, median_level, stereo
+from .common import (
+    COLUMN_OPTION,
+    DEFAULT_RATE,
+    RATE_OPTION,
+    impulse_response,
+    median_level,
+    stereo,
+)
 
 # The impulse starts this many samples into the impulse response, as after a
 # time of flight.  ARC X loads sessions with impulses 150 and 160 samples in.
@@ -27,21 +34,33 @@ class AutoeqToArcx(Converter):
 
     source = "autoeq"
     target = "arcx"
-    description = ("speaker measurements (inputs: both speakers, or left then right) as an "
-                   "ARC X stereo session")
+    description = (
+        "speaker measurements (inputs: both speakers, or left then right) as an "
+        "ARC X stereo session"
+    )
     options = (
-        COLUMN_OPTION, RATE_OPTION,
-        Option("--session", action=argparse.BooleanOptionalAction,
-               help="write a session (.arcXs); --no-session writes an analysis (.arcXa) "
-                    "(default: on)"),
+        COLUMN_OPTION,
+        RATE_OPTION,
+        Option(
+            "--session",
+            action=argparse.BooleanOptionalAction,
+            help="write a session (.arcXs); --no-session writes an analysis (.arcXa) "
+            "(default: on)",
+        ),
     )
     inputs = 2
 
-    def __init__(self, column: str = response.RAW, rate: float = DEFAULT_RATE,
-                 session: bool = True):
+    def __init__(
+        self,
+        column: str = response.RAW,
+        rate: float = DEFAULT_RATE,
+        session: bool = True,
+    ):
         if float(rate) not in arcx.SAMPLE_RATES:
-            raise ValueError(f"the ARC X sample rate must be one of: "
-                             f"{', '.join(f'{r:g}' for r in arcx.SAMPLE_RATES)}")
+            raise ValueError(
+                f"the ARC X sample rate must be one of: "
+                f"{', '.join(f'{r:g}' for r in arcx.SAMPLE_RATES)}"
+            )
         self.column = column
         self.rate = float(rate)
         self.session = session
@@ -51,11 +70,25 @@ class AutoeqToArcx(Converter):
         level = median_level(curves)
         impulse = [0.0] * arcx.IR_LENGTH
         impulse[LEAD] = 1.0
-        channels = [[arcx.Point(impulse_response(points, level, self.rate, LEAD,
-                                                 arcx.IR_LENGTH, TAPS), impulse)]
-                    for _, points in curves]
+        channels = [
+            [
+                arcx.Point(
+                    impulse_response(
+                        points, level, self.rate, LEAD, arcx.IR_LENGTH, TAPS
+                    ),
+                    impulse,
+                )
+            ]
+            for _, points in curves
+        ]
         kind, suffix = ("session", ".arcXs") if self.session else ("analysis", ".arcXa")
-        return Result(arcx.write(self.rate, channels, 1, self.session),
-                      f"{paths[0].stem}{suffix}",
-                      [f"Stereo {kind}, 1 point, {self.rate:g} Hz; "
-                       f"{level:.2f} dB = 0 dB re full scale"])
+        return Result(
+            arcx.write(self.rate, channels, 1, self.session),
+            f"{paths[0].stem}{suffix}",
+            [
+                (
+                    f"Stereo {kind}, 1 point, {self.rate:g} Hz; "
+                    f"{level:.2f} dB = 0 dB re full scale"
+                )
+            ],
+        )

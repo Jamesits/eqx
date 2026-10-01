@@ -6,27 +6,46 @@ from pathlib import Path
 
 from helpers import FREQUENCIES, analytic
 from testgen import common, rme, soundid
+
 from eqx import dsp, formats
 from eqx.autoeq import response
 from eqx.convert import to_autoeq
 from eqx.convert.to_tmreq import AutoeqToTmreq
 from eqx.model import Correction, Peq, standard_grid
 from eqx.rme import tmreq
-from eqx.soundid import (export_biquad_json, export_biquad_xml, export_lvnd, export_partners,
-                         export_peq_json, export_txt)
+from eqx.soundid import (
+    export_biquad_json,
+    export_biquad_xml,
+    export_lvnd,
+    export_partners,
+    export_peq_json,
+    export_txt,
+)
 
 ROOT = common.ROOT
-BIQUAD_JSON, PEQ_JSON, BIQUAD_XML = export_biquad_json.ID, export_peq_json.ID, export_biquad_xml.ID
+BIQUAD_JSON, PEQ_JSON, BIQUAD_XML = (
+    export_biquad_json.ID,
+    export_peq_json.ID,
+    export_biquad_xml.ID,
+)
 LVND, TXT = export_lvnd.FORMAT.id, export_txt.FORMAT.id
 FILES = {
-    BIQUAD_JSON: [ROOT / soundid.BIQUAD_JSON_DIR / n for n in ("Tilt Fluid.bin",
-                                                                   "Tilt MERGING.bin")],
-    PEQ_JSON: [ROOT / soundid.PEQ_JSON_DIR / n for n in ("Tilt Grace.bin", "Tilt Lynx.bin")],
+    BIQUAD_JSON: [
+        ROOT / soundid.BIQUAD_JSON_DIR / n
+        for n in ("Tilt Fluid.bin", "Tilt MERGING.bin")
+    ],
+    PEQ_JSON: [
+        ROOT / soundid.PEQ_JSON_DIR / n for n in ("Tilt Grace.bin", "Tilt Lynx.bin")
+    ],
     BIQUAD_XML: [ROOT / soundid.BIQUAD_XML_DIR / "Tilt.adam"],
-    LVND: [ROOT / soundid.LVND_DIR / n for n in ("Tilt_192000_Left.bin",
-                                                     "Tilt_192000_Right.bin")],
-    TXT: [ROOT / soundid.EXPORT_TXT_DIR / n for n in ("Tilt - Flat.txt",
-                                                          "Tilt - Flat - 8 - PEQ.txt")],
+    LVND: [
+        ROOT / soundid.LVND_DIR / n
+        for n in ("Tilt_192000_Left.bin", "Tilt_192000_Right.bin")
+    ],
+    TXT: [
+        ROOT / soundid.EXPORT_TXT_DIR / n
+        for n in ("Tilt - Flat.txt", "Tilt - Flat - 8 - PEQ.txt")
+    ],
     "tmreq": [ROOT / rme.TMREQ_DIR / "Tilt - Flat.tmreq"],
 }
 REAL = ROOT / "real"
@@ -35,13 +54,17 @@ REAL = ROOT / "real"
 class ContainerTests(unittest.TestCase):
     def test_adam_key_is_hashed(self):
         adam = next(p for p in export_partners.PARTNERS if p.id == "adam")
-        self.assertEqual(adam.key, hashlib.sha256(b"6ABE9E4A59EB434B997B4B6FD2B1055F").hexdigest())
+        self.assertEqual(
+            adam.key, hashlib.sha256(b"6ABE9E4A59EB434B997B4B6FD2B1055F").hexdigest()
+        )
 
     def test_partner_format(self):
         for kind in (BIQUAD_JSON, PEQ_JSON, BIQUAD_XML):
             for path in FILES[kind]:
                 with self.subTest(path.name):
-                    self.assertEqual(export_partners.partner_format(path.read_bytes()), kind)
+                    self.assertEqual(
+                        export_partners.partner_format(path.read_bytes()), kind
+                    )
 
     def test_serial_number(self):
         self.assertEqual(export_partners.serial_number("000042"), "A000042")
@@ -53,7 +76,9 @@ class ContainerTests(unittest.TestCase):
     def test_merging_serial(self):
         data = FILES[BIQUAD_JSON][1].read_bytes()
         self.assertEqual(export_partners.find_serial(data), soundid.MERGING_SERIAL)
-        self.assertEqual(export_biquad_json.read(data, "000042").corrections[0].channel, "Left")
+        self.assertEqual(
+            export_biquad_json.read(data, "000042").corrections[0].channel, "Left"
+        )
         with self.assertRaisesRegex(ValueError, "not for serial number A000043"):
             export_biquad_json.read(data, "A000043")
         with self.assertRaisesRegex(ValueError, "key is not known"):
@@ -75,21 +100,30 @@ class ReaderTests(unittest.TestCase):
             self.assertAlmostEqual(g, w, places=places)
 
     def test_biquad_formats(self):
-        for module, path, rates in ((export_biquad_json, FILES[BIQUAD_JSON][0], (96000, 192000)),
-                                    (export_biquad_json, FILES[BIQUAD_JSON][1], (44100, 48000)),
-                                    (export_biquad_xml, FILES[BIQUAD_XML][0], (44100, 48000))):
+        for module, path, rates in (
+            (export_biquad_json, FILES[BIQUAD_JSON][0], (96000, 192000)),
+            (export_biquad_json, FILES[BIQUAD_JSON][1], (44100, 48000)),
+            (export_biquad_xml, FILES[BIQUAD_XML][0], (44100, 48000)),
+        ):
             export = module.load(path)
-            self.assertEqual([(c.channel, c.sample_rate) for c in export.corrections],
-                             [(s, r) for r in rates for s in ("Left", "Right")])
+            self.assertEqual(
+                [(c.channel, c.sample_rate) for c in export.corrections],
+                [(s, r) for r in rates for s in ("Left", "Right")],
+            )
             for c in export.corrections:
                 with self.subTest(f"{path.name} {c.channel} {c.sample_rate:g}"):
                     self.assertEqual(len(c.biquads), 3)
-                    self.assert_close(c.response(FREQUENCIES), analytic(c.channel, c.sample_rate))
+                    self.assert_close(
+                        c.response(FREQUENCIES), analytic(c.channel, c.sample_rate)
+                    )
 
     def test_parametric_formats(self):
         for path in FILES[PEQ_JSON] + FILES[TXT][1:] + FILES["tmreq"]:
-            loader = {".bin": export_peq_json.load, ".txt": export_txt.load,
-                      ".tmreq": tmreq.load}[path.suffix]
+            loader = {
+                ".bin": export_peq_json.load,
+                ".txt": export_txt.load,
+                ".tmreq": tmreq.load,
+            }[path.suffix]
             export = loader(path)
             self.assertEqual([c.channel for c in export.corrections], ["L", "R"])
             for c, side in zip(export.corrections, ("Left", "Right")):
@@ -110,32 +144,47 @@ class ReaderTests(unittest.TestCase):
             name = "REQ Band1Type" if n == 1 else f"REQ Band{n} Type"
             preset = preset.replace(f'"{name}" v="0.00,"', f'"{name}" v="{code}.00,"')
         peqs = tmreq.read(preset).corrections[0].peqs
-        self.assertEqual([p.kind for p in peqs],
-                         ["low-shelf"] + ["bell"] * 6 + ["high-shelf", "high-pass"])
-        self.assertEqual(tmreq.read(preset.replace('v="3.00,"', 'v="2.00,"'))
-                         .corrections[0].peqs[8].kind, "low-pass")
+        self.assertEqual(
+            [p.kind for p in peqs],
+            ["low-shelf"] + ["bell"] * 6 + ["high-shelf", "high-pass"],
+        )
+        self.assertEqual(
+            tmreq.read(preset.replace('v="3.00,"', 'v="2.00,"'))
+            .corrections[0]
+            .peqs[8]
+            .kind,
+            "low-pass",
+        )
 
     def test_filter_kinds(self):
         low, high = Peq(100, 6, 0.7, "low-shelf"), Peq(100, 6, 0.7, "high-shelf")
         self.assertAlmostEqual(low.biquad().db(10, dsp.PEQ_SAMPLE_RATE), 6, places=1)
-        self.assertAlmostEqual(high.biquad().db(10000, dsp.PEQ_SAMPLE_RATE), 6, places=1)
+        self.assertAlmostEqual(
+            high.biquad().db(10000, dsp.PEQ_SAMPLE_RATE), 6, places=1
+        )
         hp, lp = Peq(1000, 0, 0.7071, "high-pass"), Peq(1000, 0, 0.7071, "low-pass")
         for p in (hp, lp):
-            self.assertAlmostEqual(p.biquad().db(1000, dsp.PEQ_SAMPLE_RATE), -3.01, places=1)
+            self.assertAlmostEqual(
+                p.biquad().db(1000, dsp.PEQ_SAMPLE_RATE), -3.01, places=1
+            )
         self.assertLess(hp.biquad().db(100, dsp.PEQ_SAMPLE_RATE), -35)
         self.assertLess(lp.biquad().db(10000, dsp.PEQ_SAMPLE_RATE), -35)
 
     def test_lvnd(self):
         left, right = (export_lvnd.load(p).corrections[0] for p in FILES[LVND])
-        self.assertEqual((left.channel, left.gain_db, left.delay_ms), ("Left", -1.5, 0.5))
+        self.assertEqual(
+            (left.channel, left.gain_db, left.delay_ms), ("Left", -1.5, 0.5)
+        )
         self.assertEqual((right.channel, right.gain_db), ("Right", 0.0))
         want = [g - 1.5 for g in analytic("Left", export_lvnd.SAMPLE_RATE)]
         for got, w in zip(left.response(FREQUENCIES), want):
-            self.assertAlmostEqual(got, w, delta=0.05)       # float32 coefficients
+            self.assertAlmostEqual(got, w, delta=0.05)  # float32 coefficients
 
     def test_lvnd_field(self):
         for value in (0, 1, 0x3F800000, 0xFFFFFFFF):
-            self.assertEqual(export_lvnd.decode_field(export_lvnd.encode_field(value)), value)
+            self.assertEqual(
+                export_lvnd.decode_field(export_lvnd.encode_field(value)), value
+            )
         with self.assertRaises(ValueError):
             export_lvnd.decode_field(b"\x80\x80\x00\x80\x80")
 
@@ -148,14 +197,18 @@ class ReaderTests(unittest.TestCase):
             export_lvnd.read(b"XXXX" + bytes(data[4:]))
 
     def test_rejected_input(self):
-        peq = FILES[TXT][1].read_text().replace("Parametric Eq 2",
-                                                                "Low Shelf 2")
-        with self.assertRaisesRegex(ValueError, "unsupported filter type 'Low Shelf 2'"):
+        peq = FILES[TXT][1].read_text().replace("Parametric Eq 2", "Low Shelf 2")
+        with self.assertRaisesRegex(
+            ValueError, "unsupported filter type 'Low Shelf 2'"
+        ):
             export_txt.read(peq)
         with self.assertRaisesRegex(ValueError, "unknown table columns"):
             export_txt.read("Preset name: x\nL channel calibration:\n|Freq|Q|\n")
-        preset = FILES["tmreq"][0].read_text().replace('"REQ Band8 Type" v="0.00,"',
-                                                       '"REQ Band8 Type" v="7.00,"')
+        preset = (
+            FILES["tmreq"][0]
+            .read_text()
+            .replace('"REQ Band8 Type" v="0.00,"', '"REQ Band8 Type" v="7.00,"')
+        )
         with self.assertRaisesRegex(ValueError, "unknown band 8 type 7"):
             tmreq.read(preset)
         with self.assertRaisesRegex(ValueError, "missing 'Chan Gain'"):
@@ -163,7 +216,9 @@ class ReaderTests(unittest.TestCase):
         plain = export_partners.open_export(FILES[PEQ_JSON][0].read_bytes())[0]
         root = json.loads(plain)
         root["channels"][0]["peqFilters"][0]["type"] = "LowShelf"
-        blob = export_partners.encrypt(export_partners.PARTNERS[2].key, json.dumps(root).encode())
+        blob = export_partners.encrypt(
+            export_partners.PARTNERS[2].key, json.dumps(root).encode()
+        )
         with self.assertRaisesRegex(ValueError, "unsupported filter type 'LowShelf'"):
             export_peq_json.read(blob)
 
@@ -174,7 +229,9 @@ class SelectTests(unittest.TestCase):
         self.assertEqual(fluid.select("Right").sample_rate, 96000)
         self.assertEqual(merging.select("Left").sample_rate, 48000)
         self.assertEqual(merging.select("Left", 44100).sample_rate, 44100)
-        with self.assertRaisesRegex(ValueError, "no 88200 Hz filters; available: 44100, 48000"):
+        with self.assertRaisesRegex(
+            ValueError, "no 88200 Hz filters; available: 44100, 48000"
+        ):
             merging.select("Left", 88200)
 
     def test_channel(self):
@@ -184,7 +241,9 @@ class SelectTests(unittest.TestCase):
             export.select("Center")
 
     def test_correction_sum(self):
-        c = Correction("x", gain_db=1.0, peqs=[Peq(1000, 3, 1)], points=[(100, 2), (10000, 4)])
+        c = Correction(
+            "x", gain_db=1.0, peqs=[Peq(1000, 3, 1)], points=[(100, 2), (10000, 4)]
+        )
         self.assertAlmostEqual(c.response([1000])[0], 1 + 3 + 3)
         with self.assertRaisesRegex(ValueError, "unsupported filter type 'band-pass'"):
             Correction("x", peqs=[Peq(1000, 3, 1, "band-pass")]).response([1000])
@@ -196,7 +255,9 @@ class DetectTests(unittest.TestCase):
             for path in paths:
                 with self.subTest(path.name):
                     self.assertEqual(formats.detect(path), kind)
-        self.assertEqual(formats.detect(ROOT / "rew/rewcal/TILT01 degrees_0.txt"), "rewcal")
+        self.assertEqual(
+            formats.detect(ROOT / "rew/rewcal/TILT01 degrees_0.txt"), "rewcal"
+        )
 
     def test_unknown_content(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -208,18 +269,26 @@ class DetectTests(unittest.TestCase):
 
 class ConvertTests(unittest.TestCase):
     def test_every_format(self):
-        converters = {c.source: c for c in (
-            to_autoeq.SoundidExportBiquadJsonToAutoeq, to_autoeq.SoundidExportPeqJsonToAutoeq,
-            to_autoeq.SoundidExportBiquadXmlToAutoeq, to_autoeq.SoundidExportLvndToAutoeq,
-            to_autoeq.SoundidExportTxtToAutoeq,
-            to_autoeq.TmreqToAutoeq)}
+        converters = {
+            c.source: c
+            for c in (
+                to_autoeq.SoundidExportBiquadJsonToAutoeq,
+                to_autoeq.SoundidExportPeqJsonToAutoeq,
+                to_autoeq.SoundidExportBiquadXmlToAutoeq,
+                to_autoeq.SoundidExportLvndToAutoeq,
+                to_autoeq.SoundidExportTxtToAutoeq,
+                to_autoeq.TmreqToAutoeq,
+            )
+        }
         for kind, paths in FILES.items():
             for path in paths:
                 with self.subTest(path.name):
                     options = {} if kind == LVND else {"channel": "right"}
                     result = converters[kind](**options).convert([path])
                     side = "Left" if path.stem.endswith("Left") else "Right"
-                    name = f"{path.stem}.csv" if kind == LVND else f"{path.stem} Right.csv"
+                    name = (
+                        f"{path.stem}.csv" if kind == LVND else f"{path.stem} Right.csv"
+                    )
                     self.assertEqual(result.name, name)
                     self.assertIn(f"{side} correction", result.notes[1])
 
@@ -234,9 +303,21 @@ class RealExportTests(unittest.TestCase):
     """Exports of one SoundID profile to every partner, if present."""
 
     def test_every_export_reads(self):
-        paths = [p for d in ("ADAM Audio", "Dolby Atmos Renderer", "Fluid Audio", "Grace Design",
-                             "Lynx", "MERGING", "RME", "SPQ DSP", "Wayne Jones AUDIO")
-                 for p in sorted((REAL / d).glob("*"))]
+        paths = [
+            p
+            for d in (
+                "ADAM Audio",
+                "Dolby Atmos Renderer",
+                "Fluid Audio",
+                "Grace Design",
+                "Lynx",
+                "MERGING",
+                "RME",
+                "SPQ DSP",
+                "Wayne Jones AUDIO",
+            )
+            for p in sorted((REAL / d).glob("*"))
+        ]
         if not paths:
             self.skipTest("no exports")
         for path in paths:
@@ -258,9 +339,13 @@ class RealExportTests(unittest.TestCase):
 
 class TmreqWriterTests(unittest.TestCase):
     def test_round_trip(self):
-        peqs = [Peq(40, 3, 0.7, "low-shelf"), Peq(500, -2.5, 1.2),
-                *(Peq(1000 * n, 0, 1) for n in range(1, 6)),
-                Peq(9000, 1, 0.8, "high-shelf"), Peq(20000, 0, 0.71, "low-pass")]
+        peqs = [
+            Peq(40, 3, 0.7, "low-shelf"),
+            Peq(500, -2.5, 1.2),
+            *(Peq(1000 * n, 0, 1) for n in range(1, 6)),
+            Peq(9000, 1, 0.8, "high-shelf"),
+            Peq(20000, 0, 0.71, "low-pass"),
+        ]
         text = tmreq.write([Correction("L", -1.5, 0.25, peqs=peqs), Correction("R")])
         self.assertIn('<val e="REQ Band1Type" v="1.00,"/>', text)
         self.assertIn('<val e="REQ Band9 Type" v="2.00,"/>', text)
@@ -269,15 +354,23 @@ class TmreqWriterTests(unittest.TestCase):
         self.assertEqual(left.peqs, peqs)
         self.assertEqual(right.response(FREQUENCIES), [0.0] * len(FREQUENCIES))
         stored = FILES["tmreq"][0]
-        self.assertEqual(tmreq.write(tmreq.load(stored).corrections), stored.read_text())
+        self.assertEqual(
+            tmreq.write(tmreq.load(stored).corrections), stored.read_text()
+        )
 
     def test_rejected(self):
-        for c, message in ((Correction("L", peqs=[Peq(1000, 1, 1)] * 10), "10 filters"),
-                           (Correction("L", peqs=[Peq(1000, 1, 1), Peq(50, 1, 1, "low-shelf")]),
-                            "band 2 cannot be a low-shelf"),
-                           (Correction("L", peqs=[Peq(50, 1, 1, "high-shelf")]),
-                            "band 1 cannot be a high-shelf"),
-                           (Correction("L", points=[(100, 1)]), "parametric filters only")):
+        for c, message in (
+            (Correction("L", peqs=[Peq(1000, 1, 1)] * 10), "10 filters"),
+            (
+                Correction("L", peqs=[Peq(1000, 1, 1), Peq(50, 1, 1, "low-shelf")]),
+                "band 2 cannot be a low-shelf",
+            ),
+            (
+                Correction("L", peqs=[Peq(50, 1, 1, "high-shelf")]),
+                "band 1 cannot be a high-shelf",
+            ),
+            (Correction("L", points=[(100, 1)]), "parametric filters only"),
+        ):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 tmreq.write([c])
 
@@ -285,8 +378,10 @@ class TmreqWriterTests(unittest.TestCase):
         grid = [f for f in standard_grid() if f <= 20000]
         for side in ("Left", "Right"):
             with self.subTest(side):
-                target = [dsp.cascade_db(common.bells(side), f, dsp.PEQ_SAMPLE_RATE) - 2
-                          for f in grid]
+                target = [
+                    dsp.cascade_db(common.bells(side), f, dsp.PEQ_SAMPLE_RATE) - 2
+                    for f in grid
+                ]
                 fit = dsp.fit_bells(grid, target, 9)
                 self.assertLess(fit.max_db, 0.01)
                 self.assertAlmostEqual(fit.gain_db, -2, places=3)
@@ -296,8 +391,13 @@ class TmreqWriterTests(unittest.TestCase):
 
     def test_fit_bounds(self):
         grid = [f for f in standard_grid() if f <= 20000]
-        fit = dsp.fit_bells(grid, [30.0 if 900 < f < 1100 else 0.0 for f in grid], 2,
-                            gain_db=(-6, 6), q=(1, 2))
+        fit = dsp.fit_bells(
+            grid,
+            [30.0 if 900 < f < 1100 else 0.0 for f in grid],
+            2,
+            gain_db=(-6, 6),
+            q=(1, 2),
+        )
         self.assertTrue(all(-6 <= g <= 6 and 1 <= q <= 2 for _, g, q in fit.bells))
         self.assertTrue(-6 <= fit.gain_db <= 6)
         self.assertEqual(dsp.fit_bells(grid, [0.0] * len(grid), 9).bells, [])
@@ -307,13 +407,17 @@ class TmreqWriterTests(unittest.TestCase):
         result = AutoeqToTmreq().convert([csv])
         self.assertEqual(result.name, "Bass and treble.tmreq")
         left, right = tmreq.read(result.data.decode()).corrections
-        self.assertEqual((left.channel, right.channel, left.peqs), ("L", "R", right.peqs))
+        self.assertEqual(
+            (left.channel, right.channel, left.peqs), ("L", "R", right.peqs)
+        )
         self.assertEqual(len(left.peqs), 9)
         points = [(f, v) for f, v in response.load(csv).curve() if 20 <= f <= 20000]
         for (f, v), got in zip(points, left.response([f for f, _ in points])):
             self.assertAlmostEqual(got, v, delta=0.3)
         tilt = ROOT / common.CSV_DIR / "Tilt - Flat Right.csv"
-        left, right = tmreq.read(AutoeqToTmreq().convert([csv, tilt]).data.decode()).corrections
+        left, right = tmreq.read(
+            AutoeqToTmreq().convert([csv, tilt]).data.decode()
+        ).corrections
         self.assertNotEqual(left.peqs, right.peqs)
 
 

@@ -28,10 +28,24 @@ from . import pak
 # Speaker positions: the n of ``Speaker_<n>``, named as ARC X's
 # ``OutputChannel<name>Index`` settings.
 POSITIONS = {
-    0: "Left", 1: "Right", 2: "Subwoofer", 3: "LeftRearSurround", 4: "RightRearSurround",
-    5: "Center", 6: "LeftSideSurround", 7: "RightSideSurround", 8: "LeftTopFront",
-    9: "RightTopFront", 10: "LeftTopBack", 11: "RightTopBack", 12: "LeftRear", 13: "RightRear",
-    14: "LeftTopMiddle", 15: "RightTopMiddle", 16: "LeftWide", 17: "RightWide",
+    0: "Left",
+    1: "Right",
+    2: "Subwoofer",
+    3: "LeftRearSurround",
+    4: "RightRearSurround",
+    5: "Center",
+    6: "LeftSideSurround",
+    7: "RightSideSurround",
+    8: "LeftTopFront",
+    9: "RightTopFront",
+    10: "LeftTopBack",
+    11: "RightTopBack",
+    12: "LeftRear",
+    13: "RightRear",
+    14: "LeftTopMiddle",
+    15: "RightTopMiddle",
+    16: "LeftWide",
+    17: "RightWide",
 }
 # Session ``Layout`` id -> (name, speaker positions in channel order).
 LAYOUTS = {
@@ -61,37 +75,62 @@ NULL_GUID = "00000000-0000-0000-0000-000000000000"
 DEVICE = "183|000000000|1.0.0|1.0.0|0"
 # The device state of a speaker: flat, no tuning filter.
 SETTINGS = (
-    [("HpfFrequency", "20.0"), ("DelayMs", "0.0"), ("GainDb", "0.0"), ("DelayEnable", "1"),
-     ("GainEnable", "1"), ("CalEnable", "1"), ("PhaseInvert", "0"), ("PhaseInvertEnable", "1"),
-     ("FilterLowType", "0"), ("FilterHighType", "0"), ("VoiceIndex", "0"), ("FilterEnable", "0"),
-     ("VoiceEnable", "0"), ("DimAttenuationDb", "0.0"), ("ActivePreset", "0"),
-     ("FilterLowFrequency", "100.0"), ("FilterLowGainDb", "0.0"), ("FilterLowQ", "0.7")]
-    + [(f"PeakFilters{n}{k}", v) for n in range(4)
-       for k, v in (("Frequency", "1000.0"), ("GainDb", "0.0"), ("Q", "1.0"))]
-    + [("FilterHighFrequency", "10000.0"), ("FilterHighGainDb", "0.0"), ("FilterHighQ", "0.7")]
+    [
+        ("HpfFrequency", "20.0"),
+        ("DelayMs", "0.0"),
+        ("GainDb", "0.0"),
+        ("DelayEnable", "1"),
+        ("GainEnable", "1"),
+        ("CalEnable", "1"),
+        ("PhaseInvert", "0"),
+        ("PhaseInvertEnable", "1"),
+        ("FilterLowType", "0"),
+        ("FilterHighType", "0"),
+        ("VoiceIndex", "0"),
+        ("FilterEnable", "0"),
+        ("VoiceEnable", "0"),
+        ("DimAttenuationDb", "0.0"),
+        ("ActivePreset", "0"),
+        ("FilterLowFrequency", "100.0"),
+        ("FilterLowGainDb", "0.0"),
+        ("FilterLowQ", "0.7"),
+    ]
+    + [
+        (f"PeakFilters{n}{k}", v)
+        for n in range(4)
+        for k, v in (("Frequency", "1000.0"), ("GainDb", "0.0"), ("Q", "1.0"))
+    ]
+    + [
+        ("FilterHighFrequency", "10000.0"),
+        ("FilterHighGainDb", "0.0"),
+        ("FilterHighQ", "0.7"),
+    ]
 )
 
-POINT_OPTION = Option("--point", type=int,
-                      help="measurement point, from 0 as in the file names "
-                           "(default: the power average of all points)")
+POINT_OPTION = Option(
+    "--point",
+    type=int,
+    help="measurement point, from 0 as in the file names "
+    "(default: the power average of all points)",
+)
 
 
 @dataclass
 class Point:
-    ir: list[float]                         # impulse response
-    cc: list[float]                         # cross correlation
+    ir: list[float]  # impulse response
+    cc: list[float]  # cross correlation
 
 
 @dataclass
 class ArcX:
     pak_version: int
-    sizes: dict[str, int]                   # pak entry name -> size
-    info: ET.Element                        # SerializedMeasure
-    session: ET.Element | None              # Session; None in an analysis file
+    sizes: dict[str, int]  # pak entry name -> size
+    info: ET.Element  # SerializedMeasure
+    session: ET.Element | None  # Session; None in an analysis file
     sample_rate: float
-    channels: list[list[Point]]             # [channel][point]
-    speakers: list[str]                     # name of each channel
-    layout: int | None                      # layout id; None if not known
+    channels: list[list[Point]]  # [channel][point]
+    speakers: list[str]  # name of each channel
+    layout: int | None  # layout id; None if not known
     info_text: str
     session_text: str = ""
 
@@ -99,7 +138,9 @@ class ArcX:
         """Index of the channel named ``speaker`` (case-insensitive)."""
         names = [s.lower() for s in self.speakers]
         if speaker.lower() not in names:
-            raise ValueError(f"no {speaker} speaker; available: {', '.join(self.speakers)}")
+            raise ValueError(
+                f"no {speaker} speaker; available: {', '.join(self.speakers)}"
+            )
         return names.index(speaker.lower())
 
 
@@ -126,15 +167,30 @@ def read(data: bytes) -> ArcX:
     for c in range(MAX_CHANNELS):
         if not entries.get(_wav_name(c, 0, "ir")):
             break
-        channels.append([Point(_samples(entries, c, p, "ir", sample_rate),
-                               _samples(entries, c, p, "cc", sample_rate))
-                         for p in range(points)])
+        channels.append(
+            [
+                Point(
+                    _samples(entries, c, p, "ir", sample_rate),
+                    _samples(entries, c, p, "cc", sample_rate),
+                )
+                for p in range(points)
+            ]
+        )
     if not channels:
         raise ValueError("ARC X analysis has no channels (no ch0/ch0p0_ir.wav)")
     layout = layout_id(session, info, len(channels))
-    return ArcX(version, {k: len(v) for k, v in entries.items()}, info, session, sample_rate,
-                channels, speaker_names(session, info, len(channels)), layout, info_text,
-                session_text)
+    return ArcX(
+        version,
+        {k: len(v) for k, v in entries.items()},
+        info,
+        session,
+        sample_rate,
+        channels,
+        speaker_names(session, info, len(channels)),
+        layout,
+        info_text,
+        session_text,
+    )
 
 
 def load(path) -> ArcX:
@@ -151,8 +207,9 @@ def layout_id(session: ET.Element | None, info: ET.Element, count: int) -> int |
         layout = int(session.get("Layout"))
         layout = layout if layout in LAYOUTS else None
     if layout is None:
-        layout = next((i for i, (name, _) in LAYOUTS.items() if name == info.get("Layout")),
-                      None)
+        layout = next(
+            (i for i, (name, _) in LAYOUTS.items() if name == info.get("Layout")), None
+        )
     if layout is None and count == 2:
         layout = 1
     if layout is None or len(LAYOUTS[layout][1]) != count:
@@ -160,7 +217,9 @@ def layout_id(session: ET.Element | None, info: ET.Element, count: int) -> int |
     return layout
 
 
-def speaker_names(session: ET.Element | None, info: ET.Element, count: int) -> list[str]:
+def speaker_names(
+    session: ET.Element | None, info: ET.Element, count: int
+) -> list[str]:
     """Channel names by ``layout_id``; ``Channel <c>`` if the layout is not known."""
     layout = layout_id(session, info, count)
     if layout is None:
@@ -172,8 +231,9 @@ def _wav_name(channel: int, point: int, kind: str) -> str:
     return f"ch{channel}/ch{channel}p{point}_{kind}.wav"
 
 
-def _samples(entries: dict[str, bytes], channel: int, point: int, kind: str,
-             sample_rate: float) -> list[float]:
+def _samples(
+    entries: dict[str, bytes], channel: int, point: int, kind: str, sample_rate: float
+) -> list[float]:
     name = _wav_name(channel, point, kind)
     if name not in entries:
         raise ValueError(f"ARC X analysis has no {name}")
@@ -204,7 +264,9 @@ def number_attribute(element: ET.Element, key: str, where: str) -> float:
     try:
         return float(element.get(key, ""))
     except ValueError:
-        raise ValueError(f"{where}: {key} {element.get(key)!r} is not a number") from None
+        raise ValueError(
+            f"{where}: {key} {element.get(key)!r} is not a number"
+        ) from None
 
 
 # --------------------------------------------------------------------------
@@ -221,42 +283,86 @@ def value_tree(tag: str, attributes, children=(), indent: str = "") -> list[str]
 
 
 def juce_xml(lines: list[str]) -> bytes:
-    return ('<?xml version="1.0" encoding="UTF-8"?>\n\n' + "\n".join(lines) + "\n").encode()
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n\n' + "\n".join(lines) + "\n"
+    ).encode()
 
 
-def write(sample_rate: float, channels: list[list[Point]], layout: int,
-          session: bool = True, mic_type: str = "MEMS") -> bytes:
+def write(
+    sample_rate: float,
+    channels: list[list[Point]],
+    layout: int,
+    session: bool = True,
+    mic_type: str = "MEMS",
+) -> bytes:
     """A session (``session``) or an analysis; ``channels`` in the layout's speaker order."""
     if layout not in LAYOUTS:
         raise ValueError(f"unknown ARC X layout {layout}")
     name, positions = LAYOUTS[layout]
     if len(channels) != len(positions):
-        raise ValueError(f"layout {name} has {len(positions)} speakers, got {len(channels)} "
-                         "channels")
+        raise ValueError(
+            f"layout {name} has {len(positions)} speakers, got {len(channels)} channels"
+        )
     points = len(channels[0])
     if not points or any(len(c) != points for c in channels):
         raise ValueError("every channel needs the same number of points, at least one")
-    entries = {INFO: juce_xml(value_tree("SerializedMeasure", [
-        ("Version", INFO_VERSION), ("SampleRate", f"{sample_rate:.1f}"),
-        ("SelectedMicType", mic_type), ("CorrectionSpeaker", NULL_GUID),
-        ("NumMeasurementPoints", points), ("Layout", name), ("ListeningArea", "Project Studio"),
-        ("FastMode", "0"), ("Countdown", "5")]))}
+    entries = {
+        INFO: juce_xml(
+            value_tree(
+                "SerializedMeasure",
+                [
+                    ("Version", INFO_VERSION),
+                    ("SampleRate", f"{sample_rate:.1f}"),
+                    ("SelectedMicType", mic_type),
+                    ("CorrectionSpeaker", NULL_GUID),
+                    ("NumMeasurementPoints", points),
+                    ("Layout", name),
+                    ("ListeningArea", "Project Studio"),
+                    ("FastMode", "0"),
+                    ("Countdown", "5"),
+                ],
+            )
+        )
+    }
     for c, channel in enumerate(channels):
         for p, point in enumerate(channel):
             entries[_wav_name(c, p, "ir")] = fir.write(fir.Fir(sample_rate, [point.ir]))
             entries[_wav_name(c, p, "cc")] = fir.write(fir.Fir(sample_rate, [point.cc]))
     if session:
-        entries[SESSION] = juce_xml(value_tree("Session", [
-            ("Version", 1), ("AppVersion", APP_VERSION), ("GUID", NULL_GUID),
-            ("Layout", layout), ("CorrectionType", 1), ("CorrectionPhase", 1),
-            ("MasterRemoteSpeakerIndex", -1), ("BassManaged", 0), ("TargetRequest", 0),
-            ("Notes", ""), ("AudioDeviceName", ""), ("AudioDeviceSampleRate", round(sample_rate)),
-            ("AudioDeviceBufferSize", 512)], [
-            (f"Speaker_{position}", [
-                ("Device", DEVICE), ("CalRangeLow", 20), ("CalRangeHigh", 20000),
-                ("CorrectionAssetGUID", NULL_GUID), ("OutputChannelIndex", c)],
-             [("Settings", SETTINGS)])
-            for c, position in enumerate(positions)]))
+        entries[SESSION] = juce_xml(
+            value_tree(
+                "Session",
+                [
+                    ("Version", 1),
+                    ("AppVersion", APP_VERSION),
+                    ("GUID", NULL_GUID),
+                    ("Layout", layout),
+                    ("CorrectionType", 1),
+                    ("CorrectionPhase", 1),
+                    ("MasterRemoteSpeakerIndex", -1),
+                    ("BassManaged", 0),
+                    ("TargetRequest", 0),
+                    ("Notes", ""),
+                    ("AudioDeviceName", ""),
+                    ("AudioDeviceSampleRate", round(sample_rate)),
+                    ("AudioDeviceBufferSize", 512),
+                ],
+                [
+                    (
+                        f"Speaker_{position}",
+                        [
+                            ("Device", DEVICE),
+                            ("CalRangeLow", 20),
+                            ("CalRangeHigh", 20000),
+                            ("CorrectionAssetGUID", NULL_GUID),
+                            ("OutputChannelIndex", c),
+                        ],
+                        [("Settings", SETTINGS)],
+                    )
+                    for c, position in enumerate(positions)
+                ],
+            )
+        )
     return pak.write(entries)
 
 
@@ -274,32 +380,51 @@ def read_wav(data: bytes, name: str = "WAV") -> tuple[float, list[float]]:
 # --------------------------------------------------------------------------
 # response
 # --------------------------------------------------------------------------
-def response(arcx: ArcX, channel: int, point: int | None = None,
-             frequencies: list[float] | None = None) -> tuple[list[float], list[float], list[float]]:
+def response(
+    arcx: ArcX,
+    channel: int,
+    point: int | None = None,
+    frequencies: list[float] | None = None,
+) -> tuple[list[float], list[float], list[float]]:
     """(frequencies, dB, group delay s) of one channel: power average of the points."""
     points = arcx.channels[channel]
     if point is not None:
         if not 0 <= point < len(points):
-            raise ValueError(f"point {point} does not exist; points: 0-{len(points) - 1}")
+            raise ValueError(
+                f"point {point} does not exist; points: 0-{len(points) - 1}"
+            )
         points = [points[point]]
     if frequencies is None:
         frequencies = impulse.log_grid(arcx.sample_rate)
-    return (frequencies, *impulse.average([p.ir for p in points], arcx.sample_rate, frequencies))
+    return (
+        frequencies,
+        *impulse.average([p.ir for p in points], arcx.sample_rate, frequencies),
+    )
 
 
-def measurement(arcx: ArcX, speaker: str, point: int | None = None,
-                name: str = "") -> Measurement:
+def measurement(
+    arcx: ArcX, speaker: str, point: int | None = None, name: str = ""
+) -> Measurement:
     c = arcx.channel(speaker)
     frequencies, db, gd = response(arcx, c, point)
     speaker = arcx.speakers[c]
-    return Measurement(speaker, c, frequencies, db, gd, sample_rate=int(arcx.sample_rate),
-                       name=f"{speaker} {name}".strip())
+    return Measurement(
+        speaker,
+        c,
+        frequencies,
+        db,
+        gd,
+        sample_rate=int(arcx.sample_rate),
+        name=f"{speaker} {name}".strip(),
+    )
 
 
 # --------------------------------------------------------------------------
 # inspection
 # --------------------------------------------------------------------------
-def _xml_sections(element: ET.Element, path: str, raw: str | None = None) -> list[Section]:
+def _xml_sections(
+    element: ET.Element, path: str, raw: str | None = None
+) -> list[Section]:
     title = path
     if element.tag.startswith("Speaker_") and element.tag[8:].isdigit():
         title += f" ({POSITIONS.get(int(element.tag[8:]), 'unknown position')})"
@@ -315,20 +440,33 @@ class ArcxInspector(Inspector):
         data = path.read_bytes()
         a = read(data)
         kind = "session" if a.session is not None else "analysis"
-        sections = [pak.file_section(path, data, a.pak_version, a.sizes, ("content", kind))]
+        sections = [
+            pak.file_section(path, data, a.pak_version, a.sizes, ("content", kind))
+        ]
         if a.session is not None:
             sections += _xml_sections(a.session, "Session", a.session_text)
         sections += _xml_sections(a.info, "SerializedMeasure", a.info_text)
         for c, (speaker, points) in enumerate(zip(a.speakers, a.channels)):
-            peaks = ", ".join(f"{impulse.peak_index(p.ir) / a.sample_rate * 1000:.2f}"
-                              for p in points)
-            sections.append(response_section(f"channel {c} {speaker}", [
-                ("points", len(points)),
-                ("IR samples", len(points[0].ir)),
-                ("peak delay ms", peaks),
-            ], lambda: response(a, c)))
+            peaks = ", ".join(
+                f"{impulse.peak_index(p.ir) / a.sample_rate * 1000:.2f}" for p in points
+            )
+            sections.append(
+                response_section(
+                    f"channel {c} {speaker}",
+                    [
+                        ("points", len(points)),
+                        ("IR samples", len(points[0].ir)),
+                        ("peak delay ms", peaks),
+                    ],
+                    lambda c=c: response(a, c),
+                )
+            )
         return sections
 
 
-FORMAT = Format("arcx", (".arcxs", ".arcxa"), "IK Multimedia ARC X session / analysis",
-                ArcxInspector)
+FORMAT = Format(
+    "arcx",
+    (".arcxs", ".arcxa"),
+    "IK Multimedia ARC X session / analysis",
+    ArcxInspector,
+)

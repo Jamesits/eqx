@@ -21,7 +21,9 @@ class AutoeqToMdat(Converter):
 
     source = "autoeq"
     target = "mdat"
-    description = "measurements (inputs: left, optional right) as a REW measurement file"
+    description = (
+        "measurements (inputs: left, optional right) as a REW measurement file"
+    )
     options = (COLUMN_OPTION, RATE_OPTION)
     inputs = 2
 
@@ -38,11 +40,22 @@ class AutoeqToMdat(Converter):
             first = max(1, math.ceil(points[0][0] / step))
             last = min(FFT_LENGTH // 2 - 1, math.floor(points[-1][0] / step))
             if last <= first:
-                raise ValueError(f"{path.name}: its range holds fewer than two REW points")
+                raise ValueError(
+                    f"{path.name}: its range holds fewer than two REW points"
+                )
             grid = [k * step for k in range(first, last + 1)]
-            measurements.append(Measurement(
-                channel, len(measurements), grid, log_resample(points, grid), [0.0] * len(grid),
-                sample_rate=self.rate, name=f"{channel[0]} {path.stem}", source_file=path.name,
-                source_format="AutoEq CSV"))
+            measurements.append(
+                Measurement(
+                    channel,
+                    len(measurements),
+                    grid,
+                    log_resample(points, grid),
+                    [0.0] * len(grid),
+                    sample_rate=self.rate,
+                    name=f"{channel[0]} {path.stem}",
+                    source_file=path.name,
+                    source_format="AutoEq CSV",
+                )
+            )
             notes.append(f"{channel}: {len(grid)} points, {grid[0]:g}-{grid[-1]:g} Hz")
         return Result(mdat.write(measurements), f"{paths[0].stem}.mdat", notes)

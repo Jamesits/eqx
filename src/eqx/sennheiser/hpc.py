@@ -34,12 +34,13 @@ PHASES = dsp.PHASES
 HEADPHONE_OPTION = Option(
     "--headphone",
     help="headphone model, case-insensitive, as listed by inspect --full, "
-         "e.g. 'Sennheiser HD 600'")
+    "e.g. 'Sennheiser HD 600'",
+)
 
 
 @dataclass
 class Filter:
-    phase: str                              # minimum, linear, or "type <n>"
+    phase: str  # minimum, linear, or "type <n>"
     sample_rate: int
     taps: int
     _data: bytes = field(repr=False)
@@ -51,8 +52,10 @@ class Filter:
 
     def channels(self) -> list[list[float]]:
         """One impulse response per channel."""
-        return [list(struct.unpack_from(f"<{self.taps}f", self._data, p))
-                for p in self._positions]
+        return [
+            list(struct.unpack_from(f"<{self.taps}f", self._data, p))
+            for p in self._positions
+        ]
 
 
 @dataclass
@@ -64,7 +67,9 @@ class Headphone:
     @property
     def phases(self) -> list[str]:
         known = {p: i for i, p in enumerate(PHASES)}
-        return sorted({f.phase for f in self.filters}, key=lambda p: (known.get(p, len(known)), p))
+        return sorted(
+            {f.phase for f in self.filters}, key=lambda p: (known.get(p, len(known)), p)
+        )
 
     @property
     def rates(self) -> list[int]:
@@ -75,10 +80,14 @@ class Headphone:
             if f.phase == phase and f.sample_rate == rate:
                 return f
         if phase not in self.phases:
-            raise ValueError(f"{self.name}: no {phase} phase filter; "
-                             f"available: {', '.join(self.phases)}")
-        raise ValueError(f"{self.name}: no {phase} phase filter at {rate:g} Hz; available: "
-                         f"{', '.join(str(r) for r in self.rates)}")
+            raise ValueError(
+                f"{self.name}: no {phase} phase filter; "
+                f"available: {', '.join(self.phases)}"
+            )
+        raise ValueError(
+            f"{self.name}: no {phase} phase filter at {rate:g} Hz; available: "
+            f"{', '.join(str(r) for r in self.rates)}"
+        )
 
 
 @dataclass
@@ -125,7 +134,9 @@ class _Buffer:
         """Absolute position of each field of ``table``; 0 when absent."""
         vtable = table - self._unpack("<i", table)
         size = self._unpack("<H", vtable)
-        offsets = [self._unpack("<H", vtable + 4 + 2 * i) for i in range(max(0, size - 4) // 2)]
+        offsets = [
+            self._unpack("<H", vtable + 4 + 2 * i) for i in range(max(0, size - 4) // 2)
+        ]
         return [table + o if o else 0 for o in offsets]
 
     def field(self, table: int, index: int) -> int:
@@ -148,13 +159,15 @@ class _Buffer:
 
     def string(self, pos: int) -> str:
         start, count = self.vector(pos, 1)
-        return self.data[start:start + count].decode("utf-8", errors="replace")
+        return self.data[start : start + count].decode("utf-8", errors="replace")
 
 
 def read(data: bytes, name: str = "hpc.dat") -> Library:
     if len(data) < 8 or data[4:8] != IDENTIFIER:
-        raise ValueError(f"{name} is not a dearVR headphone compensation file "
-                         f"(no {IDENTIFIER.decode()} identifier)")
+        raise ValueError(
+            f"{name} is not a dearVR headphone compensation file "
+            f"(no {IDENTIFIER.decode()} identifier)"
+        )
     b = _Buffer(data, name)
     root = b.target(0)
     version = b.field(root, 0)
@@ -175,10 +188,18 @@ def read(data: bytes, name: str = "hpc.dat") -> Library:
                     taps.add(count)
                 if len(taps) > 1:
                     raise ValueError(f"{name}: channels of different lengths")
-                filters.append(Filter(phase, b.u32(rate) if rate else 0,
-                                      taps.pop() if taps else 0, data, positions))
-        headphones.append(Headphone(b.u32(hid) if hid else 0, b.string(b.field(h, 1)),
-                                    filters))
+                filters.append(
+                    Filter(
+                        phase,
+                        b.u32(rate) if rate else 0,
+                        taps.pop() if taps else 0,
+                        data,
+                        positions,
+                    )
+                )
+        headphones.append(
+            Headphone(b.u32(hid) if hid else 0, b.string(b.field(h, 1)), filters)
+        )
     return Library(b.u32(version) if version else 0, headphones)
 
 
@@ -208,8 +229,10 @@ def _rates(rates: list[int]) -> str:
 
 
 class HpcInspector(Inspector):
-    options = (HEADPHONE_OPTION, Option("--rate", type=float,
-                                        help="sample rate, Hz (default: 48000)"))
+    options = (
+        HEADPHONE_OPTION,
+        Option("--rate", type=float, help="sample rate, Hz (default: 48000)"),
+    )
 
     def __init__(self, headphone: str | None = None, rate: float = 48000.0):
         self.headphone, self.rate = headphone, rate
@@ -218,13 +241,23 @@ class HpcInspector(Inspector):
         path = Path(path)
         data = path.read_bytes()
         library = read(data, path.name)
-        rows = [(f"{h.id:08x}", h.name, ", ".join(h.phases), _rates(h.rates))
-                for h in sorted(library.headphones, key=lambda h: h.name.lower())]
+        rows = [
+            (f"{h.id:08x}", h.name, ", ".join(h.phases), _rates(h.rates))
+            for h in sorted(library.headphones, key=lambda h: h.name.lower())
+        ]
         sections = [
             file_section(path, data),
-            Section("library", [("identifier", IDENTIFIER.decode()), ("version", library.version),
-                                ("headphones", len(library.headphones))]),
-            Section("headphones", [], Table(["id", "name", "phases", "sample rates"], rows)),
+            Section(
+                "library",
+                [
+                    ("identifier", IDENTIFIER.decode()),
+                    ("version", library.version),
+                    ("headphones", len(library.headphones)),
+                ],
+            ),
+            Section(
+                "headphones", [], Table(["id", "name", "phases", "sample rates"], rows)
+            ),
         ]
         if self.headphone is not None:
             sections.append(self._headphone(library.headphone(self.headphone)))
@@ -233,28 +266,50 @@ class HpcInspector(Inspector):
     def _headphone(self, h: Headphone) -> Section:
         fields: list = [("id", f"{h.id:08x}"), ("name", h.name)]
         for phase in h.phases:
-            for f in sorted((f for f in h.filters if f.phase == phase),
-                            key=lambda f: f.sample_rate):
-                fields.append((f"{phase} {f.sample_rate} Hz",
-                               f"{f.taps} taps, {f.channel_count} channel(s), peak sample "
-                               f"{peak(f)} ({1000 * peak(f) / f.sample_rate:.2f} ms)"))
+            for f in sorted(
+                (f for f in h.filters if f.phase == phase), key=lambda f: f.sample_rate
+            ):
+                fields.append(
+                    (
+                        f"{phase} {f.sample_rate} Hz",
+                        (
+                            f"{f.taps} taps, {f.channel_count} channel(s), peak sample "
+                            f"{peak(f)} ({1000 * peak(f) / f.sample_rate:.2f} ms)"
+                        ),
+                    )
+                )
         columns, gains = ["frequency Hz"], []
         frequencies = fir.grid(self.rate)
         for phase in h.phases:
             f = h.filter(phase, self.rate)
             columns.append(f"{phase} dB")
             gains.append([g for _, g in fir.response(as_fir(f), 0, frequencies)])
-        band = [g for gain in gains for fr, g in zip(frequencies, gain)
-                if fir.BAND_HZ[0] <= fr <= fir.BAND_HZ[1]] or [math.nan]
-        fields += [("gain at", f"{self.rate:g} Hz, first channel"),
-                   ("gain min dB", min(band)), ("gain max dB", max(band))]
-        return Section(f"headphone {h.name}", fields,
-                       Table(columns, [tuple(row) for row in zip(frequencies, *gains)]))
+        band = [
+            g
+            for gain in gains
+            for fr, g in zip(frequencies, gain)
+            if fir.BAND_HZ[0] <= fr <= fir.BAND_HZ[1]
+        ] or [math.nan]
+        fields += [
+            ("gain at", f"{self.rate:g} Hz, first channel"),
+            ("gain min dB", min(band)),
+            ("gain max dB", max(band)),
+        ]
+        return Section(
+            f"headphone {h.name}",
+            fields,
+            Table(columns, [tuple(row) for row in zip(frequencies, *gains)]),
+        )
 
 
 def _sniff(data: bytes) -> bool:
     return data[4:8] == IDENTIFIER
 
 
-FORMAT = Format("dearvr-hpc", (".dat",),
-                "dearVR MIX headphone compensation filters (hpc.dat)", HpcInspector, _sniff)
+FORMAT = Format(
+    "dearvr-hpc",
+    (".dat",),
+    "dearVR MIX headphone compensation filters (hpc.dat)",
+    HpcInspector,
+    _sniff,
+)

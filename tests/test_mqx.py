@@ -7,6 +7,7 @@ from pathlib import Path
 
 from helpers import assert_filters
 from testgen import audyssey, common, rew, soundid
+
 from eqx import impulse
 from eqx.audyssey import mqx
 from eqx.autoeq import response
@@ -29,16 +30,25 @@ def _json(path=PROJECT) -> dict:
 class ReaderTests(unittest.TestCase):
     def test_project(self):
         m = mqx.load(PROJECT)
-        self.assertEqual([c.designation for c in m.channels], ["FL", "FR", "C", "SLA", "SRA",
-                                                               "SW1"])
+        self.assertEqual(
+            [c.designation for c in m.channels], ["FL", "FR", "C", "SLA", "SRA", "SW1"]
+        )
         self.assertEqual(m.channels[2].name, "Center")
         self.assertEqual((len(m.positions), len(m.recordings), m.trailing), (3, 18, 0))
         self.assertEqual({len(r.ir) for r in m.recordings}, {mqx.IR_LENGTH})
-        disabled = [(m.designation(r.channel), m.positions.index(r.position))
-                    for r in m.recordings if not r.enabled]
+        disabled = [
+            (m.designation(r.channel), m.positions.index(r.position))
+            for r in m.recordings
+            if not r.enabled
+        ]
         self.assertEqual(disabled, [audyssey.MQX_DISABLED])
-        for name, index in (("FL", 0), ("front right", 1), ("Left", 0), ("RIGHT", 1),
-                            ("Subwoofer 1", 5)):
+        for name, index in (
+            ("FL", 0),
+            ("front right", 1),
+            ("Left", 0),
+            ("RIGHT", 1),
+            ("Subwoofer 1", 5),
+        ):
             self.assertEqual(m.channel(name), index)
         with self.assertRaisesRegex(ValueError, "no SBL speaker; available: FL, FR, C"):
             m.channel("SBL")
@@ -48,19 +58,29 @@ class ReaderTests(unittest.TestCase):
         for r in m.recordings:
             designation = m.designation(r.channel)
             if designation != "SW1":
-                self.assertAlmostEqual(mqx.delay_ms(r),
-                                       audyssey.MQX_FLIGHT[designation] / 48, places=9)
+                self.assertAlmostEqual(
+                    mqx.delay_ms(r), audyssey.MQX_FLIGHT[designation] / 48, places=9
+                )
 
     def test_targets(self):
         targets = mqx.load(PROJECT).targets
-        self.assertEqual([t.kind for t in targets], ["base", "modifier", "biquad", "tilt",
-                                                     "custom"])
-        self.assertEqual([t.describe() for t in targets], [
-            "Theater High Frequency Rolloff 1", "Midrange Compensation",
-            "2nd order Low Shelf w/ Q 60 Hz, 3 dB, Q 0.7", "tilt -0.5 dB/octave at 1000 Hz",
-            "custom curve, 4 points"])
+        self.assertEqual(
+            [t.kind for t in targets], ["base", "modifier", "biquad", "tilt", "custom"]
+        )
+        self.assertEqual(
+            [t.describe() for t in targets],
+            [
+                "Theater High Frequency Rolloff 1",
+                "Midrange Compensation",
+                "2nd order Low Shelf w/ Q 60 Hz, 3 dB, Q 0.7",
+                "tilt -0.5 dB/octave at 1000 Hz",
+                "custom curve, 4 points",
+            ],
+        )
         self.assertEqual((targets[0].reference, targets[0].flat), (True, False))
-        self.assertEqual(targets[2].channels, [mqx.channel_guid("FL"), mqx.channel_guid("FR")])
+        self.assertEqual(
+            targets[2].channels, [mqx.channel_guid("FL"), mqx.channel_guid("FR")]
+        )
         self.assertEqual(targets[3].excluded, [mqx.channel_guid("SW1")])
         points = targets[4].points()
         self.assertEqual(points[1], (1000.0, 0.0))
@@ -90,21 +110,33 @@ class ReaderTests(unittest.TestCase):
         odd["_measurements"][0]["Data"] = base64.b64encode(b"\0" * 6).decode()
         item = json.loads(json.dumps(data))
         item["TargetCurveSet"][0]["_itemString"] = "x"
-        for bad, message in ((b"\xff\xfe", "not UTF-8"),
-                             (b"[1]", "no _measurements or _channelDataMap"),
-                             (b'{"_measurements": [', "not a MultEQ-X project"),
-                             (json.dumps(bad_data).encode(), "Data is not base64"),
-                             (json.dumps(odd).encode(), "6 bytes of Data"),
-                             (json.dumps(item).encode(), "cannot parse _itemString 'x'")):
+        for bad, message in (
+            (b"\xff\xfe", "not UTF-8"),
+            (b"[1]", "no _measurements or _channelDataMap"),
+            (b'{"_measurements": [', "not a MultEQ-X project"),
+            (json.dumps(bad_data).encode(), "Data is not base64"),
+            (json.dumps(odd).encode(), "6 bytes of Data"),
+            (json.dumps(item).encode(), "cannot parse _itemString 'x'"),
+        ):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 mqx.read(bad)
 
 
 class ResponseTests(unittest.TestCase):
-    def assert_analytic(self, m, designation, gains, low, high, position=None, delta=0.1):
-        assert_filters(self, mqx.response(m, m.channel(designation), position),
-                       audyssey.mqx_filters(designation), mqx.SAMPLE_RATE, gains, low, high,
-                       delta, designation)
+    def assert_analytic(
+        self, m, designation, gains, low, high, position=None, delta=0.1
+    ):
+        assert_filters(
+            self,
+            mqx.response(m, m.channel(designation), position),
+            audyssey.mqx_filters(designation),
+            mqx.SAMPLE_RATE,
+            gains,
+            low,
+            high,
+            delta,
+            designation,
+        )
 
     def test_generated(self):
         m = mqx.load(PROJECT)
@@ -120,12 +152,17 @@ class ResponseTests(unittest.TestCase):
 
     def test_positions(self):
         m = mqx.load(PROJECT)
-        with self.assertRaisesRegex(ValueError, "position 3 does not exist; positions: 0-2"):
+        with self.assertRaisesRegex(
+            ValueError, "position 3 does not exist; positions: 0-2"
+        ):
             mqx.response(m, 0, 3)
         data = _json()
-        data["_measurements"] = [x for x in data["_measurements"]
-                                 if x["ChannelGuid"] != mqx.channel_guid("FR")
-                                 or x["PositionGuid"] == mqx.guid("position", "0")]
+        data["_measurements"] = [
+            x
+            for x in data["_measurements"]
+            if x["ChannelGuid"] != mqx.channel_guid("FR")
+            or x["PositionGuid"] == mqx.guid("position", "0")
+        ]
         for x in data["_measurements"]:
             x["Enabled"] = x["ChannelGuid"] != mqx.channel_guid("FR")
         m = mqx.read(json.dumps(data).encode())
@@ -137,27 +174,61 @@ class ResponseTests(unittest.TestCase):
 
 class SwprojTests(unittest.TestCase):
     def test_surround(self):
-        target, measurements = to_swproj.MqxToSwproj(mic_profile=MIC).measurements(PROJECT)
+        target, measurements = to_swproj.MqxToSwproj(mic_profile=MIC).measurements(
+            PROJECT
+        )
         self.assertEqual(target.name, "5.1")
-        self.assertEqual([(m.index, m.channel) for m in measurements],
-                         list(enumerate(["Left", "Right", "Center", "Low freq. effects",
-                                         "Left Surround", "Right Surround"])))
+        self.assertEqual(
+            [(m.index, m.channel) for m in measurements],
+            list(
+                enumerate(
+                    [
+                        "Left",
+                        "Right",
+                        "Center",
+                        "Low freq. effects",
+                        "Left Surround",
+                        "Right Surround",
+                    ]
+                )
+            ),
+        )
         self.assertEqual(measurements[3].name, "SW1 Mqx 5.1")
 
     def test_layouts(self):
         self.assertEqual(to_swproj.mqx_layout(["FL", "FR"]).name, "2.0 (Stereo)")
-        self.assertEqual(to_swproj.mqx_layout(
-            ["FL", "C", "FR", "SW1", "SLA", "SRA", "SBL", "SBR", "FHL", "FHR", "RHL", "RHR"]).name,
-            "7.1.4")
-        for designations, message in ((["FL", "FR", "CH"], "no SoundID channel for CH"),
-                                      (["FL", "FR", "FHL", "TFL"], "same SoundID channel twice"),
-                                      (["FL", "FR", "SB"], "no SoundID layout")):
+        self.assertEqual(
+            to_swproj.mqx_layout(
+                [
+                    "FL",
+                    "C",
+                    "FR",
+                    "SW1",
+                    "SLA",
+                    "SRA",
+                    "SBL",
+                    "SBR",
+                    "FHL",
+                    "FHR",
+                    "RHL",
+                    "RHR",
+                ]
+            ).name,
+            "7.1.4",
+        )
+        for designations, message in (
+            (["FL", "FR", "CH"], "no SoundID channel for CH"),
+            (["FL", "FR", "FHL", "TFL"], "same SoundID channel twice"),
+            (["FL", "FR", "SB"], "no SoundID layout"),
+        ):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 to_swproj.mqx_layout(designations)
 
     def test_disabled_channel(self):
         data = _json()
-        data["_channelDataMap"][mqx.channel_guid("SW1")]["Calibration"]["IsEnabled"] = False
+        data["_channelDataMap"][mqx.channel_guid("SW1")]["Calibration"]["IsEnabled"] = (
+            False
+        )
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "x.mqx"
             path.write_bytes(json.dumps(data).encode())
@@ -168,29 +239,41 @@ class SwprojTests(unittest.TestCase):
 class WriterTests(unittest.TestCase):
     def test_round_trip(self):
         m = mqx.load(PROJECT)
-        channels = [(c.designation, [r.ir for r in m.recordings if r.channel == c.guid])
-                    for c in m.channels]
+        channels = [
+            (c.designation, [r.ir for r in m.recordings if r.channel == c.guid])
+            for c in m.channels
+        ]
         data = mqx.write(channels[::-1], m.targets)
         self.assertIn(b"\r\n", data)
         self.assertNotIn(b"\n", data.replace(b"\r\n", b""))
         b = mqx.read(data)
-        self.assertEqual([c.designation for c in b.channels], [c.designation for c in m.channels])
-        self.assertEqual([(r.channel, r.position, r.ir) for r in b.recordings],
-                         [(r.channel, r.position, r.ir) for r in m.recordings])
+        self.assertEqual(
+            [c.designation for c in b.channels], [c.designation for c in m.channels]
+        )
+        self.assertEqual(
+            [(r.channel, r.position, r.ir) for r in b.recordings],
+            [(r.channel, r.position, r.ir) for r in m.recordings],
+        )
         self.assertEqual(b.targets, m.targets)
         sw1 = b.channels[5].data
-        self.assertEqual((sw1["Calibration"]["SpeakerSize"], sw1["TargetCurveCutoff"]["Mode"]),
-                         ("Subwoofer", "Disabled"))
+        self.assertEqual(
+            (sw1["Calibration"]["SpeakerSize"], sw1["TargetCurveCutoff"]["Mode"]),
+            ("Subwoofer", "Disabled"),
+        )
         self.assertEqual(b.channels[0].data["Calibration"]["SpeakerSize"], "Small")
-        self.assertAlmostEqual(b.channels[0].data["Calibration"]["DistanceMilliseconds"], 8.75)
+        self.assertAlmostEqual(
+            b.channels[0].data["Calibration"]["DistanceMilliseconds"], 8.75
+        )
 
     def test_rejected(self):
         ir = [0.0] * mqx.IR_LENGTH
-        for channels, message in (([("FL", [ir]), ("FR", [ir]), ("SBL", [ir])], "of: FL, FR"),
-                                  ([("FL", [ir]), ("FL", [ir])], "distinct"),
-                                  ([("FL", [ir]), ("C", [ir])], "needs the FL and FR"),
-                                  ([("FL", [ir]), ("FR", [ir, ir])], "same number of positions"),
-                                  ([("FL", [ir]), ("FR", [ir[1:]])], "16384 samples")):
+        for channels, message in (
+            ([("FL", [ir]), ("FR", [ir]), ("SBL", [ir])], "of: FL, FR"),
+            ([("FL", [ir]), ("FL", [ir])], "distinct"),
+            ([("FL", [ir]), ("C", [ir])], "needs the FL and FR"),
+            ([("FL", [ir]), ("FR", [ir, ir])], "same number of positions"),
+            ([("FL", [ir]), ("FR", [ir[1:]])], "16384 samples"),
+        ):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 mqx.write(channels)
 
@@ -199,8 +282,9 @@ class WriterTests(unittest.TestCase):
         result = AutoeqToMqx().convert([left, right])
         self.assertEqual(result.name, "Bandpass Left.mqx")
         m = mqx.read(result.data)
-        self.assertEqual(([c.designation for c in m.channels], len(m.positions)),
-                         (["FL", "FR"], 1))
+        self.assertEqual(
+            ([c.designation for c in m.channels], len(m.positions)), (["FL", "FR"], 1)
+        )
         self.assertEqual(m.channels[0].data["Calibration"]["SpeakerSize"], "Large")
         lead = mqx.SYSTEM_DELAY + to_mqx.FLIGHT
         self.assertEqual(impulse.peak_index(m.recordings[0].ir), lead)
@@ -208,7 +292,9 @@ class WriterTests(unittest.TestCase):
         self.assertEqual(m.targets, list(mqx.DEFAULT_TARGETS))
         offsets = []
         for c, path in enumerate((left, right)):
-            points = [(f, v) for f, v in response.load(path).curve() if 30 <= f <= 16000]
+            points = [
+                (f, v) for f, v in response.load(path).curve() if 30 <= f <= 16000
+            ]
             _, db, _ = mqx.response(m, c, frequencies=[f for f, _ in points])
             offsets.append(db[0] - points[0][1])
             for (f, v), got in zip(points, db):
@@ -220,8 +306,9 @@ class WriterTests(unittest.TestCase):
         # Written with the mic response added; subtracted again, the curve remains.
         path = MQX_DIR / "Room Left.mqx"
         m = mqx.load(path)
-        plain = mqx.read(AutoeqToMqx().convert([CSV / "Room Left.csv",
-                                                CSV / "Room Right.csv"]).data)
+        plain = mqx.read(
+            AutoeqToMqx().convert([CSV / "Room Left.csv", CSV / "Room Right.csv"]).data
+        )
         frequencies = [f for f in impulse.log_grid(mqx.SAMPLE_RATE) if 30 <= f <= 16000]
         mic = mic_response_db(MIC_RESPONSE, frequencies)
         self.assertGreater(max(mic) - min(mic), 3)
@@ -237,6 +324,7 @@ class WriterTests(unittest.TestCase):
         grid, raw, _ = mqx.response(m, 0)
         for (f, v), r, g in zip(got, raw, mic_response_db(MIC_RESPONSE, grid)):
             self.assertAlmostEqual(v, r - g, delta=0.006)
+
 
 if __name__ == "__main__":
     unittest.main()

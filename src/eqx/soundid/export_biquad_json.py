@@ -17,16 +17,20 @@ from ..options import Option
 from . import export_partners
 
 ID = "soundid-export-biquad-json"
-SERIAL_OPTION = Option("--serial-number",
-                       help="MERGING device serial number (default: search every number)")
+SERIAL_OPTION = Option(
+    "--serial-number",
+    help="MERGING device serial number (default: search every number)",
+)
 
 
 def read(data: bytes, serial: str | None = None) -> Export:
     plain, encryption = export_partners.open_as(data, ID, "biquad JSON export", serial)
     try:
         root = json.loads(plain)
-        rates = {p["id"]: number(p["sample_rate"], "sample_rate")
-                 for p in root["profile_configs"]}
+        rates = {
+            p["id"]: number(p["sample_rate"], "sample_rate")
+            for p in root["profile_configs"]
+        }
         corrections = []
         for config in root["channel_config"]:
             rate = rates[config["profile_id"]]
@@ -35,18 +39,32 @@ def read(data: bytes, serial: str | None = None) -> Export:
                 biquads = []
                 for coefs in ch["coefs"]:
                     if len(coefs) != 6:
-                        raise ValueError(f"{where}: a biquad has {len(coefs)} coefficients")
+                        raise ValueError(
+                            f"{where}: a biquad has {len(coefs)} coefficients"
+                        )
                     biquads.append(Biquad(*(number(c, where) for c in coefs)))
-                gain = sum(number(ch[k], where) for k in ("balance_gain", "pre_gain", "post_gain"))
-                corrections.append(Correction(ch["type"], gain, number(ch["delay"], where),
-                                              rate, biquads))
+                gain = sum(
+                    number(ch[k], where)
+                    for k in ("balance_gain", "pre_gain", "post_gain")
+                )
+                corrections.append(
+                    Correction(
+                        ch["type"], gain, number(ch["delay"], where), rate, biquads
+                    )
+                )
     except (KeyError, TypeError, json.JSONDecodeError) as exc:
         raise ValueError(f"not a biquad JSON export: {exc!r}") from None
-    return Export(corrections,
-                  [("name", root.get("name")), ("target mode", root.get("target_mode")),
-                   ("safe headroom dB", root.get("safe_headroom")),
-                   ("sample rates", " ".join(f"{r:g}" for r in rates.values()))],
-                  encryption, plain.decode("utf-8"))
+    return Export(
+        corrections,
+        [
+            ("name", root.get("name")),
+            ("target mode", root.get("target_mode")),
+            ("safe headroom dB", root.get("safe_headroom")),
+            ("sample rates", " ".join(f"{r:g}" for r in rates.values())),
+        ],
+        encryption,
+        plain.decode("utf-8"),
+    )
 
 
 def load(path, serial_number: str | None = None) -> Export:
@@ -58,5 +76,10 @@ class BiquadJsonInspector(ExportInspector):
     options = (SERIAL_OPTION,)
 
 
-FORMAT = Format(ID, (".bin",), "SoundID export: biquad JSON (Fluid Audio, MERGING)",
-                BiquadJsonInspector, lambda data: export_partners.partner_format(data) == ID)
+FORMAT = Format(
+    ID,
+    (".bin",),
+    "SoundID export: biquad JSON (Fluid Audio, MERGING)",
+    BiquadJsonInspector,
+    lambda data: export_partners.partner_format(data) == ID,
+)

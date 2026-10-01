@@ -29,8 +29,10 @@ GRID_POINTS, GRID_LOW_HZ, GRID_HIGH_HZ = 300, 20.0, 20000.0
 
 
 def grid() -> list[float]:
-    return [GRID_LOW_HZ * (GRID_HIGH_HZ / GRID_LOW_HZ) ** (i / (GRID_POINTS - 1))
-            for i in range(GRID_POINTS)]
+    return [
+        GRID_LOW_HZ * (GRID_HIGH_HZ / GRID_LOW_HZ) ** (i / (GRID_POINTS - 1))
+        for i in range(GRID_POINTS)
+    ]
 
 
 def angles(data: str) -> list[str]:
@@ -39,7 +41,7 @@ def angles(data: str) -> list[str]:
     except json.JSONDecodeError as exc:
         raise ValueError(f"cannot read microphone package: {exc}") from exc
     if not isinstance(package, dict):
-        raise ValueError("microphone package is not a JSON object")
+        raise ValueError("microphone package is not a JSON object")  # noqa: TRY004
     return list(package)
 
 
@@ -50,14 +52,16 @@ def read(data: str, angle: str = PLAIN_ANGLE, name: str = "") -> MicProfile:
     except json.JSONDecodeError as exc:
         raise ValueError(f"cannot read microphone package {name}: {exc}") from exc
     if angle not in package:
-        raise ValueError(f"microphone package has no {angle!r} table; "
-                         f"available: {', '.join(package)}")
+        raise ValueError(
+            f"microphone package has no {angle!r} table; "
+            f"available: {', '.join(package)}"
+        )
     try:
         blob = base64.b64decode(package[angle], validate=True)
         if angle != PLAIN_ANGLE:
             blob = crypto.decrypt(PACKAGE_KEY, blob)
         text = blob.decode("utf-8")
-    except ValueError as exc:               # also UnicodeDecodeError
+    except ValueError as exc:  # also UnicodeDecodeError
         raise ValueError(f"{name}:{angle} is not a valid table: {exc}") from exc
     points: list[tuple[float, float]] = []
     for line in text.splitlines():
@@ -114,21 +118,37 @@ class SwmicpkgInspector(Inspector):
         data = path.read_bytes()
         text = data.decode("utf-8")
         names = angles(text)
-        sections = [file_section(path, data, ("serial", path.stem),
-                                 ("tables", ", ".join(names)))]
+        sections = [
+            file_section(
+                path, data, ("serial", path.stem), ("tables", ", ".join(names))
+            )
+        ]
         for angle in names:
             fields = [("encrypted", angle != PLAIN_ANGLE)]
             try:
                 profile = read(text, angle, path.stem)
             except ValueError as exc:
-                sections.append(Section(f"table {angle}", fields + [("error", str(exc))]))
+                sections.append(
+                    Section(f"table {angle}", fields + [("error", str(exc))])
+                )
                 continue
-            fields += [("points", len(profile.points)),
-                       ("range", frequency_range(profile.points))]
-            sections.append(Section(f"table {angle}", fields,
-                                    Table(["frequency Hz", "gain dB"], profile.points)))
+            fields += [
+                ("points", len(profile.points)),
+                ("range", frequency_range(profile.points)),
+            ]
+            sections.append(
+                Section(
+                    f"table {angle}",
+                    fields,
+                    Table(["frequency Hz", "gain dB"], profile.points),
+                )
+            )
         return sections
 
 
-FORMAT = Format("swmicpkg", (".swmicpkg",), "SoundID microphone calibration package",
-                SwmicpkgInspector)
+FORMAT = Format(
+    "swmicpkg",
+    (".swmicpkg",),
+    "SoundID microphone calibration package",
+    SwmicpkgInspector,
+)

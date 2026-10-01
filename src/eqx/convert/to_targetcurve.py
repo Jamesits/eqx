@@ -21,16 +21,25 @@ class AutoeqToTargetcurve(Converter):
     options = (
         COLUMN_OPTION,
         TOLERANCE_OPTION,
-        Option("--low-hz", type=float,
-               help=f"low correction limit, Hz (default: {targetcurve.DEFAULT_LOW_HZ:g})"),
-        Option("--high-hz", type=float,
-               help=f"high correction limit, Hz (default: {targetcurve.DEFAULT_HIGH_HZ:g})"),
+        Option(
+            "--low-hz",
+            type=float,
+            help=f"low correction limit, Hz (default: {targetcurve.DEFAULT_LOW_HZ:g})",
+        ),
+        Option(
+            "--high-hz",
+            type=float,
+            help=f"high correction limit, Hz (default: {targetcurve.DEFAULT_HIGH_HZ:g})",
+        ),
     )
 
-    def __init__(self, column: str = response.RAW,
-                 tolerance_db: float = TOLERANCE_DB,
-                 low_hz: float = targetcurve.DEFAULT_LOW_HZ,
-                 high_hz: float = targetcurve.DEFAULT_HIGH_HZ):
+    def __init__(
+        self,
+        column: str = response.RAW,
+        tolerance_db: float = TOLERANCE_DB,
+        low_hz: float = targetcurve.DEFAULT_LOW_HZ,
+        high_hz: float = targetcurve.DEFAULT_HIGH_HZ,
+    ):
         if tolerance_db < 0:
             raise ValueError("--tolerance-db must be >= 0")
         self.column = column
@@ -38,7 +47,14 @@ class AutoeqToTargetcurve(Converter):
         self.low_hz, self.high_hz = low_hz, high_hz
 
     def _convert(self, path: Path) -> Result:
-        breakpoints, error = simplified(response.load(path).curve(self.column), self.tolerance_db)
-        curve = targetcurve.TargetCurve(path.stem, "", breakpoints, self.low_hz, self.high_hz)
-        return Result(targetcurve.write(curve).encode("utf-8"), f"{path.stem}.targetcurve",
-                      [f"{len(breakpoints)} breakpoints; error {error:.2f} dB max"])
+        breakpoints, error = simplified(
+            response.load(path).curve(self.column), self.tolerance_db
+        )
+        curve = targetcurve.TargetCurve(
+            path.stem, "", breakpoints, self.low_hz, self.high_hz
+        )
+        return Result(
+            targetcurve.write(curve).encode("utf-8"),
+            f"{path.stem}.targetcurve",
+            [f"{len(breakpoints)} breakpoints; error {error:.2f} dB max"],
+        )

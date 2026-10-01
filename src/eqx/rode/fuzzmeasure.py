@@ -41,8 +41,15 @@ UNKEYED = "$0"
 FUME_VERSION = "3.0"
 KINDS = {".fume4": "FuzzMeasure 4", ".fume3": "FuzzMeasure 3", ".fume": "FuzzMeasure 2"}
 # Analysis window shapes.  The half windows fall from 1 over the window.
-WINDOW_TYPES = {0: "rectangular", 1: "Hamming", 2: "half Hamming", 3: "Hann", 4: "half Hann",
-                5: "Bingham", 6: "half Bingham"}
+WINDOW_TYPES = {
+    0: "rectangular",
+    1: "Hamming",
+    2: "half Hamming",
+    3: "Hann",
+    4: "half Hann",
+    5: "Bingham",
+    6: "half Bingham",
+}
 HAMMING, HANN, BINGHAM_TAPER = 0.54, 0.5, 0.2
 # The FFT spans the window, at least 32768 samples (2048 in compatibility
 # mode, for FuzzMeasure 1 measurements).
@@ -50,7 +57,7 @@ MIN_FFT, MIN_FFT_COMPATIBLE = 32768, 2048
 # FuzzMeasure's SPL graphs add 94 dB minus the reference level: the level
 # the 94 dB SPL calibrator tone was recorded at, dB re full scale.
 CALIBRATOR_DB = 94.0
-SPEED_OF_SOUND = 340.29                     # m/s, FuzzMeasure's default
+SPEED_OF_SOUND = 340.29  # m/s, FuzzMeasure's default
 # NSColorSpace values: calibrated RGB, device RGB, calibrated white, device white.
 RGB_SPACES, WHITE_SPACES = (1, 2), (3, 4)
 # Written impulse responses: 32768 samples, window over the first half.
@@ -59,28 +66,58 @@ IR_LENGTH = 32768
 UUID_NAMESPACE = uuid.UUID("3d0c9f4e-2f61-5b7a-8e1d-6a4b0c2f9e57")
 EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 # A new SMUGLogSweepSettings: 1 s full-range sweep.
-SWEEP = {"version": Ref(1), "Duration": 1000.0, "StartFreq": 1.0, "EndFreq": 20000.0,
-         "BeginSilence": 0.0, "EndSilence": 0.0, "LeadIn": 0.0, "LeadOut": 0.0,
-         "Name": "Untitled", "FullRangeSweep": True, "DefaultSilence": True, "amplitude": 1.0}
+SWEEP = {
+    "version": Ref(1),
+    "Duration": 1000.0,
+    "StartFreq": 1.0,
+    "EndFreq": 20000.0,
+    "BeginSilence": 0.0,
+    "EndSilence": 0.0,
+    "LeadIn": 0.0,
+    "LeadOut": 0.0,
+    "Name": "Untitled",
+    "FullRangeSweep": True,
+    "DefaultSilence": True,
+    "amplitude": 1.0,
+}
 # The graph of written documents, with its default settings: FuzzMeasure's
 # frequency response graph.
-GRAPH_CLASSES = ["FuzzMeasureMagnitudeResponseGraph", "FuzzMeasureFrequencyDomainGraph",
-                 "FuzzMeasureGraph", "SMUGGraph", "NSObject"]
+GRAPH_CLASSES = [
+    "FuzzMeasureMagnitudeResponseGraph",
+    "FuzzMeasureFrequencyDomainGraph",
+    "FuzzMeasureGraph",
+    "SMUGGraph",
+    "NSObject",
+]
 # Plot colors of written measurements, RGB.
-COLORS = ((0.85, 0.15, 0.15), (0.15, 0.35, 0.85), (0.1, 0.6, 0.2), (0.9, 0.55, 0.0),
-          (0.55, 0.2, 0.75), (0.0, 0.6, 0.65), (0.5, 0.5, 0.5), (0.0, 0.0, 0.0))
+COLORS = (
+    (0.85, 0.15, 0.15),
+    (0.15, 0.35, 0.85),
+    (0.1, 0.6, 0.2),
+    (0.9, 0.55, 0.0),
+    (0.55, 0.2, 0.75),
+    (0.0, 0.6, 0.65),
+    (0.5, 0.5, 0.5),
+    (0.0, 0.0, 0.0),
+)
 
 MEASUREMENT_OPTION = Option(
     "--measurement",
     help="measurement: its number from 0 as listed by inspect, or its title, "
-         "case-insensitive (default: 0)")
+    "case-insensitive (default: 0)",
+)
 MIC_CALIBRATION_OPTION = Option(
-    "--mic-calibration", action=argparse.BooleanOptionalAction,
+    "--mic-calibration",
+    action=argparse.BooleanOptionalAction,
     help="subtract the microphone calibration stored with the measurement, where FuzzMeasure "
-         "applies it (default: on)")
-SPL_OPTION = Option("--spl", action="store_true",
-                    help="dB SPL as FuzzMeasure's SPL graphs: + 94 dB - the measurement's SPL "
-                         "reference level (default: dB re full scale)")
+    "applies it (default: on)",
+)
+SPL_OPTION = Option(
+    "--spl",
+    action="store_true",
+    help="dB SPL as FuzzMeasure's SPL graphs: + 94 dB - the measurement's SPL "
+    "reference level (default: dB re full scale)",
+)
 
 
 @dataclass
@@ -88,15 +125,17 @@ class Calibration:
     """A microphone calibration record: the microphone's response."""
 
     name: str
-    points: list[tuple[float, float]]       # (Hz, dB), the magnitude spline
-    phase: list[tuple[float, float]] = field(default_factory=list)   # (Hz, degrees)
+    points: list[tuple[float, float]]  # (Hz, dB), the magnitude spline
+    phase: list[tuple[float, float]] = field(default_factory=list)  # (Hz, degrees)
     serial: str | None = None
     sensitivity: float = 0.0
     uuid: str | None = None
 
     def db(self, frequencies) -> list[float | None]:
         """The spline at each frequency; None outside its range."""
-        return spline([f for f, _ in self.points], [v for _, v in self.points], frequencies)
+        return spline(
+            [f for f, _ in self.points], [v for _, v in self.points], frequencies
+        )
 
 
 @dataclass
@@ -112,20 +151,20 @@ class Record:
     window: tuple[int, int, int] = (0, 0, 0)
     notes: str = ""
     date: datetime | None = None
-    normalized: bool = False                # shown scaled to a peak of 1
+    normalized: bool = False  # shown scaled to a peak of 1
     compatibility: bool = False
-    start_hz: float = 0.0                   # shown frequency range
+    start_hz: float = 0.0  # shown frequency range
     end_hz: float = 0.0
     calibration: Calibration | None = None
     use_calibration: bool = False
     use_spl: bool = False
-    spl_reference: float = 0.0              # dB re full scale of the 94 dB SPL tone
-    averages: int = 1                       # synchronous averages
+    spl_reference: float = 0.0  # dB re full scale of the 94 dB SPL tone
+    averages: int = 1  # synchronous averages
     speed_of_sound: float = SPEED_OF_SOUND
     color: tuple[float, float, float] | None = None
     sweep: dict[str, Any] = field(default_factory=dict)
     device: str | None = None
-    version: int = 1                        # record coding: 1 FuzzMeasure 4, 0 older
+    version: int = 1  # record coding: 1 FuzzMeasure 4, 0 older
 
     @property
     def fft_length(self) -> int:
@@ -144,11 +183,11 @@ class Record:
 
 @dataclass
 class Document:
-    kind: str                               # extension: .fume4, .fume3, .fume
-    version: str                            # FUMEVersion; "1.x" if absent
+    kind: str  # extension: .fume4, .fume3, .fume
+    version: str  # FUMEVersion; "1.x" if absent
     records: list[Record]
-    top: dict[str, Any]                     # the resolved TopLevel archive
-    entries: dict[str, int] = field(default_factory=dict)   # package file -> size
+    top: dict[str, Any]  # the resolved TopLevel archive
+    entries: dict[str, int] = field(default_factory=dict)  # package file -> size
 
     def record(self, key: str | int | None) -> int:
         """Index of the measurement with this number or title (case-insensitive)."""
@@ -160,14 +199,18 @@ class Document:
         if text.lstrip("-").isdigit():
             i = int(text)
             if not 0 <= i < len(self.records):
-                raise ValueError(f"measurement {i} does not exist; measurements: "
-                                 f"0-{len(self.records) - 1}")
+                raise ValueError(
+                    f"measurement {i} does not exist; measurements: "
+                    f"0-{len(self.records) - 1}"
+                )
             return i
         for i, r in enumerate(self.records):
             if r.title.lower() == text.lower():
                 return i
-        raise ValueError(f"no measurement {key!r}; available: "
-                         f"{', '.join(repr(r.title) for r in self.records)}")
+        raise ValueError(
+            f"no measurement {key!r}; available: "
+            f"{', '.join(repr(r.title) for r in self.records)}"
+        )
 
 
 # --------------------------------------------------------------------------
@@ -194,7 +237,9 @@ def read_package(files: dict[str, bytes], kind: str = ".fume4") -> Document:
     if TOP_LEVEL not in files:
         raise ValueError(f"not a FuzzMeasure document: no {TOP_LEVEL}")
     top = _unarchive(files[TOP_LEVEL], TOP_LEVEL)
-    return _document(kind, top, files, {name: len(data) for name, data in sorted(files.items())})
+    return _document(
+        kind, top, files, {name: len(data) for name, data in sorted(files.items())}
+    )
 
 
 def _unarchive(data: bytes, name: str) -> dict[str, Any]:
@@ -203,18 +248,22 @@ def _unarchive(data: bytes, name: str) -> dict[str, Any]:
     except ValueError as exc:
         raise ValueError(f"{name}: {exc}") from None
     if not isinstance(top.get("MeasurementRecords"), list):
-        raise ValueError(f"{name}: not a FuzzMeasure document: no MeasurementRecords")
+        raise ValueError(f"{name}: not a FuzzMeasure document: no MeasurementRecords")  # noqa: TRY004
     return top
 
 
-def _document(kind: str, top: dict, files: dict[str, bytes], entries: dict[str, int]) -> Document:
+def _document(
+    kind: str, top: dict, files: dict[str, bytes], entries: dict[str, int]
+) -> Document:
     version = top.get("FUMEVersion")
     records = []
     for i, r in enumerate(top["MeasurementRecords"]):
         if not isinstance(r, Instance):
-            raise ValueError(f"measurement record {i} is not an object")
+            raise ValueError(f"measurement record {i} is not an object")  # noqa: TRY004
         records.append(_record(r, files, i))
-    return Document(kind, version if isinstance(version, str) else "1.x", records, top, entries)
+    return Document(
+        kind, version if isinstance(version, str) else "1.x", records, top, entries
+    )
 
 
 def _record(r: Instance, files: dict[str, bytes], index: int) -> Record:
@@ -264,31 +313,46 @@ def _record(r: Instance, files: dict[str, bytes], index: int) -> Record:
         date=get("date", "Date") if isinstance(get("date", "Date"), datetime) else None,
         normalized=bool(get("normalized", "Normalized")),
         # FuzzMeasure 1 data: FuzzMeasure decodes it in compatibility mode.
-        compatibility=(bool(get("compatibilityMode", "CompatibilityMode"))
-                       or isinstance(inline, bytes)),
+        compatibility=(
+            bool(get("compatibilityMode", "CompatibilityMode"))
+            or isinstance(inline, bytes)
+        ),
         start_hz=_number(r.get("startFrequency"), 0.0),
         end_hz=_number(r.get("endFrequency"), 0.0),
-        calibration=_calibration(calibration) if isinstance(calibration, Instance) else None,
+        calibration=_calibration(calibration)
+        if isinstance(calibration, Instance)
+        else None,
         use_calibration=bool(get("correctionEnabled", "CorrectionEnabled")),
         use_spl=use_spl,
         spl_reference=spl,
-        averages=int(_number(get("synchronousAverages", "SynchronousAverages"), 1)) or 1,
-        speed_of_sound=_number(r.get("speedOfSound"), SPEED_OF_SOUND) if v1 else SPEED_OF_SOUND,
+        averages=int(_number(get("synchronousAverages", "SynchronousAverages"), 1))
+        or 1,
+        speed_of_sound=_number(r.get("speedOfSound"), SPEED_OF_SOUND)
+        if v1
+        else SPEED_OF_SOUND,
         color=_color(get("plotColor", "PlotColor")),
         sweep=dict(sweep.fields) if isinstance(sweep, Instance) else {},
-        device=r.get("audioDeviceName") if isinstance(r.get("audioDeviceName"), str) else None,
+        device=r.get("audioDeviceName")
+        if isinstance(r.get("audioDeviceName"), str)
+        else None,
         version=1 if v1 else 0,
     )
 
 
 def _number(value: Any, default: float) -> float:
-    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else default
+    return (
+        value
+        if isinstance(value, (int, float)) and not isinstance(value, bool)
+        else default
+    )
 
 
 def _vector(value: Any, where: str) -> list[float]:
     """Samples of an SMUGRealVector, or of FuzzMeasure 1 data (big-endian floats)."""
-    if isinstance(value, Instance) and value.classname in ("SMUGRealVector",
-                                                           "SMUGMutableRealVector"):
+    if isinstance(value, Instance) and value.classname in (
+        "SMUGRealVector",
+        "SMUGMutableRealVector",
+    ):
         data = value.get("VectorData")
         # CFByteOrder 1 is little endian; without it the data is big endian.
         order = "<" if value.get("CFByteOrder") == 1 else ">"
@@ -317,7 +381,9 @@ def _color(c: Any) -> tuple[float, float, float] | None:
         if c.get("NSColorSpace") in RGB_SPACES and isinstance(c.get("NSRGB"), bytes):
             r, g, b = [float(v) for v in c.get("NSRGB").rstrip(b"\0").split()[:3]]
             return r, g, b
-        if c.get("NSColorSpace") in WHITE_SPACES and isinstance(c.get("NSWhite"), bytes):
+        if c.get("NSColorSpace") in WHITE_SPACES and isinstance(
+            c.get("NSWhite"), bytes
+        ):
             w = float(c.get("NSWhite").rstrip(b"\0").split()[0])
             return w, w, w
     except (ValueError, IndexError):
@@ -327,15 +393,21 @@ def _color(c: Any) -> tuple[float, float, float] | None:
 
 def _calibration(c: Instance) -> Calibration:
     """A MicrophoneCalibrationRecord (FuzzMeasure 4) or SMUGCorrectionRecord."""
+
     def points(s: Any) -> list[tuple[float, float]]:
         if not isinstance(s, Instance) or s.get("X") is None or s.get("Y") is None:
             return []
         return list(zip(_vector(s.get("X"), "spline"), _vector(s.get("Y"), "spline")))
+
     serial = c.get("SerialNumber")
-    return Calibration(str(c.get("Name") or ""), points(c.get("MagnitudeSpline")),
-                       points(c.get("PhaseSpline")), serial if isinstance(serial, str) else None,
-                       _number(c.get("Sensitivity"), 0.0),
-                       c.get("UUID") if isinstance(c.get("UUID"), str) else None)
+    return Calibration(
+        str(c.get("Name") or ""),
+        points(c.get("MagnitudeSpline")),
+        points(c.get("PhaseSpline")),
+        serial if isinstance(serial, str) else None,
+        _number(c.get("Sensitivity"), 0.0),
+        c.get("UUID") if isinstance(c.get("UUID"), str) else None,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -351,7 +423,9 @@ def spline(xs: list[float], ys: list[float], queries) -> list[float | None]:
         sig = (xs[i] - xs[i - 1]) / (xs[i + 1] - xs[i - 1])
         p = sig * y2[i - 1] + 2
         y2[i] = (sig - 1) / p
-        d = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) - (ys[i] - ys[i - 1]) / (xs[i] - xs[i - 1])
+        d = (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i]) - (ys[i] - ys[i - 1]) / (
+            xs[i] - xs[i - 1]
+        )
         u[i] = (6 * d / (xs[i + 1] - xs[i - 1]) - sig * u[i - 1]) / p
     for k in range(n - 2, -1, -1):
         y2[k] = y2[k] * y2[k + 1] + u[k]
@@ -363,8 +437,11 @@ def spline(xs: list[float], ys: list[float], queries) -> list[float | None]:
         lo = min(max(bisect.bisect_right(xs, x) - 1, 0), n - 2)
         h = xs[lo + 1] - xs[lo]
         a, b = (xs[lo + 1] - x) / h, (x - xs[lo]) / h
-        out.append(a * ys[lo] + b * ys[lo + 1]
-                   + ((a ** 3 - a) * y2[lo] + (b ** 3 - b) * y2[lo + 1]) * h * h / 6)
+        out.append(
+            a * ys[lo]
+            + b * ys[lo + 1]
+            + ((a**3 - a) * y2[lo] + (b**3 - b) * y2[lo + 1]) * h * h / 6
+        )
     return out
 
 
@@ -377,14 +454,15 @@ def windowed(record: Record) -> list[float]:
     n = len(ir)
     begin, end, shape = record.window
     if begin >= end or end > n // 2 or begin < -n:
-        raise ValueError(f"{record.title!r}: empty analysis window ({begin}, {end}) "
-                         f"for {n} samples")
+        raise ValueError(
+            f"{record.title!r}: empty analysis window ({begin}, {end}) for {n} samples"
+        )
     if begin >= 0:
         x = ir[begin:end]
     elif end <= 0:
-        x = ir[n + begin:n + end]
+        x = ir[n + begin : n + end]
     else:
-        x = ir[n + begin:] + ir[:end]
+        x = ir[n + begin :] + ir[:end]
     return shape_window(x, shape)
 
 
@@ -393,11 +471,16 @@ def shape_window(x: list[float], shape: int) -> list[float]:
     n = len(x)
     if shape in (1, 3):
         a = HAMMING if shape == 1 else HANN
-        w = [a - (1 - a) * math.cos(2 * math.pi * i / (n - 1)) if n > 1 else 1.0
-             for i in range(n)]
+        w = [
+            a - (1 - a) * math.cos(2 * math.pi * i / (n - 1)) if n > 1 else 1.0
+            for i in range(n)
+        ]
     elif shape in (2, 4):
         a = HAMMING if shape == 2 else HANN
-        w = [a - (1 - a) * math.cos(2 * math.pi * (n + i) / (2 * n - 1)) for i in range(n)]
+        w = [
+            a - (1 - a) * math.cos(2 * math.pi * (n + i) / (2 * n - 1))
+            for i in range(n)
+        ]
     elif shape == 5:
         # Tukey: cosine tapers over 10 % at each end.
         m = math.floor(0.5 * BINGHAM_TAPER * n)
@@ -417,8 +500,12 @@ def shape_window(x: list[float], shape: int) -> list[float]:
     return [v * g for v, g in zip(x, w)]
 
 
-def response(record: Record, frequencies: list[float] | None = None, calibration: bool = True,
-             spl: bool = False) -> tuple[list[float], list[float], list[float]]:
+def response(
+    record: Record,
+    frequencies: list[float] | None = None,
+    calibration: bool = True,
+    spl: bool = False,
+) -> tuple[list[float], list[float], list[float]]:
     """(frequencies, dB, group delay s) of the analysis window.
 
     The grid is ``impulse.log_grid`` within the record's frequency range.
@@ -428,10 +515,14 @@ def response(record: Record, frequencies: list[float] | None = None, calibration
     if frequencies is None:
         frequencies = impulse.log_grid(record.sample_rate)
         if record.end_hz > record.start_hz:
-            frequencies = [f for f in frequencies if record.start_hz <= f <= record.end_hz]
+            frequencies = [
+                f for f in frequencies if record.start_hz <= f <= record.end_hz
+            ]
         if not frequencies:
-            raise ValueError(f"{record.title!r}: no frequency in "
-                             f"{record.start_hz:g}-{record.end_hz:g} Hz")
+            raise ValueError(
+                f"{record.title!r}: no frequency in "
+                f"{record.start_hz:g}-{record.end_hz:g} Hz"
+            )
     x = windowed(record)
     x += [0.0] * (record.fft_length - len(x))
     bands = impulse.point_bands(x, record.sample_rate, frequencies)
@@ -480,8 +571,9 @@ def _record_instance(r: Record) -> Instance:
     begin, end, shape = r.window
     fields = {
         "version": Ref(1),
-        "impulseResponseWindow": Instance("SMUGWindow", {
-            "Version": "2.0", "Begin": begin, "End": end, "Type": shape}),
+        "impulseResponseWindow": Instance(
+            "SMUGWindow", {"Version": "2.0", "Begin": begin, "End": end, "Type": shape}
+        ),
         "impulseUUID": r.uuid,
         "date": r.date or EPOCH,
         "comment": r.title,
@@ -493,8 +585,9 @@ def _record_instance(r: Record) -> Instance:
         "compatibilityMode": Ref(bool(r.compatibility)),
         "normalized": Ref(bool(r.normalized)),
         "correctionEnabled": Ref(bool(r.use_calibration)),
-        "correctionRecord": (_calibration_instance(r.calibration) if r.calibration is not None
-                             else None),
+        "correctionRecord": (
+            _calibration_instance(r.calibration) if r.calibration is not None else None
+        ),
         "useSPLReferenceLevel": Ref(bool(r.use_spl)),
         "SPLReferenceLevel": Ref(float(r.spl_reference)),
         "startFrequency": Ref(float(r.start_hz)),
@@ -508,31 +601,47 @@ def _record_instance(r: Record) -> Instance:
 
 
 def _color_instance(rgb: tuple[float, float, float]) -> Instance:
-    return Instance("NSColor", {"NSColorSpace": 1,
-                                "NSRGB": " ".join(f"{v:g}" for v in rgb).encode() + b"\0"})
+    return Instance(
+        "NSColor",
+        {"NSColorSpace": 1, "NSRGB": " ".join(f"{v:g}" for v in rgb).encode() + b"\0"},
+    )
 
 
 def _vector_instance(values: list[float]) -> Instance:
-    return Instance("SMUGRealVector", {
-        "version": Ref(2), "CFByteOrder": Ref(1),
-        "VectorData": Ref(struct.pack(f"<{len(values)}f", *values))})
+    return Instance(
+        "SMUGRealVector",
+        {
+            "version": Ref(2),
+            "CFByteOrder": Ref(1),
+            "VectorData": Ref(struct.pack(f"<{len(values)}f", *values)),
+        },
+    )
 
 
 def _spline_instance(points: list[tuple[float, float]]) -> Instance:
-    return Instance("SMUGSpline", {"SMUGSplineVersion": "1.0",
-                                   "X": _vector_instance([f for f, _ in points]),
-                                   "Y": _vector_instance([v for _, v in points])})
+    return Instance(
+        "SMUGSpline",
+        {
+            "SMUGSplineVersion": "1.0",
+            "X": _vector_instance([f for f, _ in points]),
+            "Y": _vector_instance([v for _, v in points]),
+        },
+    )
 
 
 def _calibration_instance(c: Calibration) -> Instance:
     fields = {"Name": c.name}
     if c.serial is not None:
         fields["SerialNumber"] = c.serial
-    fields.update({
-        "Sensitivity": Ref(float(c.sensitivity)), "SensitivityUnits": Ref(0),
-        "MagnitudeSpline": _spline_instance(c.points), "PhaseSpline": _spline_instance(c.phase),
-        "UUID": c.uuid or record_uuid(f"calibration/{c.name}"),
-    })
+    fields.update(
+        {
+            "Sensitivity": Ref(float(c.sensitivity)),
+            "SensitivityUnits": Ref(0),
+            "MagnitudeSpline": _spline_instance(c.points),
+            "PhaseSpline": _spline_instance(c.phase),
+            "UUID": c.uuid or record_uuid(f"calibration/{c.name}"),
+        }
+    )
     return Instance("MicrophoneCalibrationRecord", fields)
 
 
@@ -542,7 +651,9 @@ def _calibration_instance(c: Calibration) -> Instance:
 def _elided(value: Any) -> Any:
     """The archive values without the sample data of impulse responses."""
     if isinstance(value, Instance):
-        return Instance(value.classname, {k: _elided(v) for k, v in value.fields.items()})
+        return Instance(
+            value.classname, {k: _elided(v) for k, v in value.fields.items()}
+        )
     if isinstance(value, list):
         return [_elided(v) for v in value]
     if isinstance(value, dict):
@@ -553,62 +664,112 @@ def _elided(value: Any) -> Any:
 def _window_text(r: Record) -> str:
     begin, end, shape = r.window
     ms = lambda s: s / r.sample_rate * 1000
-    return (f"{ms(begin):.3f} to {ms(end):.3f} ms ({begin} to {end} samples), "
-            f"{WINDOW_TYPES.get(shape, f'type {shape}')}")
+    return (
+        f"{ms(begin):.3f} to {ms(end):.3f} ms ({begin} to {end} samples), "
+        f"{WINDOW_TYPES.get(shape, f'type {shape}')}"
+    )
 
 
 class FuzzmeasureInspector(Inspector):
     def inspect(self, path: Path) -> list[Section]:
         path = Path(path)
         d = load(path)
-        fields = [("name", path.name),
-                  ("kind", f"{KINDS.get(d.kind, 'FuzzMeasure')} document"),
-                  ("FUMEVersion", d.version), ("measurements", len(d.records))]
+        fields = [
+            ("name", path.name),
+            ("kind", f"{KINDS.get(d.kind, 'FuzzMeasure')} document"),
+            ("FUMEVersion", d.version),
+            ("measurements", len(d.records)),
+        ]
         if d.entries:
-            fields.append(("size", f"{sum(d.entries.values()):,} bytes in {len(d.entries)} files"))
+            fields.append(
+                ("size", f"{sum(d.entries.values()):,} bytes in {len(d.entries)} files")
+            )
             table = Table(["file", "size"], list(d.entries.items()))
         else:
             fields.append(("size", f"{path.stat().st_size:,} bytes"))
             table = None
-        others = {k: v for k, v in d.top.items() if k not in ("FUMEVersion", "MeasurementRecords")}
-        fields += [(k, keyedarchive.describe(v)) for k, v in others.items()
-                   if isinstance(v, (str, int, float))]
-        sections = [Section("file", fields, table,
-                            raw=keyedarchive.describe(_elided(d.top)))]
+        others = {
+            k: v
+            for k, v in d.top.items()
+            if k not in ("FUMEVersion", "MeasurementRecords")
+        }
+        fields += [
+            (k, keyedarchive.describe(v))
+            for k, v in others.items()
+            if isinstance(v, (str, int, float))
+        ]
+        sections = [
+            Section("file", fields, table, raw=keyedarchive.describe(_elided(d.top)))
+        ]
         for i, r in enumerate(d.records):
             c = r.calibration
             fields = [
-                ("notes", r.notes), ("date", r.date.isoformat() if r.date else None),
-                ("sample rate", r.sample_rate), ("samples", len(r.ir)), ("uuid", r.uuid),
+                ("notes", r.notes),
+                ("date", r.date.isoformat() if r.date else None),
+                ("sample rate", r.sample_rate),
+                ("samples", len(r.ir)),
+                ("uuid", r.uuid),
                 ("record version", r.version),
-                ("window", _window_text(r)), ("FFT length", r.fft_length),
-                ("normalized", r.normalized), ("compatibility mode", r.compatibility),
+                ("window", _window_text(r)),
+                ("FFT length", r.fft_length),
+                ("normalized", r.normalized),
+                ("compatibility mode", r.compatibility),
                 ("frequency range", f"{r.start_hz:g}-{r.end_hz:g} Hz"),
                 ("peak delay ms", round(r.peak_ms(), 3)),
                 ("distance to peak m", round(r.peak_ms() / 1000 * r.speed_of_sound, 3)),
                 ("speed of sound m/s", r.speed_of_sound),
-                ("microphone calibration", (f"{c.name} ({len(c.points)} points, "
-                                            f"{'applied' if r.use_calibration else 'off'})"
-                                            if c else None)),
-                ("SPL reference dB FS", (f"{r.spl_reference:g} "
-                                         f"({'applied' if r.use_spl else 'off'})"
-                                         if r.use_spl or r.spl_reference else None)),
+                (
+                    "microphone calibration",
+                    (
+                        f"{c.name} ({len(c.points)} points, "
+                        f"{'applied' if r.use_calibration else 'off'})"
+                        if c
+                        else None
+                    ),
+                ),
+                (
+                    "SPL reference dB FS",
+                    (
+                        f"{r.spl_reference:g} ({'applied' if r.use_spl else 'off'})"
+                        if r.use_spl or r.spl_reference
+                        else None
+                    ),
+                ),
                 ("synchronous averages", r.averages),
-                ("plot color", " ".join(f"{v:g}" for v in r.color) if r.color else None),
+                (
+                    "plot color",
+                    " ".join(f"{v:g}" for v in r.color) if r.color else None,
+                ),
                 ("audio device", r.device),
-                *((f"sweep {k}", v) for k, v in r.sweep.items() if not isinstance(v, Instance)),
+                *(
+                    (f"sweep {k}", v)
+                    for k, v in r.sweep.items()
+                    if not isinstance(v, Instance)
+                ),
             ]
-            sections.append(response_section(f"measurement {i} {r.title}", fields,
-                                             lambda: response(r)))
+            sections.append(
+                response_section(
+                    f"measurement {i} {r.title}", fields, lambda r=r: response(r)
+                )
+            )
         for i, r in enumerate(d.records):
             c = r.calibration
             if c is not None:
-                sections.append(Section(f"calibration of measurement {i} {c.name}", [
-                    ("serial number", c.serial), ("sensitivity", c.sensitivity or None),
-                    ("uuid", c.uuid), ("range", frequency_range(c.points))],
-                    Table(["frequency Hz", "dB"], c.points)))
+                sections.append(
+                    Section(
+                        f"calibration of measurement {i} {c.name}",
+                        [
+                            ("serial number", c.serial),
+                            ("sensitivity", c.sensitivity or None),
+                            ("uuid", c.uuid),
+                            ("range", frequency_range(c.points)),
+                        ],
+                        Table(["frequency Hz", "dB"], c.points),
+                    )
+                )
         return sections
 
 
-FORMAT = Format("fuzzmeasure", tuple(KINDS), "FuzzMeasure 4 / 3 / 2 document",
-                FuzzmeasureInspector)
+FORMAT = Format(
+    "fuzzmeasure", tuple(KINDS), "FuzzMeasure 4 / 3 / 2 document", FuzzmeasureInspector
+)

@@ -22,5 +22,8 @@ class AutoeqToSmaartAscii(Converter):
 
     def _convert(self, path: Path) -> Result:
         points = response.load(path).curve(self.column)
-        return Result(ascii.write(points, path.stem).encode("utf-8"), f"{path.stem}.txt",
-                      [f"{len(points)} points, {frequency_range(points)}"])
+        return Result(
+            ascii.write(points, path.stem).encode("utf-8"),
+            f"{path.stem}.txt",
+            [f"{len(points)} points, {frequency_range(points)}"],
+        )

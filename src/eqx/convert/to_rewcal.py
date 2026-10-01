@@ -15,8 +15,11 @@ from .common import COLUMN_OPTION
 
 def _result(profile: MicProfile, application: str, name: str) -> Result:
     points = profile.points
-    return Result(cal.write(profile, application).encode("utf-8"), name,
-                  [f"{len(points)} points, {points[0][0]:g}-{points[-1][0]:g} Hz"])
+    return Result(
+        cal.write(profile, application).encode("utf-8"),
+        name,
+        [f"{len(points)} points, {points[0][0]:g}-{points[-1][0]:g} Hz"],
+    )
 
 
 class SwmicpkgToRewcal(Converter):
@@ -50,5 +53,7 @@ class AutoeqToRewcal(Converter):
         self.column = column
 
     def _convert(self, path: Path) -> Result:
-        profile = MicProfile.from_points(path.stem, "", response.load(path).curve(self.column))
+        profile = MicProfile.from_points(
+            path.stem, "", response.load(path).curve(self.column)
+        )
         return _result(profile, "AutoEq", f"{path.stem}.txt")

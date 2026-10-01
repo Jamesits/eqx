@@ -13,8 +13,12 @@ HPC_DIR = "sennheiser/dearvr-hpc"
 TAPS = {"minimum": 2048, "linear": 2049}
 # (id, name, {phase: rates}, channel bells): left, optional right.
 HEADPHONES = [
-    (0x3E22D390, "Tilt Studio", {"linear": (44100, 48000), "minimum": (44100, 48000)},
-     ("Left",)),
+    (
+        0x3E22D390,
+        "Tilt Studio",
+        {"linear": (44100, 48000), "minimum": (44100, 48000)},
+        ("Left",),
+    ),
     (0x00000001, "Flat Flat", {"linear": (48000,), "minimum": (48000,)}, ()),
     (0xFC9A24C1, "Tilt Stereo", {"minimum": (48000,)}, ("Left", "Right")),
 ]
@@ -57,8 +61,9 @@ class _Builder:
         self._align()
         offsets = [0 if f is None else 4 + 4 * i for i, f in enumerate(fields)]
         vtable = len(self.buf)
-        self.buf += struct.pack(f"<HH{len(fields)}H", 4 + 2 * len(fields), 4 + 4 * len(fields),
-                                *offsets)
+        self.buf += struct.pack(
+            f"<HH{len(fields)}H", 4 + 2 * len(fields), 4 + 4 * len(fields), *offsets
+        )
         self._align()
         table = len(self.buf)
         self.buf += struct.pack("<i", table - vtable) + bytes(4 * len(fields))
@@ -99,11 +104,28 @@ def write_hpc(headphones=HEADPHONES) -> bytes:
     """The phase byte is left out for minimum phase, its default, as dearVR does."""
     tables = []
     for hid, name, phases, sides in headphones:
-        groups = [[None if phase == "minimum" else ("u8", hpc.PHASES.index(phase)),
-                   ("tables", [[("u32", rate),
-                                ("tables", [[("floats", ir)] for ir in impulse(sides, phase, rate)])]
-                               for rate in rates])]
-                  for phase, rates in phases.items()]
+        groups = [
+            [
+                None if phase == "minimum" else ("u8", hpc.PHASES.index(phase)),
+                (
+                    "tables",
+                    [
+                        [
+                            ("u32", rate),
+                            (
+                                "tables",
+                                [
+                                    [("floats", ir)]
+                                    for ir in impulse(sides, phase, rate)
+                                ],
+                            ),
+                        ]
+                        for rate in rates
+                    ],
+                ),
+            ]
+            for phase, rates in phases.items()
+        ]
         tables.append([("u32", hid), ("string", name), ("tables", groups)])
     return _Builder().finish([("u32", 1), ("tables", tables)], hpc.IDENTIFIER)
 

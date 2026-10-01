@@ -29,7 +29,7 @@ FIR_DIR = "fir/wav"
 # A section is (numerator, denominator): polynomial coefficients in s,
 # lowest power first.  Products of sections are minimum phase.
 def _poly(c, s):
-    return sum(a * s ** i for i, a in enumerate(c))
+    return sum(a * s**i for i, a in enumerate(c))
 
 
 def _dpoly(c, s):
@@ -104,7 +104,14 @@ def subwoofer(rate: float) -> list:
 
 def normalized(bq) -> list[float]:
     """b0, b1, b2, a0, a1, a2 with a0 = 1."""
-    return [bq.b0 / bq.a0, bq.b1 / bq.a0, bq.b2 / bq.a0, 1.0, bq.a1 / bq.a0, bq.a2 / bq.a0]
+    return [
+        bq.b0 / bq.a0,
+        bq.b1 / bq.a0,
+        bq.b2 / bq.a0,
+        1.0,
+        bq.a1 / bq.a0,
+        bq.a2 / bq.a0,
+    ]
 
 
 def filtered(x: list[float], biquads) -> list[float]:
@@ -112,7 +119,9 @@ def filtered(x: list[float], biquads) -> list[float]:
     for bq in biquads:
         y, x1, x2, y1, y2 = [], 0.0, 0.0, 0.0, 0.0
         for v in x:
-            out = (bq.b0 * v + bq.b1 * x1 + bq.b2 * x2 - bq.a1 * y1 - bq.a2 * y2) / bq.a0
+            out = (
+                bq.b0 * v + bq.b1 * x1 + bq.b2 * x2 - bq.a1 * y1 - bq.a2 * y2
+            ) / bq.a0
             y.append(out)
             x1, x2, y1, y2 = v, x1, out, y1
         x = y

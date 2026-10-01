@@ -18,8 +18,10 @@ class AutoeqToTmreq(Converter):
 
     source = "autoeq"
     target = "tmreq"
-    description = ("an EQ curve (inputs: both channels, or left then right) as a TotalMix "
-                   "Room EQ preset of nine bells")
+    description = (
+        "an EQ curve (inputs: both channels, or left then right) as a TotalMix "
+        "Room EQ preset of nine bells"
+    )
     options = (COLUMN_OPTION,)
     inputs = 2
 
@@ -29,8 +31,16 @@ class AutoeqToTmreq(Converter):
     def _convert(self, *paths: Path) -> Result:
         corrections, notes = [], []
         for channel, points in stereo(paths, self.column):
-            c, note = fit_correction(channel[0], points, tmreq.BANDS, tmreq.FREQUENCY_HZ,
-                                     gain_db=tmreq.GAIN_DB, q=tmreq.Q)
+            c, note = fit_correction(
+                channel[0],
+                points,
+                tmreq.BANDS,
+                tmreq.FREQUENCY_HZ,
+                gain_db=tmreq.GAIN_DB,
+                q=tmreq.Q,
+            )
             corrections.append(c)
             notes.append(f"{channel}: gain {c.gain_db:+.2f} dB, {note}")
-        return Result(tmreq.write(corrections).encode("utf-8"), f"{paths[0].stem}.tmreq", notes)
+        return Result(
+            tmreq.write(corrections).encode("utf-8"), f"{paths[0].stem}.tmreq", notes
+        )

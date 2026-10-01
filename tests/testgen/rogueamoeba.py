@@ -11,8 +11,13 @@ SOUNDSOURCE_DIR = "rogueamoeba/soundsource"
 
 
 def write_soundsource() -> bytes:
-    return soundsource.write(Correction(soundsource.CHANNEL, -1.5, peqs=[
-        Peq(f, g, q) for f, g, q in SPEAKER["Left"]])).encode()
+    return soundsource.write(
+        Correction(
+            soundsource.CHANNEL,
+            -1.5,
+            peqs=[Peq(f, g, q) for f, g, q in SPEAKER["Left"]],
+        )
+    ).encode()
 
 
 def files() -> dict[str, bytes]:

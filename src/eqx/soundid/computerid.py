@@ -58,9 +58,9 @@ def _hash(source: bytes) -> str:
 @dataclass
 class ComputerId:
     cpu: bytes
-    disk_serial: bytes                  # empty on a dynamic disk
+    disk_serial: bytes  # empty on a dynamic disk
     board_serial: bytes
-    volume_serial: bytes = b""          # decimal
+    volume_serial: bytes = b""  # decimal
     dynamic_disk: bool = False
 
     def _source(self, disk: bytes) -> bytes:
@@ -69,7 +69,9 @@ class ComputerId:
             return s + disk + b"3\n"
         if self.board_serial:
             return s + self.board_serial + b"3\n"
-        raise ValueError("motherboard serial is empty and OS disk serial is empty or invalid")
+        raise ValueError(
+            "motherboard serial is empty and OS disk serial is empty or invalid"
+        )
 
     @property
     def source(self) -> bytes:
@@ -82,8 +84,9 @@ class ComputerId:
 
     @property
     def sonarworks_reference4_value(self) -> str:
-        return "g" + _hash(self._source(self.volume_serial if self.dynamic_disk
-                                        else self.disk_serial))
+        return "g" + _hash(
+            self._source(self.volume_serial if self.dynamic_disk else self.disk_serial)
+        )
 
     @property
     def sonarworks_reference3_value(self) -> str:
@@ -95,7 +98,10 @@ class ComputerId:
     def values(self) -> dict[str, str]:
         """{application: ID}; an ID that cannot be computed is left out."""
         out = {}
-        for app, attr in zip(APPS, ("value", "sonarworks_reference4_value", "sonarworks_reference3_value")):
+        for app, attr in zip(
+            APPS,
+            ("value", "sonarworks_reference4_value", "sonarworks_reference3_value"),
+        ):
             try:
                 out[app] = getattr(self, attr)
             except ValueError:
@@ -103,16 +109,18 @@ class ComputerId:
         return out
 
     def parts(self) -> list[tuple[str, str]]:
-        return [("cpu", self.cpu.decode("latin-1")),
-                ("disk serial", repr(self.disk_serial.decode("latin-1"))),
-                ("board serial", repr(self.board_serial.decode("latin-1"))),
-                ("volume serial", repr(self.volume_serial.decode("latin-1"))),
-                ("dynamic disk", str(self.dynamic_disk))]
+        return [
+            ("cpu", self.cpu.decode("latin-1")),
+            ("disk serial", repr(self.disk_serial.decode("latin-1"))),
+            ("board serial", repr(self.board_serial.decode("latin-1"))),
+            ("volume serial", repr(self.volume_serial.decode("latin-1"))),
+            ("dynamic disk", str(self.dynamic_disk)),
+        ]
 
 
 # What the x86_64 build assumes for hw.cpufamily, by brand string.
 _MAC_X86_FAMILIES = (
-    (b"Apple M1", 0x1B588BB3, 0x1B588BB3, 0x1B588BB3),     # base, Pro, Max
+    (b"Apple M1", 0x1B588BB3, 0x1B588BB3, 0x1B588BB3),  # base, Pro, Max
     (b"Apple M2", 0xDA33D83D, 0xDA33D83D, 0xDA33D83D),
     (b"Apple M3", 0xFA33415E, 0x5F4DEA93, 0x72015832),
     (b"Apple M4", 0x6F5129AC, 0x17D5B93A, 0x17D5B93A),
@@ -124,8 +132,8 @@ _CPU_TYPE_ARM64, _CPU_SUBTYPE_ARM64E = 0x100000C, 2
 class MacComputerId:
     cpu: bytes
     serial: bytes
-    rosetta_cpu: bytes = b""            # cpu part of the x86_64 build on Apple silicon
-    cpuid_cpu: bytes = b""              # cpu part of Sonarworks Reference 3 / 4
+    rosetta_cpu: bytes = b""  # cpu part of the x86_64 build on Apple silicon
+    cpuid_cpu: bytes = b""  # cpu part of Sonarworks Reference 3 / 4
 
     @staticmethod
     def _value(cpu: bytes, serial: bytes) -> str:
@@ -139,19 +147,26 @@ class MacComputerId:
     def values(self) -> dict[str, str]:
         out = {"SoundID Reference": self.value}
         if self.rosetta_cpu:
-            out["SoundID Reference (Rosetta)"] = self._value(self.rosetta_cpu, self.serial)
+            out["SoundID Reference (Rosetta)"] = self._value(
+                self.rosetta_cpu, self.serial
+            )
         if self.cpuid_cpu:
             out["Sonarworks Reference 4"] = self._value(self.cpuid_cpu, self.serial)
             # Sonarworks Reference 3 reads the serial into a 32-byte C string.
             out["Sonarworks Reference 3"] = _mac_hash(
-                self.cpuid_cpu, self.serial if len(self.serial) < 32 else b"")
+                self.cpuid_cpu, self.serial if len(self.serial) < 32 else b""
+            )
         return out
 
     def parts(self) -> list[tuple[str, str]]:
-        out = [("cpu", repr(self.cpu.rstrip(b"\0").decode("latin-1"))),
-               ("serial", repr(self.serial.decode("latin-1")))]
+        out = [
+            ("cpu", repr(self.cpu.rstrip(b"\0").decode("latin-1"))),
+            ("serial", repr(self.serial.decode("latin-1"))),
+        ]
         if self.rosetta_cpu:
-            out.append(("rosetta cpu", repr(self.rosetta_cpu.rstrip(b"\0").decode("latin-1"))))
+            out.append(
+                ("rosetta cpu", repr(self.rosetta_cpu.rstrip(b"\0").decode("latin-1")))
+            )
         if self.cpuid_cpu and self.cpuid_cpu != self.cpu:
             out.append(("cpuid cpu", repr(self.cpuid_cpu.decode("latin-1"))))
         return out
@@ -171,8 +186,9 @@ def _mac_brand(brand: bytes | None) -> bytes:
     return b"Unknown" if brand is None else brand[:1023].ljust(1024, b"\0")
 
 
-def mac_cpu_string(brand: bytes | None, family: int, subfamily: int,
-                   cputype: int, cpusubtype: int) -> bytes:
+def mac_cpu_string(
+    brand: bytes | None, family: int, subfamily: int, cputype: int, cpusubtype: int
+) -> bytes:
     """cpu part of the arm64 build from the brand string and the ``hw.cpu*`` sysctls.
 
     A brand with "Apple M" but not "Apple M1" to "Apple M4" is used as is.
@@ -261,49 +277,74 @@ def local() -> ComputerId | MacComputerId:
 
     class SystemInfo(ctypes.Structure):
         _fields_ = [
-            ("wProcessorArchitecture", w.WORD), ("wReserved", w.WORD),
-            ("dwPageSize", w.DWORD), ("lpMinimumApplicationAddress", ctypes.c_void_p),
+            ("wProcessorArchitecture", w.WORD),
+            ("wReserved", w.WORD),
+            ("dwPageSize", w.DWORD),
+            ("lpMinimumApplicationAddress", ctypes.c_void_p),
             ("lpMaximumApplicationAddress", ctypes.c_void_p),
-            ("dwActiveProcessorMask", ctypes.c_size_t), ("dwNumberOfProcessors", w.DWORD),
-            ("dwProcessorType", w.DWORD), ("dwAllocationGranularity", w.DWORD),
-            ("wProcessorLevel", w.WORD), ("wProcessorRevision", w.WORD),
+            ("dwActiveProcessorMask", ctypes.c_size_t),
+            ("dwNumberOfProcessors", w.DWORD),
+            ("dwProcessorType", w.DWORD),
+            ("dwAllocationGranularity", w.DWORD),
+            ("wProcessorLevel", w.WORD),
+            ("wProcessorRevision", w.WORD),
         ]
 
     si = SystemInfo()
     k32.GetNativeSystemInfo(ctypes.byref(si))
-    cpu = cpu_string(si.wProcessorArchitecture, si.wProcessorLevel, si.wProcessorRevision)
+    cpu = cpu_string(
+        si.wProcessorArchitecture, si.wProcessorLevel, si.wProcessorRevision
+    )
 
     k32.CreateFileW.restype = w.HANDLE
-    k32.CreateFileW.argtypes = [w.LPCWSTR, w.DWORD, w.DWORD, ctypes.c_void_p,
-                                w.DWORD, w.DWORD, w.HANDLE]
-    k32.DeviceIoControl.argtypes = [w.HANDLE, w.DWORD, ctypes.c_void_p, w.DWORD,
-                                    ctypes.c_void_p, w.DWORD, ctypes.POINTER(w.DWORD),
-                                    ctypes.c_void_p]
+    k32.CreateFileW.argtypes = [
+        w.LPCWSTR,
+        w.DWORD,
+        w.DWORD,
+        ctypes.c_void_p,
+        w.DWORD,
+        w.DWORD,
+        w.HANDLE,
+    ]
+    k32.DeviceIoControl.argtypes = [
+        w.HANDLE,
+        w.DWORD,
+        ctypes.c_void_p,
+        w.DWORD,
+        ctypes.c_void_p,
+        w.DWORD,
+        ctypes.POINTER(w.DWORD),
+        ctypes.c_void_p,
+    ]
 
     def ioctl(handle, code, inbuf: bytes, size: int) -> bytes | None:
         out = ctypes.create_string_buffer(size)
         got = w.DWORD()
-        if not k32.DeviceIoControl(handle, code, inbuf or None, len(inbuf), out, size,
-                                   ctypes.byref(got), None):
+        if not k32.DeviceIoControl(
+            handle, code, inbuf or None, len(inbuf), out, size, ctypes.byref(got), None
+        ):
             return None
-        return out.raw[:got.value]
+        return out.raw[: got.value]
 
     disk, dynamic, volume = b"", False, b""
     windir = ctypes.create_unicode_buffer(260)
     if k32.GetWindowsDirectoryW(windir, 260):
-        handle = k32.CreateFileW("\\\\.\\" + windir.value[:1] + ":", 0, 3, None, 3, 0, None)
+        handle = k32.CreateFileW(
+            "\\\\.\\" + windir.value[:1] + ":", 0, 3, None, 3, 0, None
+        )
         if handle not in (None, w.HANDLE(-1).value):
             try:
                 disk, dynamic = _disk_serial(ioctl, handle)
             finally:
                 k32.CloseHandle(w.HANDLE(handle))
         serial = w.DWORD()
-        if k32.GetVolumeInformationW(windir.value[:1] + ":\\", None, 0, ctypes.byref(serial),
-                                     None, None, None, 0):
+        if k32.GetVolumeInformationW(
+            windir.value[:1] + ":\\", None, 0, ctypes.byref(serial), None, None, None, 0
+        ):
             volume = str(serial.value).encode()
 
     board = b""
-    size = k32.GetSystemFirmwareTable(0x52534D42, 0, None, 0)       # 'RSMB'
+    size = k32.GetSystemFirmwareTable(0x52534D42, 0, None, 0)  # 'RSMB'
     if size:
         buf = ctypes.create_string_buffer(size)
         if k32.GetSystemFirmwareTable(0x52534D42, 0, buf, size):
@@ -316,7 +357,9 @@ def local() -> ComputerId | MacComputerId:
 
 def _disk_serial(ioctl, handle) -> tuple[bytes, bool]:
     """(serial, on a dynamic disk); a volume on a dynamic disk has no usable serial."""
-    layout = ioctl(handle, 0x70050, b"", 144 * 128 + 192)          # IOCTL_DISK_GET_DRIVE_LAYOUT_EX
+    layout = ioctl(
+        handle, 0x70050, b"", 144 * 128 + 192
+    )  # IOCTL_DISK_GET_DRIVE_LAYOUT_EX
     if layout is None:
         return b"", False
     count = struct.unpack_from("<I", layout, 4)[0]
@@ -325,16 +368,16 @@ def _disk_serial(ioctl, handle) -> tuple[bytes, bool]:
         style = struct.unpack_from("<I", layout, entry)[0]
         if style == 0 and layout[entry + 32] == _LDM_MBR_TYPE:
             return b"", True
-        if style == 1 and layout[entry + 32:entry + 48] == _LDM_DATA_GUID:
+        if style == 1 and layout[entry + 32 : entry + 48] == _LDM_DATA_GUID:
             return b"", True
-    query = struct.pack("<III", 0, 0, 0)                            # StorageDeviceProperty
-    desc = ioctl(handle, 0x2D1400, query, 4096)                     # IOCTL_STORAGE_QUERY_PROPERTY
+    query = struct.pack("<III", 0, 0, 0)  # StorageDeviceProperty
+    desc = ioctl(handle, 0x2D1400, query, 4096)  # IOCTL_STORAGE_QUERY_PROPERTY
     if desc is None or len(desc) < 28:
         return b"", False
-    offset = struct.unpack_from("<I", desc, 24)[0]                  # SerialNumberOffset
+    offset = struct.unpack_from("<I", desc, 24)[0]  # SerialNumberOffset
     if not offset:
         return b"", False
-    return desc[offset:desc.index(b"\0", offset)], False
+    return desc[offset : desc.index(b"\0", offset)], False
 
 
 def _local_mac() -> MacComputerId:
@@ -343,15 +386,20 @@ def _local_mac() -> MacComputerId:
     import subprocess
 
     libc = ctypes.CDLL(None)
-    libc.sysctlbyname.argtypes = [ctypes.c_char_p, ctypes.c_void_p,
-                                  ctypes.POINTER(ctypes.c_size_t), ctypes.c_void_p, ctypes.c_size_t]
+    libc.sysctlbyname.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
 
     def sysctl(name: str, size: int) -> bytes | None:
         buf = ctypes.create_string_buffer(size + 1)
         n = ctypes.c_size_t(size)
         if libc.sysctlbyname(name.encode(), buf, ctypes.byref(n), None, 0):
             return None
-        return buf.raw[:n.value]
+        return buf.raw[: n.value]
 
     def u32(name: str) -> int:
         v = sysctl(name, 4)
@@ -369,15 +417,26 @@ def _local_mac() -> MacComputerId:
         # Under Rosetta the hw.cpu* sysctls describe the emulated x86 CPU; the
         # x86_64 build's guess from the brand string is the best available.
         translated = u32("sysctl.proc_translated")
-        cpu = rosetta if translated else mac_cpu_string(
-            brand, u32("hw.cpufamily"), u32("hw.cpusubfamily"),
-            u32("hw.cputype"), u32("hw.cpusubtype"))
+        cpu = (
+            rosetta
+            if translated
+            else mac_cpu_string(
+                brand,
+                u32("hw.cpufamily"),
+                u32("hw.cpusubfamily"),
+                u32("hw.cputype"),
+                u32("hw.cpusubtype"),
+            )
+        )
         cpuid = _rosetta_cpuid(u32("machdep.cpu.signature") if translated else 0)
 
     serial = b""
     try:
-        out = subprocess.run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                             capture_output=True, check=True).stdout
+        out = subprocess.run(
+            ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True,
+            check=True,
+        ).stdout
         m = re.search(rb'"IOPlatformSerialNumber" = "([^"]*)"', out)
         if m and m.group(1).isascii():
             serial = m.group(1)
@@ -395,9 +454,11 @@ def _rosetta_cpuid(signature: int) -> bytes:
 
     if not signature:
         try:
-            out = subprocess.run(["arch", "-x86_64", "/usr/sbin/sysctl", "-n",
-                                  "machdep.cpu.signature"],
-                                 capture_output=True, check=True).stdout
+            out = subprocess.run(
+                ["arch", "-x86_64", "/usr/sbin/sysctl", "-n", "machdep.cpu.signature"],
+                capture_output=True,
+                check=True,
+            ).stdout
             signature = int(out)
         except (OSError, ValueError, subprocess.CalledProcessError):
             return b""

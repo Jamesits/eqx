@@ -38,10 +38,17 @@ KINDS = {
 }
 _KIND = {token: kind for kind, tokens in KINDS.items() for token in tokens}
 _NUMBER = r"([-+]?[0-9]*[.,]?[0-9]+)"
-_PREAMP = re.compile(r"Preamp:\s+" + _NUMBER, re.I)
-_FILTER = re.compile(r"Filter\s*\d*\s*:\s+(ON|OFF)\s+(" + "|".join(_KIND)
-                     + r")\s+(3dB|6dB|12dB|18dB|Fc)", re.I)
-_VALUES = {name: re.compile(name + r"\s+" + _NUMBER, re.I) for name in ("Fc", "Gain", "Q")}
+_PREAMP = re.compile(r"Preamp:\s+" + _NUMBER, re.IGNORECASE)
+_FILTER = re.compile(
+    r"Filter\s*\d*\s*:\s+(ON|OFF)\s+("
+    + "|".join(_KIND)
+    + r")\s+(3dB|6dB|12dB|18dB|Fc)",
+    re.IGNORECASE,
+)
+_VALUES = {
+    name: re.compile(name + r"\s+" + _NUMBER, re.IGNORECASE)
+    for name in ("Fc", "Gain", "Q")
+}
 
 
 def _number(text: str) -> float:
@@ -64,13 +71,17 @@ def _slope_q(gain_db: float, slope_db: float) -> float:
     s = 10 ** (max(slope_db, 3.0) / 40)
     root = (a + 1 / a) * (1 / s - 1) + 2
     if root <= 0:
-        raise ValueError(f"a {slope_db:g} dB shelf slope is undefined at {gain_db:g} dB gain")
+        raise ValueError(
+            f"a {slope_db:g} dB shelf slope is undefined at {gain_db:g} dB gain"
+        )
     return 1 / math.sqrt(root)
 
 
 def is_filter_line(line: str) -> bool:
     lower = line.lower()
-    return "filter" in lower and "fc" in lower and "#" not in lower and "//" not in lower
+    return (
+        "filter" in lower and "fc" in lower and "#" not in lower and "//" not in lower
+    )
 
 
 def read(text: str) -> Export:
@@ -88,8 +99,9 @@ def read(text: str) -> Export:
             raise ValueError(f"not a valid filter: {line!r}")
         state, token, slope = match.groups()
         kind = _KIND[token.upper()]
-        frequency = min(max(_value(line, "Fc", DEFAULT_FREQUENCY), FREQUENCY_HZ[0]),
-                        FREQUENCY_HZ[1])
+        frequency = min(
+            max(_value(line, "Fc", DEFAULT_FREQUENCY), FREQUENCY_HZ[0]), FREQUENCY_HZ[1]
+        )
         gain = _value(line, "Gain", DEFAULT_GAIN)
         q = max(_value(line, "Q", DEFAULT_Q), MIN_Q)
         if slope.lower() != "fc" and kind in ("low-shelf", "high-shelf"):
@@ -112,7 +124,9 @@ def load(path) -> Export:
 def sniff(data: bytes) -> bool:
     """A filter line among the first lines."""
     text = head_text(data)
-    return any(is_filter_line(line) and _FILTER.search(line) for line in text.split("\n"))
+    return any(
+        is_filter_line(line) and _FILTER.search(line) for line in text.split("\n")
+    )
 
 
 def _fixed(value: float, digits: int) -> str:
@@ -136,12 +150,16 @@ def write(correction: Correction) -> str:
     lines = [f"Preamp: {_fixed(c.gain_db, 2)} dB"]
     for n, p in enumerate(c.peqs, 1):
         if not FREQUENCY_HZ[0] <= p.frequency <= FREQUENCY_HZ[1] or p.q < MIN_Q:
-            raise ValueError(f"filter {n}: SoundSource takes {FREQUENCY_HZ[0]:g}-"
-                             f"{FREQUENCY_HZ[1]:g} Hz and Q >= {MIN_Q:g}")
+            raise ValueError(
+                f"filter {n}: SoundSource takes {FREQUENCY_HZ[0]:g}-"
+                f"{FREQUENCY_HZ[1]:g} Hz and Q >= {MIN_Q:g}"
+            )
         if p.kind not in TOKENS:
             raise ValueError(f"filter {n}: SoundSource has no {p.kind} filter")
-        lines.append(f"Filter {n}: ON {TOKENS[p.kind]} Fc {_fixed(p.frequency, 1)} Hz "
-                     f"Gain {_fixed(p.gain_db, 2)} dB Q {_fixed(p.q, 3)}")
+        lines.append(
+            f"Filter {n}: ON {TOKENS[p.kind]} Fc {_fixed(p.frequency, 1)} Hz "
+            f"Gain {_fixed(p.gain_db, 2)} dB Q {_fixed(p.q, 3)}"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -149,5 +167,10 @@ class SoundsourceInspector(ExportInspector):
     load = load
 
 
-FORMAT = Format("soundsource", (".txt",), "SoundSource Headphone EQ custom profile",
-                SoundsourceInspector, sniff)
+FORMAT = Format(
+    "soundsource",
+    (".txt",),
+    "SoundSource Headphone EQ custom profile",
+    SoundsourceInspector,
+    sniff,
+)

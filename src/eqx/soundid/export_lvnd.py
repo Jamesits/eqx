@@ -54,7 +54,7 @@ def messages(data: bytes) -> list[list[int]]:
     if len(data) < HEADER.size or data[:4] != MAGIC:
         raise ValueError("not an LVND file")
     _magic, _zero1, _zero2, length = HEADER.unpack_from(data)
-    body = data[HEADER.size:HEADER.size + length]
+    body = data[HEADER.size : HEADER.size + length]
     if len(body) != length:
         raise ValueError("LVND file is truncated")
     out, i = [], 0
@@ -62,7 +62,7 @@ def messages(data: bytes) -> list[list[int]]:
         end = body.find(ETX, i)
         if body[i] != STX or end < 0 or (end - i - 2) % 5:
             raise ValueError(f"bad LVND message at byte {HEADER.size + i}")
-        fields = [decode_field(body[k:k + 5]) for k in range(i + 2, end, 5)]
+        fields = [decode_field(body[k : k + 5]) for k in range(i + 2, end, 5)]
         check = 0
         for v in fields[:-1]:
             check ^= v
@@ -78,8 +78,10 @@ def read(data: bytes, channel: str = "") -> Export:
     for n, fields in enumerate(messages(data)):
         kind = fields[0]
         if FIELDS.get(kind) != len(fields) + 1:
-            raise ValueError(f"LVND message {n}: unknown type {kind:08x} "
-                             f"with {len(fields) + 1} fields")
+            raise ValueError(
+                f"LVND message {n}: unknown type {kind:08x} "
+                f"with {len(fields) + 1} fields"
+            )
         if kind == BIQUAD:
             b0, b1, b2, a1, a2 = (f32(v) for v in fields[5:10])
             correction.biquads.append(Biquad(b0, b1, b2, 1.0, a1, a2))
@@ -92,7 +94,7 @@ def read(data: bytes, channel: str = "") -> Export:
 
 
 def channel_from_name(path: Path) -> str:
-    match = re.search(r"_(Left|Right)$", Path(path).stem, re.I)
+    match = re.search(r"_(Left|Right)$", Path(path).stem, re.IGNORECASE)
     return match.group(1).capitalize() if match else ""
 
 
@@ -105,6 +107,10 @@ class LvndInspector(ExportInspector):
     load = load
 
 
-FORMAT = Format("soundid-export-lvnd", (".bin",),
-                "SoundID export: LVND binary (Wayne Jones AUDIO)", LvndInspector,
-                lambda data: data[:4] == MAGIC)
+FORMAT = Format(
+    "soundid-export-lvnd",
+    (".bin",),
+    "SoundID export: LVND binary (Wayne Jones AUDIO)",
+    LvndInspector,
+    lambda data: data[:4] == MAGIC,
+)

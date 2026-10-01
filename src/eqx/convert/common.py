@@ -18,20 +18,32 @@ from ..sennheiser import hpc
 from ..soundid.speakerproject import LEVEL_HIGH_HZ, LEVEL_LOW_HZ
 from .base import Result
 
-COLUMN_OPTION = Option("--column", help=f"AutoEq CSV column to read (default: {response.RAW})")
+COLUMN_OPTION = Option(
+    "--column", help=f"AutoEq CSV column to read (default: {response.RAW})"
+)
 DEFAULT_RATE = 48000.0
 RATE_OPTION = Option("--rate", type=float, help="sample rate, Hz (default: 48000)")
-PHASE_OPTION = Option("--phase", choices=dsp.PHASES,
-                      help="minimum (SoundID Zero Latency, dearVR MIX min) or linear "
-                           "(SoundID Linear Phase, dearVR MIX Lin) phase (default: minimum)")
+PHASE_OPTION = Option(
+    "--phase",
+    choices=dsp.PHASES,
+    help="minimum (SoundID Zero Latency, dearVR MIX min) or linear "
+    "(SoundID Linear Phase, dearVR MIX Lin) phase (default: minimum)",
+)
 CHANNELS = ("left", "right")
-CHANNEL_OPTION = Option("--channel", choices=CHANNELS, help="channel to convert (default: left)")
+CHANNEL_OPTION = Option(
+    "--channel", choices=CHANNELS, help="channel to convert (default: left)"
+)
 TOLERANCE_DB = 0.1
-TOLERANCE_OPTION = Option("--tolerance-db", type=float,
-                          help=f"largest deviation from the curve, dB (default: {TOLERANCE_DB:g})")
-SPEAKER_OPTION = Option("--speaker",
-                        help="speaker, case-insensitive, as named by inspect, e.g. Left, "
-                             "Subwoofer, Center (default: Left)")
+TOLERANCE_OPTION = Option(
+    "--tolerance-db",
+    type=float,
+    help=f"largest deviation from the curve, dB (default: {TOLERANCE_DB:g})",
+)
+SPEAKER_OPTION = Option(
+    "--speaker",
+    help="speaker, case-insensitive, as named by inspect, e.g. Left, "
+    "Subwoofer, Center (default: Left)",
+)
 
 
 def channel_name(channel: str) -> str:
@@ -47,7 +59,9 @@ def file_name(text: str) -> str:
 
 
 def missing(channel: str, available) -> ValueError:
-    return ValueError(f"no {channel} channel; available: {', '.join(available) or 'none'}")
+    return ValueError(
+        f"no {channel} channel; available: {', '.join(available) or 'none'}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -55,14 +69,19 @@ def missing(channel: str, available) -> ValueError:
 # ---------------------------------------------------------------------------
 def csv_result(points, name: str, *notes: str) -> Result:
     """An AutoEq CSV of ``points``."""
-    return Result(response.write(points).encode("utf-8"), name,
-                  [f"{len(points)} points, {frequency_range(points)}", *notes])
+    return Result(
+        response.write(points).encode("utf-8"),
+        name,
+        [f"{len(points)} points, {frequency_range(points)}", *notes],
+    )
 
 
 def curves(paths: tuple[Path, ...], column: str) -> list[tuple[str, list]]:
     """[(channel, points)]: the first input as Left, the second as Right."""
-    return [(channel, response.load(path).curve(column))
-            for channel, path in zip(("Left", "Right"), paths)]
+    return [
+        (channel, response.load(path).curve(column))
+        for channel, path in zip(("Left", "Right"), paths)
+    ]
 
 
 def stereo(paths: tuple[Path, ...], column: str) -> list[tuple[str, list]]:
@@ -77,7 +96,9 @@ def simplified(points, tolerance_db: float) -> tuple[list[tuple[float, float]], 
     grid = standard_grid()
     on_grid = list(zip(grid, log_resample(points, grid)))
     breakpoints = targetcurve.simplify(on_grid, tolerance_db)
-    error = max(abs(a - v) for a, (_, v) in zip(log_resample(breakpoints, grid), on_grid))
+    error = max(
+        abs(a - v) for a, (_, v) in zip(log_resample(breakpoints, grid), on_grid)
+    )
     return breakpoints, error
 
 
@@ -92,26 +113,40 @@ def grid_band(low_hz: float, high_hz: float) -> list[float]:
 def median_level(named_curves: list[tuple[str, list]]) -> float:
     """Median dB of all curves in 200 Hz-10 kHz, on the standard grid."""
     band = grid_band(LEVEL_LOW_HZ, LEVEL_HIGH_HZ)
-    return statistics.median(v for _, points in named_curves for v in log_resample(points, band))
+    return statistics.median(
+        v for _, points in named_curves for v in log_resample(points, band)
+    )
 
 
-def impulse_response(points, level_db: float, rate: float, lead: int, length: int,
-                     taps: int | None = None) -> list[float]:
+def impulse_response(
+    points,
+    level_db: float,
+    rate: float,
+    lead: int,
+    length: int,
+    taps: int | None = None,
+) -> list[float]:
     """``length`` samples: silence for ``lead`` samples, then the minimum-phase
     filter of ``points`` less ``level_db``, ``taps`` long (default: the rest)."""
-    ir = dsp.design_fir_points(points, rate, "minimum", taps or length - lead, level_db=level_db)
+    ir = dsp.design_fir_points(
+        points, rate, "minimum", taps or length - lead, level_db=level_db
+    )
     return [0.0] * lead + ir + [0.0] * (length - lead - len(ir))
 
 
-def fit_correction(channel: str, points, count: int, frequency_hz: tuple[float, float],
-                   **limits) -> tuple[Correction, str]:
+def fit_correction(
+    channel: str, points, count: int, frequency_hz: tuple[float, float], **limits
+) -> tuple[Correction, str]:
     """A gain and up to ``count`` bells fitted to ``points`` on the standard grid
     within ``frequency_hz``; and a note of the fit."""
     grid = grid_band(*frequency_hz)
-    fit = dsp.fit_bells(grid, log_resample(points, grid), count, frequency_hz=frequency_hz,
-                        **limits)
-    return (Correction(channel, fit.gain_db, peqs=[Peq(f, g, q) for f, g, q in fit.bells]),
-            f"{len(fit.bells)} bells; error {fit.rms_db:.2f} dB RMS, {fit.max_db:.2f} dB max")
+    fit = dsp.fit_bells(
+        grid, log_resample(points, grid), count, frequency_hz=frequency_hz, **limits
+    )
+    return (
+        Correction(channel, fit.gain_db, peqs=[Peq(f, g, q) for f, g, q in fit.bells]),
+        f"{len(fit.bells)} bells; error {fit.rms_db:.2f} dB RMS, {fit.max_db:.2f} dB max",
+    )
 
 
 def mic_response_db(path: Path, frequencies: list[float]) -> list[float]:
@@ -129,7 +164,9 @@ def mic_response_db(path: Path, frequencies: list[float]) -> list[float]:
 # ---------------------------------------------------------------------------
 def dirac_rate(rate: float) -> int:
     if rate not in playback.RATES:
-        raise ValueError(f"--rate must be one of: {', '.join(map(str, playback.RATES))}")
+        raise ValueError(
+            f"--rate must be one of: {', '.join(map(str, playback.RATES))}"
+        )
     return int(rate)
 
 
@@ -150,17 +187,28 @@ def dirac_output(slot: dict, speaker: str | None) -> tuple[int, str]:
 def dirac_notes(slot: dict, rate: int, irs: list[tuple[str, int]]) -> list[str]:
     """``irs``: (output name, cross-term cells left out)."""
     notes = [f"{playback.filter_type(playback.live_section(slot))} filter at {rate} Hz"]
-    notes += [f"{name}: {cross} cross-term cells left out" for name, cross in irs if cross]
+    notes += [
+        f"{name}: {cross} cross-term cells left out" for name, cross in irs if cross
+    ]
     return notes
 
 
 # ---------------------------------------------------------------------------
 # dearVR MIX headphone compensation
 # ---------------------------------------------------------------------------
-def dearvr_filter(path: Path, headphone: str | None, phase: str,
-                  rate: float) -> tuple[hpc.Headphone, hpc.Filter, list[str]]:
+def dearvr_filter(
+    path: Path, headphone: str | None, phase: str, rate: float
+) -> tuple[hpc.Headphone, hpc.Filter, list[str]]:
     """The stored filter of ``headphone``; and notes."""
     h = hpc.load(path).headphone(headphone)
     f = h.filter(phase, rate)
-    return h, f, [f"{h.name} (id {h.id:08x}); dearVR MIX adds its gain trim "
-                  "(default -6 dB) and shelving filters"]
+    return (
+        h,
+        f,
+        [
+            (
+                f"{h.name} (id {h.id:08x}); dearVR MIX adds its gain trim "
+                "(default -6 dB) and shelving filters"
+            )
+        ],
+    )

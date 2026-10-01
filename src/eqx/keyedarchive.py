@@ -31,8 +31,14 @@ VERSION = 100000
 # NSDate counts seconds from 2001-01-01 UTC.
 REFERENCE_DATE = datetime(2001, 1, 1, tzinfo=timezone.utc)
 
-_LISTS = ("NSArray", "NSMutableArray", "NSSet", "NSMutableSet", "NSOrderedSet",
-          "NSMutableOrderedSet")
+_LISTS = (
+    "NSArray",
+    "NSMutableArray",
+    "NSSet",
+    "NSMutableSet",
+    "NSOrderedSet",
+    "NSMutableOrderedSet",
+)
 _DICTS = ("NSDictionary", "NSMutableDictionary")
 _STRINGS = ("NSString", "NSMutableString")
 _DATA = ("NSData", "NSMutableData")
@@ -45,7 +51,7 @@ class Instance:
 
     classname: str
     fields: dict[str, Any] = field(default_factory=dict)
-    classes: list[str] | None = None        # class chain; None: [classname, "NSObject"]
+    classes: list[str] | None = None  # class chain; None: [classname, "NSObject"]
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.fields.get(key, default)
@@ -67,9 +73,12 @@ def unarchive(data: bytes) -> dict[str, Any]:
         plist = plistlib.loads(data)
     except (plistlib.InvalidFileException, ValueError, OverflowError) as exc:
         raise ValueError(f"not a keyed archive: {exc}") from None
-    if (not isinstance(plist, dict) or plist.get("$archiver") != ARCHIVER
-            or not isinstance(plist.get("$objects"), list)
-            or not isinstance(plist.get("$top"), dict)):
+    if (
+        not isinstance(plist, dict)
+        or plist.get("$archiver") != ARCHIVER
+        or not isinstance(plist.get("$objects"), list)
+        or not isinstance(plist.get("$top"), dict)
+    ):
         raise ValueError("not a keyed archive")
     return _Reader(plist["$objects"]).fields(plist["$top"])
 
@@ -99,7 +108,7 @@ class _Reader:
         cls = self.value(raw["$class"])
         name = cls.get("$classname") if isinstance(cls, dict) else None
         if not isinstance(name, str):
-            raise ValueError(f"keyed archive: object {uid} has no class name")
+            raise ValueError(f"keyed archive: object {uid} has no class name")  # noqa: TRY004
         # Store containers before filling them: objects may refer back.
         if name in _LISTS:
             out = self.done[uid] = []
@@ -117,7 +126,9 @@ class _Reader:
         elif name in _DATES:
             out = REFERENCE_DATE + timedelta(seconds=raw.get("NS.time", 0.0))
         else:
-            out = self.done[uid] = Instance(name, {}, list(cls.get("$classes") or [name]))
+            out = self.done[uid] = Instance(
+                name, {}, list(cls.get("$classes") or [name])
+            )
             out.fields.update(self.fields(raw))
             return out
         self.done[uid] = out
@@ -137,8 +148,16 @@ def archive(top: dict[str, Any]) -> bytes:
     """
     writer = _Writer()
     root = writer.fields(top)
-    return plistlib.dumps({"$archiver": ARCHIVER, "$objects": writer.objects, "$top": root,
-                           "$version": VERSION}, fmt=plistlib.FMT_BINARY, sort_keys=False)
+    return plistlib.dumps(
+        {
+            "$archiver": ARCHIVER,
+            "$objects": writer.objects,
+            "$top": root,
+            "$version": VERSION,
+        },
+        fmt=plistlib.FMT_BINARY,
+        sort_keys=False,
+    )
 
 
 class _Writer:
@@ -147,8 +166,10 @@ class _Writer:
         self.classes: dict[tuple, plistlib.UID] = {}
 
     def fields(self, d: dict[str, Any]) -> dict[str, Any]:
-        return {k: (v if isinstance(v, (bool, int, float, bytes)) else self.ref(v))
-                for k, v in d.items()}
+        return {
+            k: (v if isinstance(v, (bool, int, float, bytes)) else self.ref(v))
+            for k, v in d.items()
+        }
 
     def add(self, obj: Any) -> plistlib.UID:
         self.objects.append(obj)
@@ -156,7 +177,9 @@ class _Writer:
 
     def cls(self, *chain: str) -> plistlib.UID:
         if chain not in self.classes:
-            self.classes[chain] = self.add({"$classes": list(chain), "$classname": chain[0]})
+            self.classes[chain] = self.add(
+                {"$classes": list(chain), "$classname": chain[0]}
+            )
         return self.classes[chain]
 
     def ref(self, v: Any) -> plistlib.UID:
@@ -172,15 +195,21 @@ class _Writer:
         # Reserve the slot first, so the object comes before its members.
         uid = self.add(None)
         if isinstance(v, (list, tuple)):
-            obj = {"NS.objects": [self.ref(x) for x in v],
-                   "$class": self.cls("NSMutableArray", "NSArray", "NSObject")}
+            obj = {
+                "NS.objects": [self.ref(x) for x in v],
+                "$class": self.cls("NSMutableArray", "NSArray", "NSObject"),
+            }
         elif isinstance(v, dict):
-            obj = {"NS.keys": [self.ref(k) for k in v],
-                   "NS.objects": [self.ref(x) for x in v.values()],
-                   "$class": self.cls("NSMutableDictionary", "NSDictionary", "NSObject")}
+            obj = {
+                "NS.keys": [self.ref(k) for k in v],
+                "NS.objects": [self.ref(x) for x in v.values()],
+                "$class": self.cls("NSMutableDictionary", "NSDictionary", "NSObject"),
+            }
         elif isinstance(v, datetime):
-            obj = {"NS.time": (v - REFERENCE_DATE).total_seconds(),
-                   "$class": self.cls("NSDate", "NSObject")}
+            obj = {
+                "NS.time": (v - REFERENCE_DATE).total_seconds(),
+                "$class": self.cls("NSDate", "NSObject"),
+            }
         elif isinstance(v, Instance):
             obj = self.fields(v.fields)
             obj["$class"] = self.cls(*(v.classes or (v.classname, "NSObject")))
@@ -203,19 +232,25 @@ def describe(value: Any, indent: str = "", _open: frozenset = frozenset()) -> st
     if isinstance(value, Instance):
         if not value.fields:
             return f"{value.classname} {{}}"
-        body = "\n".join(f"{inner}{k}: {describe(v, inner, _open)}"
-                         for k, v in value.fields.items())
+        body = "\n".join(
+            f"{inner}{k}: {describe(v, inner, _open)}" for k, v in value.fields.items()
+        )
         return f"{value.classname} {{\n{body}\n{indent}}}"
     if isinstance(value, dict):
         if not value:
             return "{}"
-        body = "\n".join(f"{inner}{k}: {describe(v, inner, _open)}" for k, v in value.items())
+        body = "\n".join(
+            f"{inner}{k}: {describe(v, inner, _open)}" for k, v in value.items()
+        )
         return f"{{\n{body}\n{indent}}}"
     if isinstance(value, list):
         if not value:
             return "[]"
-        return ("[\n" + "\n".join(f"{inner}{describe(v, inner, _open)}" for v in value)
-                + f"\n{indent}]")
+        return (
+            "[\n"
+            + "\n".join(f"{inner}{describe(v, inner, _open)}" for v in value)
+            + f"\n{indent}]"
+        )
     if isinstance(value, bytes):
         return f"<{len(value):,} bytes>"
     if isinstance(value, datetime):

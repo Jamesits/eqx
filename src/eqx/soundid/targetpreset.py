@@ -26,8 +26,8 @@ FLIP_STATES = ("inner", "outer")
 class Cutoff:
     enabled: bool
     flip_state: str
-    left_freq: float                        # Hz
-    right_freq: float                       # Hz
+    left_freq: float  # Hz
+    right_freq: float  # Hz
 
 
 @dataclass
@@ -35,10 +35,10 @@ class Filter:
     id: int
     type: str
     enabled: bool
-    frequency: float                        # Hz
-    gain: float                             # dB
+    frequency: float  # Hz
+    gain: float  # dB
     q: float
-    color_id: int                           # UI colour only
+    color_id: int  # UI colour only
 
 
 @dataclass
@@ -55,7 +55,7 @@ class TargetPreset:
 
 def _get(obj, key: str, kind, where: str):
     if not isinstance(obj, dict):
-        raise ValueError(f"{where}: expected an object")
+        raise ValueError(f"{where}: expected an object")  # noqa: TRY004
     if key not in obj:
         raise ValueError(f"{where}: missing {key!r}")
     value = obj[key]
@@ -102,10 +102,14 @@ def read(data: str | bytes) -> TargetPreset:
     for i, group in enumerate(_get(root, "filterGroups", list, "preset")):
         where = f"filterGroups[{i}]"
         filters = _get(group, "filters", list, where)
-        groups.append(FilterGroup(
-            cutoff=_cutoff(_get(group, "cutoff", dict, where), f"{where}.cutoff"),
-            filters=[_filter(f, f"{where}.filters[{j}]") for j, f in enumerate(filters)],
-        ))
+        groups.append(
+            FilterGroup(
+                cutoff=_cutoff(_get(group, "cutoff", dict, where), f"{where}.cutoff"),
+                filters=[
+                    _filter(f, f"{where}.filters[{j}]") for j, f in enumerate(filters)
+                ],
+            )
+        )
     return TargetPreset(_get(root, "name", str, "preset"), groups)
 
 
@@ -150,21 +154,53 @@ class TargetPresetInspector(Inspector):
         path = Path(path)
         data = path.read_bytes()
         preset = read(data)
-        sections = [file_section(path, data, ("preset", preset.name),
-                                 ("filter groups", len(preset.filter_groups)))]
+        sections = [
+            file_section(
+                path,
+                data,
+                ("preset", preset.name),
+                ("filter groups", len(preset.filter_groups)),
+            )
+        ]
         for i, g in enumerate(preset.filter_groups):
             c = g.cutoff
-            sections.append(Section(
-                f"filter group [{i}]",
-                [("cutoff enabled", c.enabled), ("cutoff flip state", c.flip_state),
-                 ("cutoff band", f"{c.left_freq:g}-{c.right_freq:g} Hz"),
-                 ("filters", len(g.filters))],
-                Table(["id", "type", "enabled", "frequency Hz", "gain dB", "q", "color"],
-                      [(f.id, f.type, f.enabled, f.frequency, f.gain, f.q, f.color_id)
-                       for f in g.filters]),
-            ))
+            sections.append(
+                Section(
+                    f"filter group [{i}]",
+                    [
+                        ("cutoff enabled", c.enabled),
+                        ("cutoff flip state", c.flip_state),
+                        ("cutoff band", f"{c.left_freq:g}-{c.right_freq:g} Hz"),
+                        ("filters", len(g.filters)),
+                    ],
+                    Table(
+                        [
+                            "id",
+                            "type",
+                            "enabled",
+                            "frequency Hz",
+                            "gain dB",
+                            "q",
+                            "color",
+                        ],
+                        [
+                            (
+                                f.id,
+                                f.type,
+                                f.enabled,
+                                f.frequency,
+                                f.gain,
+                                f.q,
+                                f.color_id,
+                            )
+                            for f in g.filters
+                        ],
+                    ),
+                )
+            )
         return sections
 
 
-FORMAT = Format("targetpreset", (".json",), "SoundID Custom Target Preset",
-                TargetPresetInspector)
+FORMAT = Format(
+    "targetpreset", (".json",), "SoundID Custom Target Preset", TargetPresetInspector
+)
