@@ -11,6 +11,7 @@ from typing import Callable
 
 from .. import correction
 from ..autoeq import response
+from ..dirac import targetcurve
 from ..fileformat import frequency_range
 from ..ik import arc4, arcx
 from ..model import Correction
@@ -178,6 +179,20 @@ class TargetpresetToAutoeq(Converter):
         filters = sum(f.enabled for g in preset.filter_groups for f in g.filters)
         return _result(points, f"{path.stem}.csv",
                        f"{filters} enabled filters; the correction band is not part of the curve")
+
+
+class TargetcurveToAutoeq(Converter):
+    source = "targetcurve"
+    target = "autoeq"
+    description = "a Dirac Live target curve, on the standard 355-point grid"
+
+    def _convert(self, path: Path) -> Result:
+        curve = targetcurve.load(path)
+        curve.validate()
+        grid = standard_grid()
+        return _result(list(zip(grid, curve.response(grid))), f"{path.stem}.csv",
+                       f"{len(curve.breakpoints)} breakpoints; the correction range "
+                       f"{curve.low_hz:g}-{curve.high_hz:g} Hz is not part of the curve")
 
 
 SAMPLE_RATE_OPTION = Option(

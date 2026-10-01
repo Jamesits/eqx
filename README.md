@@ -17,6 +17,8 @@ DO check the output levels on all frequencies before playing any audio.
 | Software | Format | Extension | `--format` | Read | Write | Notes |
 |:---|:---|:---|:---|:-:|:-:|:---|
 | [AutoEq](https://autoeq.app/) | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
+| [Dirac Live 3.x](https://www.dirac.com/live/) | Target curve | `.targetcurve` | `targetcurve` | ✓ | ✓ | Untested: no license |
+| [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license. Write: unsigned |
 | Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | [Equalizer APO](https://sourceforge.net/projects/equalizerapo/), [CamillaDSP](https://github.com/HEnquist/camilladsp), [Roon](https://help.roonlabs.com/portal/en/kb/articles/dsp-engine-convolution#Introduction), ... |
 | [IK Multimedia ARC X 2.x](https://www.ikmultimedia.com/products/arcx/) | Session | `.arcXs` | `arcx` | ✓ | ✓ | Untested: no hardware |
 | | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | Untested: no hardware |
@@ -89,6 +91,18 @@ uv run python -m pytest
 `.swhp`, `.swproj` to FIR `.wav`
 - The filter SoundID Reference plays for the profile (flat target), minimum or linear phase, with Limit Controls, Listening Spot and Safe Headroom
 - Projects converted from unsmoothed REW measurements may differ from SoundID above 15 kHz
+
+### Dirac Live
+
+- Projects (`.liveproject`) are not supported: their measurements and filters are encrypted with the Dirac account session key
+- `.targetcurve` to `.csv` follows the breakpoints linearly in log frequency; the correction range is not part of the curve
+
+### Dirac Live Processor
+
+- Filter slots are `filter.bin` in `%APPDATA%\Dirac\Dirac_Live_Processor\filters\<slot>\` (macOS: `~/Library/Application Support/Dirac/Dirac_Live_Processor/filters/<slot>/`)
+- Filters calculated by Dirac's servers are signed; `inspect` checks the signature. Written slots are unsigned, as the ones the processor writes itself
+- Written slots hold a dual-rate filter at 32, 44.1 and 48 kHz, and add 446 samples of latency
+- Reading plays each output from its own input; bass management cross terms are left out
 
 ### IK Multimedia ARC X
 

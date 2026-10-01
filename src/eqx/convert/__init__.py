@@ -5,9 +5,11 @@ from __future__ import annotations
 from .arc4_swproj import Arc4ToSwproj
 from .arcx_swproj import ArcxToSwproj
 from .base import Converter, Result
+from .dirac import AutoeqToDiracFilter, DiracFilterToAutoeq, DiracFilterToFir, FirToDiracFilter
 from .fir import AutoeqToFir, FirToAutoeq, PeqbToFir, SwprojToFir
 from .from_autoeq import (AutoeqToArcx, AutoeqToMdat, AutoeqToPeqb, AutoeqToRewcal,
-                          AutoeqToSoundsource, AutoeqToSwproj, AutoeqToTmreq)
+                          AutoeqToSoundsource, AutoeqToSwproj, AutoeqToTargetcurve,
+                          AutoeqToTmreq)
 from .mdat_swproj import MdatToSwproj
 from .rewcal_swmicpkg import RewcalToSwmicpkg
 from .swmicpkg_rewcal import SwmicpkgToRewcal
@@ -15,7 +17,8 @@ from .to_autoeq import (Arc4ToAutoeq, ArcxToAutoeq, MdatToAutoeq, PeqbToAutoeq,
                         SoundidExportBiquadJsonToAutoeq, SoundidExportBiquadXmlToAutoeq,
                         SoundidExportLvndToAutoeq,
                         SoundidExportPeqJsonToAutoeq, SoundidExportTxtToAutoeq,
-                        SoundsourceToAutoeq, SwprojToAutoeq, TargetpresetToAutoeq, TmreqToAutoeq)
+                        SoundsourceToAutoeq, SwprojToAutoeq, TargetcurveToAutoeq,
+                        TargetpresetToAutoeq, TmreqToAutoeq)
 
 CONVERTERS: dict[tuple[str, str], type[Converter]] = {
     (c.source, c.target): c for c in (
@@ -29,6 +32,8 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         TmreqToAutoeq, SoundsourceToAutoeq,
         ArcxToAutoeq, ArcxToSwproj, Arc4ToAutoeq, Arc4ToSwproj,
         PeqbToFir, SwprojToFir, AutoeqToFir, FirToAutoeq,
+        TargetcurveToAutoeq, AutoeqToTargetcurve,
+        DiracFilterToAutoeq, DiracFilterToFir, AutoeqToDiracFilter, FirToDiracFilter,
     )
 }
 

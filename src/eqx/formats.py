@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .autoeq import response
+from .dirac import filterslot, targetcurve
 from .fileformat import Format
 from .ik import arc4, arcx
 from .rew import cal, mdat
@@ -17,11 +18,12 @@ from .wav import fir
 
 FORMATS: dict[str, Format] = {m.FORMAT.id: m.FORMAT for m in (
     swproj, peqb, swmicpkg, targetpreset, mdat, cal, response,
-    # Content checks run in this order: the cheap LVND magic before the
+    # Content checks run in this order: the cheap magics before the
     # MERGING key search of an encrypted export.
-    export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt, soundsource,
+    filterslot, export_lvnd, export_peq_json, export_biquad_json, export_biquad_xml, export_txt,
+    soundsource,
     tmreq,
-    arcx, arc4, fir,
+    arcx, arc4, fir, targetcurve,
 )}
 
 

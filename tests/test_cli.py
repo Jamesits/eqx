@@ -30,6 +30,8 @@ SAMPLES = {
     "soundsource": TESTDATA / "rogueamoeba/soundsource/Tilt - Flat.txt",
     "arcx": TESTDATA / "ik/arcx/Arc.arcXs",
     "fir": TESTDATA / "fir/wav/Tilt Tilt Wired Average.wav",
+    "targetcurve": TESTDATA / "dirac/targetcurve/Tilt.targetcurve",
+    "dirac-filter": TESTDATA / "dirac/dirac-filter/FIIR signed.bin",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -184,7 +186,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", "-i", csv)
-        self.assertIn("8 converters from autoeq", err)
+        self.assertIn("10 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run("convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M")
             self.assertEqual(code, 0)
