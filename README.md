@@ -14,32 +14,32 @@ DO check the output levels on all frequencies before playing any audio.
 
 ## Supported File Formats
 
-| Format | Extension | `--format` | Read | Write |
-|:---|:---|:---|:-:|:-:|
-| AutoEq | `.csv` | `autoeq` | ✓ | ✓ |
-| FIR filter (Equalizer APO, CamillaDSP, Roon, ...) | `.wav` | `fir` | ✓ | ✓ |
-| IK Multimedia ARC X 2.x session | `.arcXs` | `arcx` | ✓ | ✓ |
-| IK Multimedia ARC X 2.x analysis | `.arcXa` | `arcx` | ✓ | ✓ |
-| IK Multimedia ARC 4 analysis | `.arc4a` | `arc4` | ✓ | |
-| REW measurement | `.mdat` | `mdat` | ✓ | ✓ |
-| REW microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ |
-| RME TotalMix FX Room EQ preset | `.tmreq` | `tmreq` | ✓ | ✓ |
-| Rogue Amoeba SoundSource Headphone EQ custom profile | `.txt` | `soundsource` | ✓ | ✓ |
-| SoundID Reference 5.x headphone profile | `.swhp` | `peqb` | ✓ | ✓ |
-| SoundID Reference 5.x project | `.swproj` | `swproj` | ✓ | ✓ |
-| SoundID Reference 5.x microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ |
-| SoundID Reference 5.x target preset | `.json` | `targetpreset` | ✓ | |
-| SoundID Reference 5.x export: ADAM Audio A Series | `.adam` | `soundid-export-biquad-xml` | ✓ | |
-| SoundID Reference 5.x export: Dolby Atmos Renderer | `.txt` | `soundid-export-txt` | ✓ | |
-| SoundID Reference 5.x export: Fluid Audio | `.bin` | `soundid-export-biquad-json` | ✓ | |
-| SoundID Reference 5.x export: Grace Design m908 | `.bin` | `soundid-export-peq-json` | ✓ | |
-| SoundID Reference 5.x export: Lynx Aurora | `.bin` | `soundid-export-peq-json` | ✓ | |
-| SoundID Reference 5.x export: MERGING+ANUBIS | `.bin` | `soundid-export-biquad-json` | ✓ | |
-| SoundID Reference 5.x export: SPQ DSP (AVID MTRX, DAD) | `.txt` | `soundid-export-txt` | ✓ | |
-| SoundID Reference 5.x export: Wayne Jones AUDIO | `.bin` | `soundid-export-lvnd` | ✓ | |
-| Sonarworks Reference 3.x, 4.x headphone profile | `.swhp` | `peqb` | ✓ | |
-| Sonarworks Reference 3.x, 4.x project | `.swproj` | `swproj` | ✓ | ✓ |
-| Sonarworks Reference 3.x, 4.x export (including the PEQb 2.x and `PEQB` versions) | `.eqb` | `peqb` | ✓ | |
+| Software | Format | Extension | `--format` | Read | Write | Notes |
+|:---|:---|:---|:---|:-:|:-:|:---|
+| AutoEq | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
+| Generic | FIR filter | `.wav` | `fir` | ✓ | ✓ | Equalizer APO, CamillaDSP, Roon, ... |
+| IK Multimedia ARC X 2.x | Session | `.arcXs` | `arcx` | ✓ | ✓ | |
+| IK Multimedia ARC X 2.x | Analysis | `.arcXa` | `arcx` | ✓ | ✓ | |
+| IK Multimedia ARC 4 | Analysis | `.arc4a` | `arc4` | ✓ | | |
+| REW | Measurement | `.mdat` | `mdat` | ✓ | ✓ | |
+| REW | Microphone calibration | `.cal`, `.txt` | `rewcal` | ✓ | ✓ | |
+| RME TotalMix FX | Room EQ preset | `.tmreq` | `tmreq` | ✓ | ✓ | |
+| Rogue Amoeba SoundSource | Headphone EQ custom profile | `.txt` | `soundsource` | ✓ | ✓ | |
+| SoundID Reference 5.x | Headphone profile | `.swhp` | `peqb` | ✓ | ✓ | |
+| SoundID Reference 5.x | Project | `.swproj` | `swproj` | ✓ | ✓ | |
+| SoundID Reference 5.x | Microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ | |
+| SoundID Reference 5.x | Target preset | `.json` | `targetpreset` | ✓ | | |
+| SoundID Reference 5.x | Export: ADAM Audio A Series | `.adam` | `soundid-export-biquad-xml` | ✓ | | |
+| SoundID Reference 5.x | Export: Dolby Atmos Renderer | `.txt` | `soundid-export-txt` | ✓ | | |
+| SoundID Reference 5.x | Export: Fluid Audio | `.bin` | `soundid-export-biquad-json` | ✓ | | |
+| SoundID Reference 5.x | Export: Grace Design m908 | `.bin` | `soundid-export-peq-json` | ✓ | | |
+| SoundID Reference 5.x | Export: Lynx Aurora | `.bin` | `soundid-export-peq-json` | ✓ | | |
+| SoundID Reference 5.x | Export: MERGING+ANUBIS | `.bin` | `soundid-export-biquad-json` | ✓ | | |
+| SoundID Reference 5.x | Export: SPQ DSP (AVID MTRX, DAD) | `.txt` | `soundid-export-txt` | ✓ | | |
+| SoundID Reference 5.x | Export: Wayne Jones AUDIO | `.bin` | `soundid-export-lvnd` | ✓ | | |
+| Sonarworks Reference 3.x, 4.x | Headphone profile | `.swhp` | `peqb` | ✓ | | |
+| Sonarworks Reference 3.x, 4.x | Project | `.swproj` | `swproj` | ✓ | ✓ | |
+| Sonarworks Reference 3.x, 4.x | Export (including the PEQb 2.x and `PEQB` versions) | `.eqb` | `peqb` | ✓ | | |
 
 Read: `inspect` and `convert` input. Write: `convert` output. `convert` takes the same values in `--from` / `--to`; `uv run eqx convert --help` lists the conversions.
 
