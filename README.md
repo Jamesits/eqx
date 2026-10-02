@@ -141,6 +141,7 @@ uv run pytest
 - Converts to `.swmicpkg` (`-i <serial>.txt [-i <serial>_90deg.txt]`); the 30 degree table is a copy of the 0 degree table
 - Usable as `--mic-profile` of `.swproj` conversions; pass the `_90deg` file for the 90 degree table, without `--mic-angle`
 - The sensitivity (`Sens Factor`) is shown by `inspect`, not converted
+- Reads every layout miniDSP has used (80, 133 or 615 points; quoted or unquoted header; with or without `AGain`); a downloaded error page (`Unable to locate calibration data`) is reported as such
 
 ### Rational Acoustics Smaart
 

@@ -15,6 +15,11 @@ TESTDATA = common.ROOT
 DIR = TESTDATA / "minidsp/umik"
 UMIK1, UMIK1_90 = DIR / "7000042.txt", DIR / "7000042_90deg.txt"
 UMIK2, UMIK2_90 = DIR / "8100042.txt", DIR / "8100042_90deg.txt"
+# Older file variants: 1/8 octave; unquoted header, 1/12 octave; UMIK-1 with
+# AGain; no calibration data.
+GEN1, UNQUOTED, AGAIN, NO_DATA = (
+    DIR / f"{s}.txt" for s in ("7000007", "7060042", "7080042", "7085042")
+)
 
 
 class ReaderTests(unittest.TestCase):
@@ -69,6 +74,34 @@ class ReaderTests(unittest.TestCase):
             "unknown",
         )
 
+    def test_variants(self):
+        for path, sens, gain, grid in (
+            (GEN1, -16.25, None, minidsp.UMIK_GRID_8),
+            (UNQUOTED, -0.75, None, minidsp.UMIK_GRID_12),
+            (AGAIN, 2.25, 18.0, minidsp.UMIK_GRID),
+        ):
+            u = umik.load(path)
+            self.assertEqual(
+                (u.model, u.serial, u.sensitivity_db, u.analog_gain_db),
+                ("UMIK-1", path.stem, sens, gain),
+            )
+            self.assertEqual(u.profile.angle, "degrees_0")
+            points = u.profile.points
+            self.assertEqual(len(points), len(grid))
+            for (f, g), f0 in zip(points, grid):
+                self.assertAlmostEqual(f, f0, delta=1e-3)
+                self.assertAlmostEqual(
+                    g,
+                    common.response(minidsp.UMIK_SECTIONS["degrees_0"], f)[0],
+                    delta=5e-3,
+                )  # 2 decimals in the 1/12 octave file
+
+    def test_no_data(self):
+        with self.assertRaisesRegex(
+            ValueError, "7085042: miniDSP has no calibration data"
+        ):
+            umik.load(NO_DATA)
+
     def test_no_header(self):
         with self.assertRaisesRegex(ValueError, "no UMIK header"):
             umik.read("20 0\n30 1\n", "x")
@@ -91,6 +124,8 @@ class DetectionTests(unittest.TestCase):
         ):
             self.assertNotEqual(formats.detect(path), "umik")
             self.assertFalse(umik.sniff(path.read_bytes()))
+        # Another HTML page is not a UMIK file.
+        self.assertFalse(umik.sniff(b"<html><body>Unable to load</body></html>"))
 
     def test_only_conversion(self):
         self.assertIs(convert.find("umik"), UmikToSwmicpkg)
@@ -141,6 +176,22 @@ class SwmicpkgTests(unittest.TestCase):
             ValueError, "no degrees_0 table; add the 7000042.txt"
         ):
             UmikToSwmicpkg().convert([UMIK1_90])
+        with self.assertRaisesRegex(ValueError, "no calibration data"):
+            UmikToSwmicpkg().convert([NO_DATA])
+
+    def test_variants(self):
+        # Tables shorter than the package grid are clamped to their end values.
+        for path in (GEN1, UNQUOTED, AGAIN):
+            profiles = swmicpkg.read_all(UmikToSwmicpkg().convert([path]).data.decode())
+            points = profiles[0].points
+            self.assertEqual(len(points), len(swmicpkg.grid()))
+            for f, g in points:
+                if 20.4 <= f <= 19152:
+                    self.assertAlmostEqual(
+                        g,
+                        common.response(minidsp.UMIK_SECTIONS["degrees_0"], f)[0],
+                        delta=0.05,
+                    )
 
 
 class MicProfileTests(unittest.TestCase):

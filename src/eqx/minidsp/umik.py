@@ -1,13 +1,18 @@
 """Reader for miniDSP UMIK microphone calibration files (``<serial>.txt``).
 
-A REW calibration file with a quoted header line::
+A REW calibration file with a header line, quoted or not::
 
     "Sens Factor =-5.846dB, SERNO: 7001234"
+    Sens Factor =-3.27dB, SERNO: 7060837
     "Sens Factor =-14.52dB, AGain =18dB, SERNO: 8101234"
 
-then one ``frequency<TAB>gain`` row per line.  The 90 degree file
+then one ``frequency<TAB>gain`` row per line; the number of points (80, 133
+or 615) and the decimals vary by serial.  The 90 degree file
 (``<serial>_90deg.txt``) has a second header line
-``"Auto-generated 90-degree calibration file"``.
+``"Auto-generated 90-degree calibration file"``.  For a serial without
+calibration data miniDSP serves an HTML error message as the ``.txt`` file.
+
+https://www.hifi-selbstbau.de/index.php/hsb/ueberarbeitung-des-hifi-selbstbau-hoerraums/umik1-kalibrierung-wenn-ja-warum-nicht
 """
 
 from __future__ import annotations
@@ -24,8 +29,9 @@ from ..rew import cal
 PLAIN_ANGLE, SIDE_ANGLE = "degrees_0", "degrees_90"
 
 _SIDE = re.compile(r"\b90[- ]?deg", re.IGNORECASE)
+_NO_DATA = "Unable to locate calibration data"
 
-# The first serial digit; the known serials start with 700 (UMIK-1) and 810 (UMIK-2).
+# The first serial digit; the known serials start with 70x-72x (UMIK-1) and 810 (UMIK-2).
 MODELS = {"7": "UMIK-1", "8": "UMIK-2"}
 
 
@@ -33,7 +39,7 @@ MODELS = {"7": "UMIK-1", "8": "UMIK-2"}
 class Umik:
     serial: str
     sensitivity_db: float  # dBFS rms at 94 dB SPL, maximum input volume
-    analog_gain_db: float | None  # UMIK-2: gain setting of the calibration
+    analog_gain_db: float | None  # gain setting of the calibration, if given
     profile: MicProfile  # name: serial; angle: degrees_0 or degrees_90
     header: list[str]  # the non-numeric lines
 
@@ -44,6 +50,11 @@ class Umik:
 
 def read(text: str, name: str = "") -> Umik:
     """``name`` (the file stem) marks the 90 degree table by its ``_90deg`` suffix."""
+    if _NO_DATA in text:
+        raise ValueError(
+            f"{name or 'file'}: miniDSP has no calibration data for this serial "
+            "(the file is the download's error message)"
+        )
     table, other = cal.read(text, name)
     match = next((m for m in map(cal.SENS_FACTOR.match, other) if m), None)
     if match is None:
@@ -104,11 +115,11 @@ class UmikInspector(Inspector):
 
 
 def sniff(data: bytes) -> bool:
-    """The first non-empty line is the header."""
-    lines = head_text(data).splitlines()
-    return (
-        cal.SENS_FACTOR.match(next((line for line in lines if line.strip()), ""))
-        is not None
+    """The first non-empty line is the header, or the download's error message."""
+    text = head_text(data)
+    first = next((line for line in text.splitlines() if line.strip()), "")
+    return cal.SENS_FACTOR.match(first) is not None or (
+        first.lstrip().startswith("<") and _NO_DATA in text
     )
 
 
