@@ -440,7 +440,9 @@ def spline(xs: list[float], ys: list[float], queries) -> list[float | None]:
         out.append(
             a * ys[lo]
             + b * ys[lo + 1]
-            + ((a * a * a - a) * y2[lo] + (b * b * b - b) * y2[lo + 1]) * h * h / 6
+            + ((fmath.pow(a, 3) - a) * y2[lo] + (fmath.pow(b, 3) - b) * y2[lo + 1])
+            * fmath.pow(h, 2)
+            / 6
         )
     return out
 

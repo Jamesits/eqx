@@ -42,11 +42,11 @@ def point_bands(
     peak = peak_index(padded)
     spectrum = dsp.fft(padded[peak:] + padded[:peak])[: n // 2 + 1]
     step = sample_rate / n
-    power = [x.real * x.real + x.imag * x.imag for x in spectrum]
+    power = [fmath.pow(x.real, 2) + fmath.pow(x.imag, 2) for x in spectrum]
     # Central phase difference; its angle stays in (-pi, pi] without unwrapping.
     delay = [0.0] * len(spectrum)
     for k in range(1, len(spectrum) - 1):
-        d = spectrum[k + 1] * spectrum[k - 1].conjugate()
+        d = fmath.cmul(spectrum[k + 1], spectrum[k - 1].conjugate())
         delay[k] = -fmath.atan2(d.imag, d.real) / (2 * math.pi * 2 * step) if d else 0.0
     delay[0], delay[-1] = delay[1], delay[-2]
     return spectrum_bands(power, delay, step, frequencies)

@@ -347,7 +347,7 @@ def design(target: list[float], rate: int) -> Design:
     want = [0.0] * LATENCY + list(target) + [0.0] * (size - LATENCY - len(target))
     low += [0.0] * (size - len(low))
     residual = [w - v for w, v in zip(want, low)]
-    energy = [v * v for v in residual] + [0.0] * TAPS
+    energy = [fmath.pow(v, 2) for v in residual] + [0.0] * TAPS
     last = min(int(rate * MAX_DELAY_MS / 1000), size)
     window = math.fsum(energy[:TAPS])
     best, start = window, 0

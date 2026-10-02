@@ -30,7 +30,7 @@ FIR_DIR = "fir/wav"
 def _poly(c, s):
     out = 0j
     for a in reversed(c):
-        out = out * s + a
+        out = fmath.cmul(out, s) + a
     return out
 
 
@@ -40,12 +40,12 @@ def _dpoly(c, s):
 
 def hp2(f0, q):
     w = 2 * math.pi * f0
-    return [0, 0, 1], [w * w, w / q, 1]
+    return [0, 0, 1], [fmath.pow(w, 2), w / q, 1]
 
 
 def lp2(f0, q):
     w = 2 * math.pi * f0
-    return [w * w], [w * w, w / q, 1]
+    return [fmath.pow(w, 2)], [fmath.pow(w, 2), w / q, 1]
 
 
 def hp1(f0):
@@ -55,7 +55,7 @@ def hp1(f0):
 
 def peak(f0, gain_db, q):
     w, a = 2 * math.pi * f0, fmath.pow(10, gain_db / 40)
-    return [w * w, w * a / q, 1], [w * w, w / (a * q), 1]
+    return [fmath.pow(w, 2), w * a / q, 1], [fmath.pow(w, 2), w / (a * q), 1]
 
 
 def high_cut(f0, gain_db):
@@ -69,9 +69,12 @@ def response(sections, f):
     s = 2j * math.pi * f
     h, gd = 1 + 0j, 0.0
     for num, den in sections:
-        h *= _poly(num, s) / _poly(den, s)
+        h = fmath.cmul(h, fmath.cdiv(_poly(num, s), _poly(den, s)))
         # d(arg H)/dw = Re(H'(s)/H(s)); group delay is its negative.
-        gd -= (_dpoly(num, s) / _poly(num, s) - _dpoly(den, s) / _poly(den, s)).real
+        gd -= (
+            fmath.cdiv(_dpoly(num, s), _poly(num, s))
+            - fmath.cdiv(_dpoly(den, s), _poly(den, s))
+        ).real
     return 20 * fmath.log10(fmath.cabs(h)), math.degrees(fmath.phase(h)), gd
 
 

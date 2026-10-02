@@ -85,8 +85,10 @@ def arc4_spectrum(side: str, rate: float) -> list[float]:
         for k in range(half + 1)
     ]
     low, high = int(40 * ARC4_FFT_SIZE / rate), int(10000 * ARC4_FFT_SIZE / rate)
-    scale = 1 / math.sqrt(
-        math.fsum(m * m for m in magnitude[low : high + 1]) / (high - low + 1)
+    scale = fmath.pow(
+        math.fsum(fmath.pow(m, 2) for m in magnitude[low : high + 1])
+        / (high - low + 1),
+        -0.5,
     )
     packed = [magnitude[0] * scale, magnitude[half] * scale]
     for k in range(1, half):

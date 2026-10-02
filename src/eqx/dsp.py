@@ -33,8 +33,9 @@ class Biquad:
 
     def h(self, frequency: float, sample_rate: float) -> complex:
         z = fmath.cexp(-2j * math.pi * frequency / sample_rate)
-        return (self.b0 + self.b1 * z + self.b2 * z * z) / (
-            self.a0 + self.a1 * z + self.a2 * z * z
+        return fmath.cdiv(
+            self.b0 + self.b1 * z + fmath.cmul(self.b2 * z, z),
+            self.a0 + self.a1 * z + fmath.cmul(self.a2 * z, z),
         )
 
 
@@ -42,7 +43,7 @@ def cascade_db(biquads, frequency: float, sample_rate: float) -> float:
     """Gain of the biquads in series at ``frequency`` Hz, dB."""
     h = 1 + 0j
     for bq in biquads:
-        h *= bq.h(frequency, sample_rate)
+        h = fmath.cmul(h, bq.h(frequency, sample_rate))
     return 20 * fmath.log10(fmath.cabs(h))
 
 
@@ -148,7 +149,7 @@ def _fft(x: list) -> list:
     tw = _TWIDDLES.get(n)
     if tw is None:
         tw = _TWIDDLES[n] = [fmath.cexp(-2j * math.pi * k / n) for k in range(n // 2)]
-    odd = [w * o for w, o in zip(tw, odd)]
+    odd = [fmath.cmul(w, o) for w, o in zip(tw, odd)]
     return [e + o for e, o in zip(even, odd)] + [e - o for e, o in zip(even, odd)]
 
 
@@ -238,8 +239,8 @@ def hermite(xs: list[float], ys: list[float], queries) -> list[float]:
         if i == 0 or i == n - 2:
             out.append(ys[i] + t * (ys[i + 1] - ys[i]))
             continue
-        t2 = t * t
-        t3 = t2 * t
+        t2 = fmath.pow(t, 2)
+        t3 = fmath.pow(t, 3)
         out.append(
             (2 * t3 - 3 * t2 + 1) * ys[i]
             + (t3 - 2 * t2 + t) * h[i] * m[i]
@@ -272,7 +273,7 @@ def zero_phase(magnitude: list[float]) -> list[float]:
 
 
 def _bessel_i0(x: float) -> float:
-    y = x * x / 4
+    y = fmath.pow(x, 2) / 4
     term, total, k = 1.0, 1.0, 0
     while term > 1e-17 * total:
         k += 1
@@ -289,15 +290,15 @@ def _soundid_i0(x: float) -> float:
     y = x / 2
     total, power, fact = 1.0, y, 1.0  # fact = k!
     for k in range(1, 10):
-        total += power / (fact * fact * (k + 1))
-        power *= y * y
+        total += power / (fmath.pow(fact, 2) * (k + 1))
+        power *= fmath.pow(y, 2)
         fact *= k + 1
     return total
 
 
 def _kaiser(x: float, alpha: float, i0) -> float:
     """Kaiser window at ``x`` in [-1, 1]."""
-    return i0(alpha * math.sqrt(max(0.0, 1 - x * x))) / i0(alpha)
+    return i0(alpha * math.sqrt(max(0.0, 1 - fmath.pow(x, 2)))) / i0(alpha)
 
 
 def design_fir(
@@ -393,7 +394,9 @@ def fir_gain_db(ir: list[float], sample_rate: float, frequencies) -> list[float]
     """Gain of an impulse response at ``frequencies``, dB (interpolated FFT bins)."""
     n = 1 << max(16, (len(ir) - 1).bit_length() + 2)
     spectrum = fft(list(ir) + [0.0] * (n - len(ir)))
-    power = [v.real * v.real + v.imag * v.imag for v in spectrum[: n // 2 + 1]]
+    power = [
+        fmath.pow(v.real, 2) + fmath.pow(v.imag, 2) for v in spectrum[: n // 2 + 1]
+    ]
     out = []
     for f in frequencies:
         x = min(max(f * n / sample_rate, 0.0), n / 2)
@@ -427,12 +430,12 @@ class _Bells:
         bq = bell(fmath.exp(log_frequency), gain_db, fmath.exp(log_q), self.sample_rate)
         # |H|^2 of a real biquad: (c0 + c1 cos w + c2 cos 2w) / (same for the poles).
         n0, n1, n2 = (
-            bq.b0 * bq.b0 + bq.b1 * bq.b1 + bq.b2 * bq.b2,
+            fmath.pow(bq.b0, 2) + fmath.pow(bq.b1, 2) + fmath.pow(bq.b2, 2),
             2 * (bq.b0 * bq.b1 + bq.b1 * bq.b2),
             2 * bq.b0 * bq.b2,
         )
         d0, d1, d2 = (
-            bq.a0 * bq.a0 + bq.a1 * bq.a1 + bq.a2 * bq.a2,
+            fmath.pow(bq.a0, 2) + fmath.pow(bq.a1, 2) + fmath.pow(bq.a2, 2),
             2 * (bq.a0 * bq.a1 + bq.a1 * bq.a2),
             2 * bq.a0 * bq.a2,
         )
@@ -503,7 +506,7 @@ def fit_bells(
         damping = 1e-3
         curves_db = bands(params)
         r = errors(params, curves_db)
-        cost = math.fsum(e * e for e in r)
+        cost = math.fsum(fmath.pow(e, 2) for e in r)
         for _ in range(iterations):
             columns = [[1.0] * len(target)]
             for k, base in enumerate(curves_db):
@@ -528,7 +531,7 @@ def fit_bells(
                 new = clip([p + d for p, d in zip(params, _solve(m, jtr))])
                 new_curves = bands(new)
                 new_r = errors(new, new_curves)
-                new_cost = math.fsum(e * e for e in new_r)
+                new_cost = math.fsum(fmath.pow(e, 2) for e in new_r)
                 if new_cost < cost:
                     damping = max(damping / 3, 1e-9)
                     break
@@ -579,6 +582,6 @@ def fit_bells(
     return BellFit(
         params[0],
         bells,
-        math.sqrt(math.fsum(e * e for e in r) / len(r)),
+        math.sqrt(math.fsum(fmath.pow(e, 2) for e in r) / len(r)),
         max(abs(e) for e in r),
     )

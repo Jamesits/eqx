@@ -1,9 +1,12 @@
-"""Correctly rounded elementary functions on floats (MPFR via gmpy2).
+"""Correctly rounded math on floats and complex numbers (MPFR/MPC via gmpy2).
 
 ``math``, ``cmath`` and ``float ** float`` use the C library, whose results
-differ in the last bit between Windows, Linux and macOS.  Written files must
-be the same bytes everywhere, so every transcendental function goes through
-here.  ``+ - * /`` and ``math.sqrt`` are correctly rounded already.
+differ in the last bit between Windows, Linux and macOS.  CPython's complex
+``*`` and ``/`` may be compiled to fused multiply-adds (Python 3.10 on arm64
+macOS), which round differently.  Written files must be the same bytes
+everywhere, so every transcendental function and every complex product and
+quotient goes through here.  Float ``+ - * /`` and ``math.sqrt`` are
+correctly rounded already.
 """
 
 from __future__ import annotations
@@ -49,7 +52,7 @@ def atan2(y: float, x: float) -> float:
 def cexp(z: complex) -> complex:
     """e ** z."""
     m = _C.exp(z.real)
-    return complex(float(m * _C.cos(z.imag)), float(m * _C.sin(z.imag)))
+    return complex(float(_C.mul(m, _C.cos(z.imag))), float(_C.mul(m, _C.sin(z.imag))))
 
 
 def cabs(z: complex) -> float:
@@ -58,3 +61,13 @@ def cabs(z: complex) -> float:
 
 def phase(z: complex) -> float:
     return atan2(z.imag, z.real)
+
+
+def cmul(a: complex, b: complex) -> complex:
+    """a * b."""
+    return complex(_C.mul(a, b))
+
+
+def cdiv(a: complex, b: complex) -> complex:
+    """a / b."""
+    return complex(_C.div(a, b))

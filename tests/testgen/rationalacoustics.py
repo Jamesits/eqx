@@ -35,7 +35,7 @@ def coherence(f: float) -> float:
 def tf_point(side: str, f: float, rate: int) -> complex:
     h = 1 + 0j
     for bq in bells(side, rate):
-        h *= bq.h(f, rate)
+        h = fmath.cmul(h, bq.h(f, rate))
     return h
 
 
