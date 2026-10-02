@@ -12,6 +12,7 @@ from pathlib import Path
 from .. import formats
 from ..audyssey import mqx
 from ..autoeq import response
+from ..daytonaudio import mic
 from ..ik import arc4, arcx
 from ..minidsp import umik
 from ..model import Measurement, MicProfile
@@ -30,14 +31,14 @@ from ..soundid.speakerproject import (
 from .base import Converter, Result
 from .common import COLUMN_OPTION, curves
 
-MIC_PROFILE_FORMATS = ("swmicpkg", "swproj", "umik")
+MIC_PROFILE_FORMATS = ("swmicpkg", "swproj", "umik", "dayton")
 
 
 def load_mic_profile(
     path: Path, angle: str | None = None, kind: str | None = None
 ) -> MicProfile:
     """One microphone table from a ``.swmicpkg``, a ``.swproj`` measured with it,
-    or a UMIK file.
+    a UMIK or a Dayton Audio file.
 
     ``angle`` selects the table of a profile with several (default
     ``degrees_0``); a profile with one table rejects it and gives that table.
@@ -52,13 +53,13 @@ def load_mic_profile(
     elif kind == "swproj":
         profiles = {p.angle: p for p in swproj.mic_profiles(swproj.SwProj.open(path))}
         available, read = list(profiles), profiles.__getitem__
-    elif kind == "umik":
-        profile = umik.load(path).profile
+    elif kind in ("umik", "dayton"):
+        profile = (umik if kind == "umik" else mic).load(path).profile
         available, read = [profile.angle], lambda a: profile
     else:
         raise ValueError(
-            f"{path.name}: a microphone profile must be .swmicpkg, .swproj "
-            "or a UMIK .txt"
+            f"{path.name}: a microphone profile must be .swmicpkg, .swproj, "
+            "a UMIK .txt or a Dayton Audio .txt / .omm"
         )
     if not available:
         raise ValueError(f"{path.name} holds no microphone table")
@@ -105,7 +106,8 @@ class SpeakerProjectConverter(Converter):
             "--mic-profile",
             type=Path,
             help="required: SoundID microphone package (.swmicpkg), a .swproj "
-            "measured with the microphone, or a UMIK calibration file (.txt)",
+            "measured with the microphone, a UMIK calibration file (.txt) or a "
+            "Dayton Audio calibration file (.txt, .omm)",
         ),
         Option(
             "--mic-profile-format",

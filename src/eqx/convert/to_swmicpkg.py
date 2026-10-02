@@ -1,10 +1,12 @@
-"""REW and miniDSP UMIK microphone calibration files -> SoundID microphone package."""
+"""REW, miniDSP UMIK and Dayton Audio microphone calibration files -> SoundID
+microphone package."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
 from ..curve import log_resample
+from ..daytonaudio import mic
 from ..minidsp import umik
 from ..model import MicProfile
 from ..options import Option
@@ -15,7 +17,7 @@ from .base import Converter, Result
 SERIAL_OPTION = Option(
     "--serial",
     help="microphone serial, the package name (default: the "
-    "serial in a UMIK file, else the first input name)",
+    "serial in a UMIK or Dayton Audio file, else the first input name)",
 )
 
 
@@ -71,56 +73,82 @@ class RewcalToSwmicpkg(Converter):
         return Result(data, f"{serial}.swmicpkg", notes + copies)
 
 
-class UmikToSwmicpkg(Converter):
+class _MicFilesToSwmicpkg(Converter):
     """The inputs are the 0 degree and the optional 90 degree file, in any order.
 
-    Each file's angle comes from its header or ``_90deg`` name.  UMIK has no
+    Each file's angle comes from its header or ``_90deg`` name.  There is no
     30 degree table; it gets a copy of the 0 degree table.  The sensitivity
-    has no place in the package.
+    has no place in the package.  Subclasses read the files.
     """
 
-    source = "umik"
     target = "swmicpkg"
-    description = (
-        "UMIK calibration (inputs: 0, optional 90 degrees) as a SoundID "
-        "microphone package"
-    )
     options = (SERIAL_OPTION,)
     inputs = 2
 
     def __init__(self, serial: str | None = None):
         self.serial = serial
 
+    def _load(self, path: Path):
+        """An object with ``serial``, ``model``, ``sensitivity_db``, ``profile``."""
+        raise NotImplementedError
+
+    def _note(self, mic) -> list[str]:
+        raise NotImplementedError
+
     def _convert(self, *paths: Path) -> Result:
-        files = [(path, umik.load(path)) for path in paths]
-        serials = {u.serial for _, u in files}
+        files = [(path, self._load(path)) for path in paths]
+        serials = {m.serial for _, m in files}
         if len(serials) > 1:
             raise ValueError(
                 f"the inputs are of different microphones: {', '.join(sorted(serials))}"
             )
         tables, notes = {}, []
-        for path, u in files:
-            angle = u.profile.angle
+        for path, m in files:
+            angle = m.profile.angle
             if angle in tables:
                 raise ValueError(f"two {angle} tables: {paths[0].name}, {path.name}")
-            tables[angle] = u.profile
-            notes.append(f"{angle}: {path.name}, {len(u.profile.points)} points")
-        if umik.PLAIN_ANGLE not in tables:
+            tables[angle] = m.profile
+            notes.append(f"{angle}: {path.name}, {len(m.profile.points)} points")
+        if swmicpkg.PLAIN_ANGLE not in tables:
+            path, m = files[0]
             raise ValueError(
-                f"no {umik.PLAIN_ANGLE} table; add the {files[0][1].serial}.txt file"
+                f"no {swmicpkg.PLAIN_ANGLE} table; add the {m.serial}{path.suffix} file"
             )
-        u = files[0][1]
-        serial = self.serial or u.serial
+        m = files[0][1]
+        serial = self.serial or m.serial
         data, copies = package(serial, tables)
-        return Result(
-            data,
-            f"{serial}.swmicpkg",
-            [
-                (
-                    f"{u.model} {u.serial}, sensitivity {u.sensitivity_db:g} dBFS "
-                    "(not stored)"
-                )
-            ]
-            + notes
-            + copies,
-        )
+        return Result(data, f"{serial}.swmicpkg", self._note(m) + notes + copies)
+
+
+class UmikToSwmicpkg(_MicFilesToSwmicpkg):
+    source = "umik"
+    description = (
+        "UMIK calibration (inputs: 0, optional 90 degrees) as a SoundID "
+        "microphone package"
+    )
+
+    def _load(self, path: Path):
+        return umik.load(path)
+
+    def _note(self, u) -> list[str]:
+        return [
+            f"{u.model} {u.serial}, sensitivity {u.sensitivity_db:g} dBFS (not stored)"
+        ]
+
+
+class DaytonToSwmicpkg(_MicFilesToSwmicpkg):
+    source = "dayton"
+    description = (
+        "Dayton Audio calibration (inputs: 0, optional 90 degrees) as a SoundID "
+        "microphone package"
+    )
+
+    def _load(self, path: Path):
+        return mic.load(path)
+
+    def _note(self, m) -> list[str]:
+        sensitivity = f"{m.sensitivity_db:g} {m.sensitivity_unit}"
+        notes = [f"{m.model} {m.serial}, sensitivity {sensitivity} (not stored)"]
+        if m.phase:
+            notes.append("phase not stored")
+        return notes

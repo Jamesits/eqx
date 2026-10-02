@@ -50,7 +50,7 @@ from .to_smaart_ascii import AutoeqToSmaartAscii
 from .to_smaart_curve import AutoeqToSmaartCurve
 from .to_smaart_trace import AutoeqToSmaartSrf, AutoeqToSmaartTrf
 from .to_soundsource import AutoeqToSoundsource
-from .to_swmicpkg import RewcalToSwmicpkg, UmikToSwmicpkg
+from .to_swmicpkg import DaytonToSwmicpkg, RewcalToSwmicpkg, UmikToSwmicpkg
 from .to_swproj import (
     Arc4ToSwproj,
     ArcxToSwproj,
@@ -79,6 +79,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         AutoeqToSoundsource,
         RewcalToSwmicpkg,
         UmikToSwmicpkg,
+        DaytonToSwmicpkg,
         SoundidExportBiquadJsonToAutoeq,
         SoundidExportPeqJsonToAutoeq,
         SoundidExportBiquadXmlToAutoeq,

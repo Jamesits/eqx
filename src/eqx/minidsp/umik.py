@@ -23,13 +23,6 @@ from ..rew import cal
 
 PLAIN_ANGLE, SIDE_ANGLE = "degrees_0", "degrees_90"
 
-_NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)"
-_HEADER = re.compile(
-    rf'^\s*"?\s*Sens Factor\s*=\s*(?P<sens>{_NUMBER})\s*dB\s*,'
-    rf"(?:\s*AGain\s*=\s*(?P<gain>{_NUMBER})\s*dB\s*,)?"
-    r'\s*SERNO:\s*(?P<serial>[^",\s]+)\s*"?\s*$',
-    re.IGNORECASE,
-)
 _SIDE = re.compile(r"\b90[- ]?deg", re.IGNORECASE)
 
 # The first serial digit; the known serials start with 700 (UMIK-1) and 810 (UMIK-2).
@@ -52,7 +45,7 @@ class Umik:
 def read(text: str, name: str = "") -> Umik:
     """``name`` (the file stem) marks the 90 degree table by its ``_90deg`` suffix."""
     table, other = cal.read(text, name)
-    match = next((m for m in map(_HEADER.match, other) if m), None)
+    match = next((m for m in map(cal.SENS_FACTOR.match, other) if m), None)
     if match is None:
         raise ValueError(
             f'{name or "file"}: no UMIK header line ("Sens Factor =...dB, SERNO: ...")'
@@ -113,7 +106,10 @@ class UmikInspector(Inspector):
 def sniff(data: bytes) -> bool:
     """The first non-empty line is the header."""
     lines = head_text(data).splitlines()
-    return _HEADER.match(next((line for line in lines if line.strip()), "")) is not None
+    return (
+        cal.SENS_FACTOR.match(next((line for line in lines if line.strip()), ""))
+        is not None
+    )
 
 
 FORMAT = Format(

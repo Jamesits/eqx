@@ -19,6 +19,7 @@ DO check the output levels on all frequencies before playing any audio.
 |:---|:---|:---|:---|:-:|:-:|:---|
 | [Audyssey MultEQ-X](https://audyssey.com/) | Project | `.mqx` | `mqx` | ✓ | ✓ | Untested: no hardware |
 | [AutoEq](https://autoeq.app/) | Parametric EQ | `.csv` | `autoeq` | ✓ | ✓ | |
+| [Dayton Audio](https://www.daytonaudio.com/) UMM-6, iMM-6, OmniMic, EMM-6 | Microphone calibration | `.txt`, `.omm` | `dayton` | ✓ | | |
 | [Dirac Live 3.x](https://www.dirac.com/live/) | Target curve | `.targetcurve` | `targetcurve` | ✓ | ✓ | Untested: no license |
 | [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license |
 | [FuzzMeasure 4](https://www.rodetest.com/) | Document | `.fume4` | `fuzzmeasure` | ✓ | ✓ | Tested demo features only |
@@ -99,6 +100,12 @@ uv run pytest
 - Measurements include the microphone; MultEQ-X compensates them for its ACM1H. `--mic-response` takes the microphone's REW calibration file (e.g. the generic ACM1HB one) and subtracts it (`.mqx` to `.csv`) or adds it (`.csv` to `.mqx`); `.swproj` uses `--mic-profile`
 - MultEQ-X saves over a project without truncating the file; the leftover text after the project is ignored
 - Written projects hold one position of the front left and right speakers; deselect the AVR's other channels in MultEQ-X
+
+### Dayton Audio
+
+- Converts to `.swmicpkg` (`-i <serial>.txt`, `-i <serial>.omm`); the 30 and 90 degree tables are copies of the 0 degree table. A 90 degree file named `<serial>_90deg.txt` gives the 90 degree table
+- Usable as `--mic-profile` of `.swproj` conversions, without `--mic-angle`
+- The sensitivity (`Sens Factor`, EMM-6 `*1000Hz`) and the phase are shown by `inspect`, not converted
 
 ### Dirac Live
 

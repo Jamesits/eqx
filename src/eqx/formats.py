@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .audyssey import mqx
 from .autoeq import response
+from .daytonaudio import mic
 from .dirac import filterslot, targetcurve
 from .fileformat import Format
 from .ik import arc4, arcx
@@ -33,12 +34,14 @@ from .wav import fir
 FORMATS: dict[str, Format] = {
     f.id: f
     for m in (
-        # umik and ascii before cal: their files are also REW calibration files.
+        # dayton, umik and ascii before cal: their files are also REW
+        # calibration files; dayton before umik: its USB files have the UMIK header.
         swproj,
         peqb,
         swmicpkg,
         targetpreset,
         mdat,
+        mic,
         umik,
         ascii,
         cal,

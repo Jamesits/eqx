@@ -25,6 +25,7 @@ class GeneratedTestdataTests(unittest.TestCase):
                 for d in (
                     "audyssey",
                     "autoeq",
+                    "daytonaudio",
                     "dirac",
                     "fir",
                     "ik",

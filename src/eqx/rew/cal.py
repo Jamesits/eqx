@@ -6,6 +6,7 @@ start with a number, and subtracts the table from measurements.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ..fileformat import Format, Inspector, file_section, frequency_range, head_text
@@ -13,6 +14,15 @@ from ..model import MicProfile
 from ..report import Section, Table
 
 COMMENT = "*"
+
+NUMBER = r"[-+]?(?:\d+\.?\d*|\.\d+)"
+# The USB microphone header line of miniDSP and Dayton Audio files.
+SENS_FACTOR = re.compile(
+    rf'^\s*"?\s*Sens Factor\s*=\s*(?P<sens>{NUMBER})\s*dB\s*,'
+    rf"(?:\s*AGain\s*=\s*(?P<gain>{NUMBER})\s*dB\s*,)?"
+    r'\s*SERNO:\s*(?P<serial>[^",\s]+)\s*"?\s*$',
+    re.IGNORECASE,
+)
 
 
 def _number(value: float) -> str:
