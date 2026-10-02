@@ -22,6 +22,7 @@ PREVIEW_TAIL = 2
 PREVIEW_WIDTH = 100
 GRAPH_HEIGHT = 14
 GRAPH_MAX_WIDTH = 120
+CONVERT_HELP = "convert a file to another format"
 
 
 # --------------------------------------------------------------------------
@@ -169,25 +170,187 @@ def write_output(path: Path, data: bytes | dict[str, bytes]) -> int:
     return sum(len(contents) for contents in data.values())
 
 
-def cmd_convert(args) -> int:
-    source = args.source
-    if source is None:
-        sources = {formats.detect(path) for path in args.input}
-        if len(sources) > 1:
+def _ids(ids: Iterable[str]) -> list[str]:
+    """``ids`` once each, in registry order."""
+    ids = set(ids)
+    return [f for f in formats.FORMATS if f in ids]
+
+
+def _sources(target: str | None = None) -> list[str]:
+    """The formats converting to ``target`` (default: to any)."""
+    return _ids(s for s, t in convert.CONVERTERS if target in (None, t))
+
+
+def _targets(sources: Iterable[str]) -> list[str]:
+    """The formats one of ``sources`` converts to."""
+    sources = set(sources)
+    return _ids(t for s, t in convert.CONVERTERS if s in sources)
+
+
+def _detect(path: Path, allowed: list[str]) -> str | None:
+    try:
+        return formats.detect(path, allowed)
+    except ValueError:
+        return None
+
+
+def _by_extension(path: Path | None, allowed: list[str]) -> list[str]:
+    """The formats in ``allowed`` with the extension of ``path``; all of them
+    if none has it."""
+    suffix = path.suffix.lower() if path is not None else None
+    return [f for f in allowed if suffix in formats.FORMATS[f].extensions] or allowed
+
+
+def _conversion(args) -> tuple[str | None, str | None]:
+    """(source, target) of a conversion; None if not determined."""
+    source, target = args.source, args.target
+    if source is None and args.input:
+        allowed = _sources(target)
+        detected = {_detect(path, allowed) for path in args.input}
+        known = sorted(detected - {None})
+        if len(known) > 1:
             raise ValueError(
-                f"inputs of different formats: {', '.join(sorted(sources))}; "
-                "specify --from"
+                f"inputs of different formats: {', '.join(known)}; specify --from"
             )
-        source = sources.pop()
-    target = args.target
-    if target is None and args.output is not None:
-        target = formats.detect(
-            args.output, (t for s, t in convert.CONVERTERS if s == source)
+        if None not in detected:
+            source = known[0]
+    if target is None:
+        allowed = _targets([source] if source is not None else _sources())
+        if args.output is not None:
+            target = _detect(args.output, allowed)
+        elif source is not None and len(allowed) == 1:
+            target = allowed[0]
+    return source, target
+
+
+def _candidates(
+    args, source: str | None, target: str | None
+) -> tuple[list[str], list[str], Path | None]:
+    """The --from and --to values left to choose from; and the first input
+    whose format is not determined."""
+    path = None
+    if source is not None:
+        froms = [source]
+    else:
+        allowed = _sources(target)
+        path = next((p for p in args.input or () if _detect(p, allowed) is None), None)
+        froms = _by_extension(path, allowed)
+    tos = (
+        [target] if target is not None else _by_extension(args.output, _targets(froms))
+    )
+    return froms, tos, path
+
+
+def _pair_title(cls) -> str:
+    return f"{cls.source} -> {cls.target}"
+
+
+def _convert_args(
+    parser: argparse.ArgumentParser, groups: Iterable[tuple[str, tuple]]
+) -> dict:
+    """Add the common arguments and the option ``groups``; return {dest: flag}."""
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="store_true",
+        help="show the common arguments and the conversions; with the formats "
+        "known, the options of the conversion, else the formats to choose from",
+    )
+    parser.add_argument(
+        "-i",
+        "--input",
+        type=Path,
+        action="append",
+        help="input file (required); repeatable, in the order the conversion "
+        "takes them",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="output file (default: next to the first INPUT, named by the conversion)",
+    )
+    parser.add_argument(
+        "--from",
+        dest="source",
+        choices=formats.FORMATS,
+        metavar="FORMAT",
+        help="input format (default: by INPUT extension, then content)",
+    )
+    parser.add_argument(
+        "--to",
+        dest="target",
+        choices=formats.FORMATS,
+        metavar="FORMAT",
+        help="output format (default: by OUTPUT extension, or the only "
+        "conversion of the input format)",
+    )
+    return _add_options(parser, groups)
+
+
+def convert_help(args, source: str | None, target: str | None) -> str:
+    """The common arguments, and what ``args`` leaves to choose: all
+    conversions, the --from / --to values, or the options of the pair."""
+    parser = argparse.ArgumentParser(
+        prog=f"{PROG} convert",
+        description=CONVERT_HELP,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
+    )
+    if source is not None and target is not None:
+        cls = convert.find(source, target)
+        _convert_args(parser, [(f"{_pair_title(cls)} options", cls.options)])
+        parser.epilog = f"{_pair_title(cls)}: {cls.description}"
+    elif not (args.input or args.output or args.source or args.target):
+        _convert_args(parser, ())
+        parser.epilog = (
+            "conversions:\n"
+            + "\n".join(
+                f"  {_pair_title(c)}: {c.description}"
+                for c in convert.CONVERTERS.values()
+            )
+            + "\n\n"
+            + _format_list()
+        )
+    else:
+        _convert_args(parser, ())
+        froms, tos, path = _candidates(args, source, target)
+        sections = []
+        if source is None:
+            of = f" for {path.name!r}" if path is not None else ""
+            sections.append(f"--from values{of}:\n" + _format_table(froms))
+        if target is None:
+            of = f" for {args.output.name!r}" if args.output is not None else ""
+            sections.append(f"--to values{of}:\n" + _format_table(tos))
+        parser.epilog = "\n\n".join(sections)
+    return parser.format_help()
+
+
+def cmd_convert(args) -> int:
+    source, target = _conversion(args)
+    if args.help:
+        sys.stdout.write(convert_help(args, source, target))
+        return 0
+    if not args.input:
+        raise ValueError("-i/--input is required")
+    if source is None or target is None:
+        froms, tos, path = _candidates(args, source, target)
+        if source is None:
+            raise ValueError(
+                f"cannot detect the format of {path.name!r}; "
+                f"specify --from (one of: {', '.join(froms)})"
+            )
+        if args.output is not None:
+            raise ValueError(
+                f"cannot detect the format of {args.output.name!r}; "
+                f"specify --to (one of: {', '.join(tos)})"
+            )
+        raise ValueError(
+            f"{len(tos)} converters from {source}; "
+            f"specify --to (one of: {', '.join(tos)})"
         )
     cls = convert.find(source, target)
-    converter = cls(
-        **_class_options(args, args.option_dests, cls, f"{cls.source} -> {cls.target}")
-    )
+    converter = cls(**_class_options(args, args.option_dests, cls, _pair_title(cls)))
     result = converter.convert(args.input)
     output = args.output or args.input[0].with_name(result.name)
     size = write_output(output, result.data)
@@ -213,11 +376,17 @@ def cmd_computer_id(args) -> int:
 # --------------------------------------------------------------------------
 # parser
 # --------------------------------------------------------------------------
+def _format_table(ids: Iterable[str]) -> str:
+    rows = [formats.FORMATS[f] for f in ids]
+    width = max(len(f.id) for f in rows)
+    return "\n".join(
+        f"  {f.id:<{width}} {' '.join(f.extensions):<14} {f.description}" for f in rows
+    )
+
+
 def _format_list() -> str:
-    width = max(len(f) for f in formats.FORMATS)
-    return "formats (detected by extension, then by content):\n" + "\n".join(
-        f"  {f.id:<{width}} {' '.join(f.extensions):<14} {f.description}"
-        for f in formats.FORMATS.values()
+    return "formats (detected by extension, then by content):\n" + _format_table(
+        formats.FORMATS
     )
 
 
@@ -252,50 +421,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.set_defaults(func=cmd_inspect, option_dests=dests)
 
-    p = sub.add_parser(
-        "convert",
-        help="convert a file to another format",
-        formatter_class=raw,
-        epilog="conversions:\n"
-        + "\n".join(
-            f"  {s} -> {t}: {c.description}" for (s, t), c in convert.CONVERTERS.items()
-        )
-        + "\n\n"
-        + _format_list(),
-    )
-    p.add_argument(
-        "-i",
-        "--input",
-        type=Path,
-        action="append",
-        required=True,
-        help="input file; repeatable, in the order the conversion takes them",
-    )
-    p.add_argument(
-        "-o",
-        "--output",
-        type=Path,
-        help="output file (default: next to the first INPUT, named by the conversion)",
-    )
-    p.add_argument(
-        "--from",
-        dest="source",
-        choices=formats.FORMATS,
-        help="input format (default: by INPUT extension)",
-    )
-    p.add_argument(
-        "--to",
-        dest="target",
-        choices=formats.FORMATS,
-        help="output format (default: by OUTPUT extension, or the only "
-        "conversion of the input format)",
-    )
-    dests = _add_options(
+    # Parses the options of every pair, so one of another pair is named in the
+    # error; its own --help shows only those of the pair given.
+    p = sub.add_parser("convert", help=CONVERT_HELP, add_help=False)
+    dests = _convert_args(
         p,
-        (
-            (f"{c.source} -> {c.target} options", c.options)
-            for c in convert.CONVERTERS.values()
-        ),
+        ((f"{_pair_title(c)} options", c.options) for c in convert.CONVERTERS.values()),
     )
     p.set_defaults(func=cmd_convert, option_dests=dests)
 

@@ -1,5 +1,6 @@
 import contextlib
 import io
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -72,6 +73,11 @@ def run_error(*argv):
     ):
         run(*argv)
     return ctx.exception.code, err.getvalue()
+
+
+def one_of(err):
+    """The values of an error's ``(one of: ...)`` list."""
+    return set(re.search(r"\(one of: ([^)]*)\)", err)[1].split(", "))
 
 
 class FormatTests(unittest.TestCase):
@@ -348,7 +354,8 @@ class ConvertTests(unittest.TestCase):
             # .txt is rewcal or soundsource; --to picks one, an existing file its content.
             out = Path(tmp) / "x.txt"
             code, err = run_error("convert", "-i", csv, "-o", out)
-            self.assertIn("ambiguous", err)
+            self.assertIn("specify --to", err)
+            self.assertTrue({"rewcal", "soundsource"} <= one_of(err))
             self.assertEqual(
                 run("convert", "-i", csv, "-o", out, "--to", "soundsource")[0], 0
             )
@@ -640,7 +647,8 @@ class ConvertTests(unittest.TestCase):
             )
             self.assertIn("spectrum, 1/3 octave target curve", text)
             code, err = run_error("convert", "-i", csv, "-o", Path(tmp) / "x.txt")
-            self.assertIn("ambiguous", err)
+            self.assertIn("specify --to", err)
+            self.assertTrue({"rewcal", "soundsource"} <= one_of(err))
             code, text = run(
                 "convert", "-i", csv, "-o", Path(tmp) / "x.txt", "--to", "smaart-ascii"
             )
@@ -765,6 +773,60 @@ class ConvertTests(unittest.TestCase):
         self.assertIn("swmicpkg -> rewcal takes 1 input file, got 2", err)
         code, err = run_error("convert", "-i", left, "-i", MDAT, "--to", "fir")
         self.assertIn("inputs of different formats: autoeq, mdat", err)
+
+    def test_help(self):
+        code, text = run("convert", "--help")
+        self.assertEqual(code, 0)
+        self.assertIn("mdat -> swproj: ", text)
+        self.assertIn("swmicpkg -> rewcal: ", text)
+        self.assertNotIn("--mic-profile", text)
+
+        # Both formats known: the options of the pair only.
+        _code, text = run("convert", "-i", MDAT, "-o", "x.swproj", "-h")
+        self.assertIn("mdat -> swproj options:", text)
+        self.assertIn("--mic-profile", text)
+        self.assertNotIn("--column", text)
+        self.assertNotIn("conversions:", text)
+        _code, text = run("convert", "--from", "autoeq", "--to", "fir", "-h")
+        self.assertIn("autoeq -> fir options:", text)
+        self.assertNotIn("--mic-profile", text)
+
+        # The output format not determined: the targets of the input.
+        _code, text = run("convert", "-i", MDAT, "-h")
+        to_values = text[text.index("--to values:") :]
+        self.assertIn("  swproj ", to_values)
+        self.assertIn("  autoeq ", to_values)
+        self.assertNotIn("--from values", text)
+        self.assertNotIn("--mic-profile", text)
+
+        # A shared extension: the sources with it; no extension: all sources.
+        _code, text = run("convert", "-i", "x.txt", "-h")
+        from_values = text[text.index("--from values for 'x.txt':") :]
+        self.assertIn("  rewcal ", from_values)
+        self.assertIn("  soundsource ", from_values)
+        self.assertNotIn("  mdat ", from_values)
+        _code, text = run("convert", "-i", "x", "--to", "fir", "-h")
+        from_values = text[text.index("--from values for 'x':") :]
+        self.assertIn("  autoeq ", from_values)
+        self.assertIn("  peqb ", from_values)
+        self.assertNotIn("  mdat ", from_values)
+        self.assertNotIn("--to values", text)
+        _code, text = run("convert", "-i", MDAT, "-o", "x", "-h")
+        self.assertIn("--to values for 'x':", text)
+
+    def test_undetected_format(self):
+        _code, err = run_error("convert", "-i", "x.txt")
+        self.assertIn("cannot detect the format of 'x.txt'; specify --from", err)
+        values = one_of(err)
+        self.assertTrue({"rewcal", "soundsource"} <= values)
+        self.assertNotIn("mdat", values)
+        _code, err = run_error("convert", "-i", MDAT, "-o", "x")
+        self.assertIn("cannot detect the format of 'x'; specify --to", err)
+        values = one_of(err)
+        self.assertTrue({"swproj", "autoeq"} <= values)
+        self.assertNotIn("rewcal", values)
+        _code, err = run_error("convert", "--to", "fir")
+        self.assertIn("-i/--input is required", err)
 
     def test_required_option(self):
         _code, err = run_error("convert", "-i", MDAT, "--to", "swproj")
