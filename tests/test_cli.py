@@ -241,7 +241,9 @@ class ConvertTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / PACKAGE.name
             src.write_bytes(PACKAGE.read_bytes())
-            code, _ = run("convert", "-i", src, "--angle", "degrees_90")
+            code, _ = run(
+                "convert", "-i", src, "--to", "rewcal", "--angle", "degrees_90"
+            )
             self.assertEqual(code, 0)
             profile, other = cal.load(Path(tmp) / "TILT01 degrees_90.txt")
             self.assertEqual(
@@ -310,7 +312,9 @@ class ConvertTests(unittest.TestCase):
             self.assertIn("mic table: mic degrees_0", text)
 
     def test_option_of_other_pair_is_rejected(self):
-        _code, err = run_error("convert", "-i", PACKAGE, "--mic-angle", "degrees_0")
+        _code, err = run_error(
+            "convert", "-i", PACKAGE, "--to", "rewcal", "--mic-angle", "degrees_0"
+        )
         self.assertIn("--mic-angle does not apply to swmicpkg -> rewcal", err)
 
     def test_autoeq(self):
@@ -362,10 +366,15 @@ class ConvertTests(unittest.TestCase):
             self.assertEqual(formats.detect(out), "soundsource")
             self.assertEqual(run("convert", "-i", csv, "-o", out)[0], 0)
             self.assertEqual(formats.detect(out), "soundsource")
-            # The only conversion of rewcal; the default name is the serial.
+            # --to is required without -o, even for the only conversion of rewcal.
             table = Path(tmp) / "t.cal"
             table.write_bytes(SAMPLES["rewcal"].read_bytes())
-            code, _text = run("convert", "-i", table, "--serial", "S1")
+            code, err = run_error("convert", "-i", table, "--serial", "S1")
+            self.assertIn("1 converter from rewcal; specify --to", err)
+            # The default name is the serial.
+            code, _text = run(
+                "convert", "-i", table, "--to", "swmicpkg", "--serial", "S1"
+            )
             self.assertEqual(code, 0)
             self.assertEqual(swmicpkg.load(Path(tmp) / "S1.swmicpkg").name, "S1")
 
@@ -561,7 +570,13 @@ class ConvertTests(unittest.TestCase):
                 "'Right', dB SPL, microphone calibration 'TILT01 mic' not applied", text
             )
             code, err = run_error(
-                "convert", "-i", SAMPLES["fuzzmeasure"], "--measurement", "9"
+                "convert",
+                "-i",
+                SAMPLES["fuzzmeasure"],
+                "--to",
+                "autoeq",
+                "--measurement",
+                "9",
             )
             self.assertIn("measurement 9 does not exist", err)
             inputs = [
@@ -636,7 +651,9 @@ class ConvertTests(unittest.TestCase):
                 "--calibrated",
             )
             self.assertIn("dB + calibration offset 90 dB", text)
-            code, err = run_error("convert", "-i", Path(tmp) / "x.srf", "--mtw")
+            code, err = run_error(
+                "convert", "-i", Path(tmp) / "x.srf", "--to", "autoeq", "--mtw"
+            )
             self.assertIn("--mtw", err)
             code, text = run(
                 "convert", "-i", SAMPLES["smaart-ref"], "-o", Path(tmp) / "r.csv"
@@ -769,7 +786,7 @@ class ConvertTests(unittest.TestCase):
             "convert", "-i", left, "-i", right, "-i", left, "--to", "fir"
         )
         self.assertIn("autoeq -> fir takes 1 to 2 input files, got 3", err)
-        code, err = run_error("convert", "-i", PACKAGE, "-i", PACKAGE)
+        code, err = run_error("convert", "-i", PACKAGE, "-i", PACKAGE, "--to", "rewcal")
         self.assertIn("swmicpkg -> rewcal takes 1 input file, got 2", err)
         code, err = run_error("convert", "-i", left, "-i", MDAT, "--to", "fir")
         self.assertIn("inputs of different formats: autoeq, mdat", err)

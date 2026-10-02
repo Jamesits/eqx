@@ -218,8 +218,6 @@ def _conversion(args) -> tuple[str | None, str | None]:
         allowed = _targets([source] if source is not None else _sources())
         if args.output is not None:
             target = _detect(args.output, allowed)
-        elif source is not None and len(allowed) == 1:
-            target = allowed[0]
     return source, target
 
 
@@ -282,8 +280,7 @@ def _convert_args(
         dest="target",
         choices=formats.FORMATS,
         metavar="FORMAT",
-        help="output format (default: by OUTPUT extension, or the only "
-        "conversion of the input format)",
+        help="output format (default: by OUTPUT extension)",
     )
     return _add_options(parser, groups)
 
@@ -346,7 +343,7 @@ def cmd_convert(args) -> int:
                 f"specify --to (one of: {', '.join(tos)})"
             )
         raise ValueError(
-            f"{len(tos)} converters from {source}; "
+            f"{len(tos)} converter{'s' if len(tos) > 1 else ''} from {source}; "
             f"specify --to (one of: {', '.join(tos)})"
         )
     cls = convert.find(source, target)
