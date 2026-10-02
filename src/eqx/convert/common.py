@@ -26,8 +26,9 @@ RATE_OPTION = Option("--rate", type=float, help="sample rate, Hz (default: 48000
 PHASE_OPTION = Option(
     "--phase",
     choices=dsp.PHASES,
-    help="minimum (SoundID Zero Latency, dearVR MIX min) or linear "
-    "(SoundID Linear Phase, dearVR MIX Lin) phase (default: minimum)",
+    help="minimum (SoundID Zero Latency, dearVR MIX min), linear "
+    "(SoundID Linear Phase, dearVR MIX Lin) or mixed (SoundID Mixed) phase "
+    "(default: minimum)",
 )
 CHANNELS = ("left", "right")
 CHANNEL_OPTION = Option(

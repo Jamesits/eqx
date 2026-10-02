@@ -21,7 +21,7 @@ import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import dsp, impulse
+from .. import impulse
 from ..fileformat import Format, Inspector, file_section
 from ..options import Option
 from ..report import Section, Table
@@ -29,7 +29,7 @@ from ..wav import fir
 
 IDENTIFIER = b"HPIR"
 # Phase byte -> name; FlatBuffers leaves out the default, 0.
-PHASES = dsp.PHASES
+PHASES = ("minimum", "linear")
 
 HEADPHONE_OPTION = Option(
     "--headphone",

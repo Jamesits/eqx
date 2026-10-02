@@ -30,8 +30,20 @@ from .common import (
 TAPS_OPTION = Option(
     "--taps",
     type=int,
-    help="filter length (default: SoundID's, at 48 kHz 4096 minimum phase, "
-    "4353 linear phase)",
+    help="filter length (default: SoundID's, at 48 kHz 4093 minimum phase, "
+    "4353 linear and mixed phase)",
+)
+NYQUIST_NOTCH_OPTION = Option(
+    "--nyquist-notch",
+    action=argparse.BooleanOptionalAction,
+    help="leave the Nyquist bin undelayed, as SoundID: with an odd latency "
+    "(32, 96, 192 kHz linear phase) a notch at Nyquist (default: off)",
+)
+GRID_FACTOR_OPTION = Option(
+    "--grid-factor",
+    type=int,
+    help="design grid of at least this many times the filter length, at least "
+    "32768 points; 1 as SoundID (default: 2)",
 )
 ENCODING_OPTION = Option(
     "--encoding",
@@ -46,7 +58,11 @@ SAFE_HEADROOM_OPTION = Option(
 
 
 def _check(
-    phase: str, rate: float, taps: int | None, encoding: str = fir.FLOAT32
+    phase: str,
+    rate: float,
+    taps: int | None,
+    encoding: str = fir.FLOAT32,
+    grid_factor: int = dsp.GRID_FACTOR,
 ) -> None:
     if encoding not in fir.ENCODINGS:
         raise ValueError(f"--encoding must be one of: {', '.join(fir.ENCODINGS)}")
@@ -56,6 +72,8 @@ def _check(
         raise ValueError("the sample rate must be positive")
     if taps is not None and (taps < 3 or (phase == "linear" and taps % 2 == 0)):
         raise ValueError("--taps must be at least 3, and odd for linear phase")
+    if not isinstance(grid_factor, int) or grid_factor < 1:
+        raise ValueError("--grid-factor must be a positive integer")
 
 
 def _result(
@@ -76,7 +94,7 @@ def _notes(
     channels: list[list[float]], rate: float, phase: str, taps: int | None = None
 ) -> list[str]:
     """``taps``: the filter length before the listening spot delays."""
-    latency = (taps or dsp.fir_taps(rate, phase)) // 2 if phase == "linear" else 0
+    latency = dsp.fir_latency(taps or dsp.fir_taps(rate, phase), phase)
     taps = len(channels[0])
     return [
         (
@@ -94,6 +112,8 @@ class PeqbToFir(Converter):
         PHASE_OPTION,
         RATE_OPTION,
         TAPS_OPTION,
+        NYQUIST_NOTCH_OPTION,
+        GRID_FACTOR_OPTION,
         peqb.COMPUTER_ID_OPTION,
         peqb.KEY_OPTION,
         SAFE_HEADROOM_OPTION,
@@ -109,18 +129,27 @@ class PeqbToFir(Converter):
         key: str | None = None,
         safe_headroom: bool = True,
         encoding: str = fir.FLOAT32,
+        nyquist_notch: bool = dsp.NYQUIST_NOTCH,
+        grid_factor: int = dsp.GRID_FACTOR,
     ):
-        _check(phase, rate, taps, encoding)
+        _check(phase, rate, taps, encoding, grid_factor)
         self.encoding = encoding
         peqb.key_for(computer_id, key)
         self.phase, self.rate, self.taps = phase, rate, taps
         self.computer_id, self.key = computer_id, key
         self.safe_headroom = safe_headroom
+        self.nyquist_notch, self.grid_factor = nyquist_notch, grid_factor
 
     def _convert(self, path: Path) -> Result:
         p = peqb.open_decoded(path.read_bytes(), self.computer_id, self.key)
         channels, gain = playback.headphone_fir(
-            p, self.rate, self.phase, self.taps, self.safe_headroom
+            p,
+            self.rate,
+            self.phase,
+            self.taps,
+            self.safe_headroom,
+            self.nyquist_notch,
+            self.grid_factor,
         )
         return _result(
             channels,
@@ -142,6 +171,8 @@ class SwprojToFir(Converter):
         PHASE_OPTION,
         RATE_OPTION,
         TAPS_OPTION,
+        NYQUIST_NOTCH_OPTION,
+        GRID_FACTOR_OPTION,
         swproj.PASSWORD_OPTION,
         SAFE_HEADROOM_OPTION,
         Option(
@@ -181,9 +212,12 @@ class SwprojToFir(Converter):
         limit_low: str = "neutral",
         limit_high: str = "neutral",
         encoding: str = fir.FLOAT32,
+        nyquist_notch: bool = dsp.NYQUIST_NOTCH,
+        grid_factor: int = dsp.GRID_FACTOR,
     ):
-        _check(phase, rate, taps, encoding)
+        _check(phase, rate, taps, encoding, grid_factor)
         self.encoding = encoding
+        self.nyquist_notch, self.grid_factor = nyquist_notch, grid_factor
         if limit_correction not in playback.LIMIT_CORRECTION_DB:
             raise ValueError("--limit-correction must be 12, 6 or 0")
         if limit_low not in playback.LIMIT_LOW or limit_high not in playback.LIMIT_HIGH:
@@ -205,6 +239,8 @@ class SwprojToFir(Converter):
             self.safe_headroom,
             self.listening_spot,
             *self.limits,
+            nyquist_notch=self.nyquist_notch,
+            grid_factor=self.grid_factor,
         )
         notes = _notes(irs, self.rate, self.phase, self.taps) + [
             (
@@ -231,7 +267,15 @@ class AutoeqToFir(Converter):
     source = "autoeq"
     target = "fir"
     description = "a curve (inputs: left, optional right) as a FIR filter"
-    options = (COLUMN_OPTION, PHASE_OPTION, RATE_OPTION, TAPS_OPTION, ENCODING_OPTION)
+    options = (
+        COLUMN_OPTION,
+        PHASE_OPTION,
+        RATE_OPTION,
+        TAPS_OPTION,
+        NYQUIST_NOTCH_OPTION,
+        GRID_FACTOR_OPTION,
+        ENCODING_OPTION,
+    )
     inputs = 2
 
     def __init__(
@@ -241,15 +285,25 @@ class AutoeqToFir(Converter):
         rate: float = DEFAULT_RATE,
         taps: int | None = None,
         encoding: str = fir.FLOAT32,
+        nyquist_notch: bool = dsp.NYQUIST_NOTCH,
+        grid_factor: int = dsp.GRID_FACTOR,
     ):
-        _check(phase, rate, taps, encoding)
+        _check(phase, rate, taps, encoding, grid_factor)
         self.encoding = encoding
         self.column = column
         self.phase, self.rate, self.taps = phase, rate, taps
+        self.nyquist_notch, self.grid_factor = nyquist_notch, grid_factor
 
     def _convert(self, *paths: Path) -> Result:
         channels = [
-            dsp.design_fir_points(points, self.rate, self.phase, self.taps)
+            dsp.design_fir_points(
+                points,
+                self.rate,
+                self.phase,
+                self.taps,
+                nyquist_notch=self.nyquist_notch,
+                grid_factor=self.grid_factor,
+            )
             for _, points in curves(paths, self.column)
         ]
         return _result(
@@ -310,6 +364,10 @@ class DearvrHpcToFir(Converter):
         encoding: str = fir.FLOAT32,
     ):
         _check(phase, rate, None, encoding)
+        if phase not in hpc.PHASES:
+            raise ValueError(
+                f"dearVR MIX phase must be one of: {', '.join(hpc.PHASES)}"
+            )
         self.headphone, self.phase, self.rate, self.encoding = (
             headphone,
             phase,

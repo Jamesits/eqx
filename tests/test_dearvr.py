@@ -195,6 +195,8 @@ class ConversionTests(unittest.TestCase):
             DearvrHpcToAutoeq().convert([HPC])
         with self.assertRaisesRegex(ValueError, "phase must be one of"):
             DearvrHpcToFir(headphone="Flat Flat", phase="mixed")
+        with self.assertRaisesRegex(ValueError, "phase must be one of"):
+            DearvrHpcToFir(headphone="Flat Flat", phase="zero")
         with self.assertRaisesRegex(ValueError, "at 96000 Hz"):
             DearvrHpcToFir(headphone="Flat Flat", rate=96000).convert([HPC])
 

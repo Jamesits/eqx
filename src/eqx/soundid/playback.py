@@ -61,6 +61,8 @@ def headphone_fir(
     phase: str = "minimum",
     taps: int | None = None,
     safe_headroom: bool = True,
+    nyquist_notch: bool = dsp.NYQUIST_NOTCH,
+    grid_factor: int = dsp.GRID_FACTOR,
 ) -> tuple[list, float]:
     """([left, right] impulse responses, gain dB) of the filter SoundID plays."""
     curves = headphone_curves(p)
@@ -70,7 +72,13 @@ def headphone_fir(
         [
             v * scale
             for v in dsp.design_fir_points(
-                curves[side], sample_rate, phase, taps, EDGE_DB
+                curves[side],
+                sample_rate,
+                phase,
+                taps,
+                EDGE_DB,
+                nyquist_notch=nyquist_notch,
+                grid_factor=grid_factor,
             )
         ]
         for side in SIDES
@@ -104,6 +112,26 @@ class RolloffRule:
 SPEAKER_RULE = RolloffRule((200.0, 10000.0), 200.0, (10000.0, 22000.0), 48.0)
 # A channel group with an LFE.
 LFE_RULE = RolloffRule((50.0, 150.0), 60.0, (80.0, 500.0), 24.0)
+# An LFE correction fades out over this many octaves, centered on the
+# group's high roll-off, at most this frequency.
+LFE_FADE_HZ = 500.0
+LFE_FADE_OCTAVES = 0.25
+
+
+def lfe_fade(grid: list[float], gains: list[float], center_hz: float) -> list[float]:
+    """``gains`` times a raised cosine over log frequency: 1 below the band, 0 above."""
+    lo = fmath.log(center_hz) - LFE_FADE_OCTAVES / 2 * fmath.log(2)
+    hi = fmath.log(center_hz) + LFE_FADE_OCTAVES / 2 * fmath.log(2)
+    out = []
+    for f, g in zip(grid, gains):
+        x = fmath.log(f)
+        if x < lo:
+            out.append(g)
+        elif x >= hi:
+            out.append(0.0)
+        else:
+            out.append(g * (1 + fmath.cos(math.pi * (x - lo) / (hi - lo))) / 2)
+    return out
 
 
 @dataclass
@@ -283,9 +311,9 @@ def speaker_curves(
 ) -> dict[int, list[tuple[float, float]]]:
     """{channel index: (frequency, dB)}: the corrections after SoundID's limits.
 
-    A channel group shares the roll-offs of its narrowest channel.  Beyond
-    them, no channel ends above that channel's corrected response, each
-    relative to its level.
+    A channel group shares the roll-offs of its narrowest channel and one
+    cut: where the highest correction of the group is above the limit, every
+    channel is lowered by the excess.
     """
     if limit_correction_db not in LIMIT_CORRECTION_DB:
         raise ValueError("the correction limit must be 12, 6 or 0 dB")
@@ -303,17 +331,19 @@ def speaker_curves(
         rule = LFE_RULE if any(c.lfe for c in members) else SPEAKER_RULE
         grid = [f for f, _ in members[0].correction]
         logs = [fmath.log(f) for f in grid]
-        meas, corr, levels, lows, highs = {}, {}, {}, {}, {}
+        corr, lows, highs = {}, {}, {}
         for c in members:
-            meas[c.index] = log_resample(c.measurement, grid)
             corr[c.index] = log_resample(c.correction, grid)
-            points = list(zip(grid, meas[c.index]))
-            level = levels[c.index] = level_db(points, rule.level_hz)
+            points = list(zip(grid, log_resample(c.measurement, grid)))
+            level = level_db(points, rule.level_hz)
             lows[c.index] = low_rolloff(points, level, rule.low_search_hz)
             highs[c.index] = high_rolloff(
                 points, level, rule.high_search_hz, rule.high_slope
             )
         low, high = max(lows.values()), min(highs.values())
+        for c in members:
+            if c.lfe:
+                corr[c.index] = lfe_fade(grid, corr[c.index], min(LFE_FADE_HZ, high))
         pts = limit_points(
             low, high, limit_correction_db, rule.high_slope, low_shift, high_shift
         )
@@ -324,29 +354,12 @@ def speaker_curves(
                 [fmath.log(f) for f, _ in pts], [v for _, v in pts], logs
             )
         ]
+        excess = [
+            max(0.0, max(values) - lim)
+            for values, lim in zip(zip(*corr.values()), limit)
+        ]
         for c in members:
-            corr[c.index] = [min(g, lim) for g, lim in zip(corr[c.index], limit)]
-        low_top = low * fmath.pow(2, (limit_correction_db - low_shift) / LOW_SLOPE)
-        high_top = high * fmath.pow(
-            2, (high_shift - limit_correction_db) / rule.high_slope
-        )
-        low_ref = max(lows, key=lambda i: (lows[i], -i))
-        high_ref = min(highs, key=lambda i: (highs[i], i))
-        for c in members:
-            values = list(corr[c.index])
-            for ref, detected, below in (
-                (low_ref, low > LIMIT_MIN_HZ, True),
-                (high_ref, high < rule.high_search_hz[1], False),
-            ):
-                if not detected:
-                    continue
-                for k, f in enumerate(grid):
-                    if (f < low_top) if below else (f > high_top):
-                        after = meas[ref][k] - levels[ref] + corr[ref][k]
-                        values[k] = min(
-                            values[k], after - (meas[c.index][k] - levels[c.index])
-                        )
-            out[c.index] = list(zip(grid, values))
+            out[c.index] = [(f, g - x) for f, g, x in zip(grid, corr[c.index], excess)]
     return out
 
 
@@ -365,6 +378,8 @@ def speaker_fir(
     limit_correction_db: float = 12.0,
     limit_low: str = "neutral",
     limit_high: str = "neutral",
+    nyquist_notch: bool = dsp.NYQUIST_NOTCH,
+    grid_factor: int = dsp.GRID_FACTOR,
 ) -> tuple[list[SpeakerChannel], list, float]:
     """(channels, impulse responses in channel order, safe headroom gain dB)."""
     channels = speaker_channels(project)
@@ -379,6 +394,14 @@ def speaker_fir(
         delay = (
             spot_samples(c.delay_ms - first_delay, sample_rate) if listening_spot else 0
         )
-        ir = dsp.design_fir_points(points, sample_rate, phase, taps, EDGE_DB)
+        ir = dsp.design_fir_points(
+            points,
+            sample_rate,
+            phase,
+            taps,
+            EDGE_DB,
+            nyquist_notch=nyquist_notch,
+            grid_factor=grid_factor,
+        )
         irs.append([0.0] * delay + [v * fmath.pow(10, g / 20) for v in ir])
     return channels, dsp.padded(irs), gain

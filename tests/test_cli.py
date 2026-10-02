@@ -655,7 +655,7 @@ class ConvertTests(unittest.TestCase):
         code, err = run_error("convert", "-i", SAMPLES["peqb"])
         self.assertIn("2 converters from peqb", err)
         _, out = run("inspect", SAMPLES["fir"])
-        self.assertIn("  taps           : 4096", out)
+        self.assertIn("  taps           : 4093", out)
         self.assertIn("== channel Right", out)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run(
@@ -705,6 +705,32 @@ class ConvertTests(unittest.TestCase):
                 "1024",
             )
             self.assertIn("odd for linear phase", err)
+            code, err = run_error(
+                "convert",
+                "-i",
+                SAMPLES["autoeq"],
+                "-o",
+                Path(tmp) / "y.wav",
+                "--grid-factor",
+                "0",
+            )
+            self.assertIn("grid-factor", err)
+            code, text = run(
+                "convert",
+                "-i",
+                SAMPLES["autoeq"],
+                "-o",
+                Path(tmp) / "y.wav",
+                "--phase",
+                "linear",
+                "--rate",
+                "96000",
+                "--nyquist-notch",
+                "--grid-factor",
+                "1",
+            )
+            self.assertEqual(code, 0)
+            self.assertIn("8707 taps at 96000 Hz, linear phase, latency 4353", text)
             code, text = run(
                 "convert",
                 "-i",

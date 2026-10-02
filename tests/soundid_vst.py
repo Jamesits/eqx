@@ -8,9 +8,10 @@ Windows only; needs SoundID Reference with a license and a signed-in user.
 The plug-in is loaded headless; the profile is selected through the
 plug-in state.  For each profile and filter type it records the impulse
 response and compares its gain (20 Hz-20 kHz) and peak sample with
-``PeqbToFir`` / ``SwprojToFir`` with the same settings.  Safe headroom and
-listening spot are off unless given.  Both filters are written to ``--out`` as FIR WAVs.
-Exit status 1 if a gain differs by more than ``--tolerance-db`` or a peak
+``PeqbToFir`` / ``SwprojToFir`` with the same settings and SoundID's design
+(``nyquist_notch``, ``grid_factor`` 1).  Safe headroom and
+listening spot are off unless given.  The filters are written to ``--out`` as FIR WAVs.
+Exit status 1 if a gain differs by more than ``--tolerance-db`` (default 0.01) or a peak
 sample differs.
 """
 
@@ -51,7 +52,7 @@ GLOBAL_CONFIG = Path(
 )
 ROOT = Path(__file__).resolve().parent.parent
 # Plug-in preset filterType -> eqx phase.
-FILTER_TYPES = {2: "minimum", 3: "linear"}
+FILTER_TYPES = {2: "minimum", 3: "linear", 4: "mixed"}
 FLAT_TARGET = 3
 BAND_HZ = (20.0, 20000.0)
 NUL = b"\x00"
@@ -246,11 +247,17 @@ def compare(profile: Path, rate: float, out: Path, settings: dict) -> list[tuple
     if not speaker:
         settings = {"safe_headroom": settings["safe_headroom"]}
     rows = []
+    # The first load after another profile keeps that profile's safe headroom.
+    warm_up = load(profile, min(FILTER_TYPES), **preset_values(settings))
+    del warm_up
     for filter_type, phase in FILTER_TYPES.items():
         plugin = load(profile, filter_type, **preset_values(settings))
         vst = impulse_response(plugin, rate, int(rate))
         del plugin
-        converter = (SwprojToFir if speaker else PeqbToFir)(phase, rate, **settings)
+        # SoundID's design, not eqx's defaults: the Nyquist notch and the grid.
+        converter = (SwprojToFir if speaker else PeqbToFir)(
+            phase, rate, nyquist_notch=True, grid_factor=1, **settings
+        )
         eqx = fir.read(converter.convert([profile]).data).channels
         stem = f"{profile.stem} {phase}"
         (out / f"{stem} vst.wav").write_bytes(
@@ -281,11 +288,7 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, default=ROOT / "testdata" / "real" / "soundid_vst"
     )
     parser.add_argument("--rate", type=float, default=48000.0)
-    parser.add_argument(
-        "--tolerance-db",
-        type=float,
-        help="default: 0.25 for headphone profiles, 0.5 for speaker projects",
-    )
+    parser.add_argument("--tolerance-db", type=float, default=0.01)
     parser.add_argument("--safe-headroom", action="store_true")
     parser.add_argument("--listening-spot", action="store_true")
     parser.add_argument(
@@ -321,10 +324,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     failed = False
     for name, phase, side, taps_vst, taps_eqx, peak_vst, peak_eqx, diff in rows:
-        tolerance = args.tolerance_db or (
-            0.5 if name.lower().endswith(".swproj") else 0.25
-        )
-        bad = diff > tolerance or peak_vst != peak_eqx
+        bad = diff > args.tolerance_db or peak_vst != peak_eqx
         failed |= bad
         print(
             f"{name[:36]:<36} {phase:<8} {side:<5} {f'{taps_vst}/{taps_eqx}':>13} "

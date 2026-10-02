@@ -161,34 +161,58 @@ def ifft(x) -> list[complex]:
 # --------------------------------------------------------------------------
 # FIR design
 # --------------------------------------------------------------------------
-PHASES = ("minimum", "linear")
+PHASES = ("minimum", "linear", "mixed")
 
-# SoundID Reference's filter lengths; they scale with the sample rate.  The
-# linear-phase half length is 2000 samples at 44.1 kHz, rounded down: 2176 at
-# 48 kHz, 4353 at 96 kHz.
-MINIMUM_TAPS_48K = 4096
-LINEAR_HALF_44K1 = 2000
-# Design grid size; SoundID uses it at every sample rate.
+# SoundID Reference's filter lengths at 44.1 kHz; they scale with the sample
+# rate, rounded down to an even number, plus one: 4093 and 4353 taps at 48 kHz.
+# Mixed phase has the linear-phase length.
+MINIMUM_TAPS_44K1 = 3760
+LINEAR_TAPS_44K1 = 4000
+# Mixed phase is a linear-phase filter delayed by this fraction of the half
+# length, its start cut off: 826 samples at 48 kHz.
+MIXED_LINEARITY = 0.38
+# Design grid: at least GRID_SIZE points and at least GRID_FACTOR times the
+# filter length.  SoundID uses 32768 points at every rate and length (factor
+# 1).  The minimum-phase response is computed on the grid, so a grid shorter
+# than twice the filter folds the response's tail onto its start; a zero-phase
+# response wraps around the grid.  At 32768 taps a factor of 1 is 0.011 dB off
+# the curve below 200 Hz, a factor of 2 is 0.003 dB.  At SoundID's lengths
+# the GRID_SIZE floor makes them equal.
 GRID_SIZE = 32768
-# Width of the linear-phase taper in half lengths.  Fitted to SoundID: its
-# taper is not zero at the ends.
-LINEAR_TAPER_WIDTH = 1.181
+GRID_FACTOR = 2
+# SoundID does not delay the Nyquist bin of a linear- or mixed-phase filter.
+# With an odd latency (32, 96 and 192 kHz linear phase) its sign flips: a
+# notch at Nyquist, -3.5 dB, gone 50 Hz below.  Off by default: the notch has
+# no use.  On reproduces SoundID.
+NYQUIST_NOTCH = False
+# SoundID's Kaiser tapers: minimum phase over the second half, linear phase
+# over the whole filter.
+MINIMUM_TAPER_ALPHA = 8.0
+LINEAR_TAPER_ALPHA = 2 * math.pi
 
 
 def fir_taps(sample_rate: float, phase: str) -> int:
-    """SoundID's filter length at ``sample_rate``; linear phase is odd."""
-    if phase == "minimum":
-        return round(MINIMUM_TAPS_48K * sample_rate / 48000)
+    """SoundID's filter length at ``sample_rate``; always odd."""
+    if phase not in PHASES:
+        raise ValueError(f"phase must be one of: {', '.join(PHASES)}")
+    base = MINIMUM_TAPS_44K1 if phase == "minimum" else LINEAR_TAPS_44K1
+    return (math.floor(base * sample_rate / 44100) & ~1) + 1
+
+
+def fir_latency(taps: int, phase: str) -> int:
+    """The peak sample of a SoundID filter with ``taps`` taps."""
     if phase == "linear":
-        return 2 * math.floor(LINEAR_HALF_44K1 * sample_rate / 44100) + 1
-    raise ValueError(f"phase must be one of: {', '.join(PHASES)}")
+        return taps // 2
+    if phase == "mixed":
+        return math.floor(taps // 2 * MIXED_LINEARITY)
+    return 0
 
 
 def hermite(xs: list[float], ys: list[float], queries) -> list[float]:
-    """Cubic Hermite curve through (xs, ys) at ``queries``; clamped to the end values.
+    """SoundID's curve through (xs, ys) at ``queries``; clamped to the end values.
 
-    SoundID's curve interpolation: the slope at a point is the secant of its
-    two neighbours, one-sided at the ends.
+    Cubic Hermite: the slope at a point is the secant of its two neighbours.
+    The first and last segments are straight lines.
     """
     n = len(xs)
     if n < 2:
@@ -197,9 +221,9 @@ def hermite(xs: list[float], ys: list[float], queries) -> list[float]:
     if min(h) <= 0:
         raise ValueError("curve points must be strictly increasing")
     m = (
-        [(ys[1] - ys[0]) / h[0]]
+        [0.0]
         + [(ys[i + 1] - ys[i - 1]) / (xs[i + 1] - xs[i - 1]) for i in range(1, n - 1)]
-        + [(ys[-1] - ys[-2]) / h[-1]]
+        + [0.0]
     )
     out = []
     for x in queries:
@@ -211,6 +235,9 @@ def hermite(xs: list[float], ys: list[float], queries) -> list[float]:
             continue
         i = bisect.bisect_right(xs, x) - 1
         t = (x - xs[i]) / h[i]
+        if i == 0 or i == n - 2:
+            out.append(ys[i] + t * (ys[i + 1] - ys[i]))
+            continue
         t2 = t * t
         t3 = t2 * t
         out.append(
@@ -244,8 +271,33 @@ def zero_phase(magnitude: list[float]) -> list[float]:
     return [v.real for v in ifft(list(magnitude) + list(magnitude[-2:0:-1]))]
 
 
-def _blackman(x: float) -> float:
-    return 0.42 + 0.5 * fmath.cos(math.pi * x) + 0.08 * fmath.cos(2 * math.pi * x)
+def _bessel_i0(x: float) -> float:
+    y = x * x / 4
+    term, total, k = 1.0, 1.0, 0
+    while term > 1e-17 * total:
+        k += 1
+        term *= y / (k * k)
+        total += term
+    return total
+
+
+def _soundid_i0(x: float) -> float:
+    """SoundID's linear-phase Kaiser "I0": sum of (x/2)^(2k-1) / (k! (k+1)!), k = 1..9, plus 1.
+
+    Not the Bessel function; the taper it gives is what SoundID plays.
+    """
+    y = x / 2
+    total, power, fact = 1.0, y, 1.0  # fact = k!
+    for k in range(1, 10):
+        total += power / (fact * fact * (k + 1))
+        power *= y * y
+        fact *= k + 1
+    return total
+
+
+def _kaiser(x: float, alpha: float, i0) -> float:
+    """Kaiser window at ``x`` in [-1, 1]."""
+    return i0(alpha * math.sqrt(max(0.0, 1 - x * x))) / i0(alpha)
 
 
 def design_fir(
@@ -255,12 +307,17 @@ def design_fir(
     phase: str = "minimum",
     taps: int | None = None,
     edge_db: float | None = None,
+    nyquist_notch: bool = NYQUIST_NOTCH,
+    grid_factor: int = GRID_FACTOR,
 ) -> list[float]:
     """FIR filter with the gain ``gains_db`` at ``frequencies`` (Hz, increasing).
 
     The curve is interpolated with ``hermite`` over log frequency, flat
     beyond its ends.  ``edge_db`` sets DC and Nyquist.  Minimum phase peaks at sample 0,
-    linear phase at the center; both are tapered like SoundID's filters.
+    linear phase at the center, mixed phase at ``fir_latency``; all are
+    tapered like SoundID's filters.  ``nyquist_notch``: SoundID's undelayed
+    Nyquist bin.  ``grid_factor``: the design grid is at least this many
+    times ``taps``.
     """
     taps = taps or fir_taps(sample_rate, phase)
     if phase not in PHASES:
@@ -269,28 +326,37 @@ def design_fir(
         raise ValueError("a linear-phase filter needs an odd number of taps")
     if taps < 3:
         raise ValueError("a filter needs at least 3 taps")
-    n = max(GRID_SIZE, 1 << (2 * taps - 1).bit_length())
+    if not isinstance(grid_factor, int) or grid_factor < 1:
+        raise ValueError("the grid factor must be a positive integer")
+    n = max(GRID_SIZE, 1 << (grid_factor * taps - 1).bit_length())
     step = sample_rate / n
     logs = [fmath.log(f) for f in frequencies]
     db = hermite(logs, list(gains_db), [fmath.log(k * step) for k in range(1, n // 2)])
     edge = gains_db[0] if edge_db is None else edge_db
     top = gains_db[-1] if edge_db is None else edge_db
     magnitude = [fmath.pow(10, g / 20) for g in [edge, *db, top]]
-    # The tapers are fitted to SoundID's: a half Blackman over the second
-    # half (minimum phase), a Hamming wider than the filter (linear phase).
     if phase == "minimum":
         ir = minimum_phase(magnitude)[:taps]
-        start = taps // 2
+        start = taps / 2
         return [
-            v * (_blackman((i - start) / (taps - start)) if i >= start else 1.0)
+            v
+            * (
+                _kaiser((i - start) / start, MINIMUM_TAPER_ALPHA, _bessel_i0)
+                if i >= start
+                else 1.0
+            )
             for i, v in enumerate(ir)
         ]
-    half = taps // 2
+    latency = fir_latency(taps, phase)
     ir = zero_phase(magnitude)
-    width = LINEAR_TAPER_WIDTH * half
+    # An undelayed Nyquist bin: with an odd latency its sign flips.
+    nyquist = 2 * magnitude[-1] / n if nyquist_notch and latency % 2 else 0.0
+    # SoundID's taper is one sample wider than the filter's longer side.
+    width = taps - latency
     return [
-        ir[i % n] * (0.54 + 0.46 * fmath.cos(math.pi * i / width))
-        for i in range(-half, half + 1)
+        (ir[i % n] + (nyquist if i % 2 else -nyquist))
+        * _kaiser(i / width, LINEAR_TAPER_ALPHA, _soundid_i0)
+        for i in range(-latency, taps - latency)
     ]
 
 
@@ -301,6 +367,8 @@ def design_fir_points(
     taps: int | None = None,
     edge_db: float | None = None,
     level_db: float = 0.0,
+    nyquist_notch: bool = NYQUIST_NOTCH,
+    grid_factor: int = GRID_FACTOR,
 ) -> list[float]:
     """``design_fir`` of (frequency, gain dB) ``points``, less ``level_db``."""
     return design_fir(
@@ -310,6 +378,8 @@ def design_fir_points(
         phase,
         taps,
         edge_db,
+        nyquist_notch,
+        grid_factor,
     )
 
 

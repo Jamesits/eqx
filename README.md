@@ -167,5 +167,4 @@ uv run pytest
 - 0/30/90 degree curves supported
 
 `.swhp`, `.swproj` to FIR `.wav`
-- The filter SoundID Reference plays for the profile (flat target), minimum or linear phase, with Limit Controls, Listening Spot and Safe Headroom
-- Projects converted from unsmoothed REW measurements may differ from SoundID above 15 kHz
+- The filter SoundID Reference plays for the profile (flat target), minimum, linear or mixed phase (SoundID's Zero Latency, Linear Phase, Mixed), with Limit Controls, Listening Spot and Safe Headroom

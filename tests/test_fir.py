@@ -49,6 +49,10 @@ def _interp_log(points, f):
     return log_resample(points, [f])[0]
 
 
+def _nyquist_db(ir) -> float:
+    return 20 * math.log10(abs(sum(v * (-1) ** i for i, v in enumerate(ir))))
+
+
 class WavTests(unittest.TestCase):
     def test_encodings(self):
         floats = struct.pack("<4f", *SAMPLES)
@@ -128,6 +132,10 @@ class DesignTests(unittest.TestCase):
         line = dsp.hermite([0.0, 1.0, 3.0], [1.0, 3.0, 7.0], [0.5, 2.0])
         for got, want in zip(line, [2.0, 5.0]):
             self.assertAlmostEqual(got, want)
+        # The first and last segments are straight.
+        ends = dsp.hermite(xs, ys, [0.25, 3.25])
+        for got, want in zip(ends, [0.25, 1.75]):
+            self.assertAlmostEqual(got, want)
         # The slope at a point is the secant of its neighbours: a plateau overshoots.
         self.assertGreater(
             max(
@@ -150,17 +158,22 @@ class DesignTests(unittest.TestCase):
 
     def test_soundid_lengths(self):
         for rate, minimum, linear in (
-            (44100, 3763, 4001),
-            (48000, 4096, 4353),
-            (96000, 8192, 8707),
-            (192000, 16384, 17415),
+            (32000, 2729, 2903),
+            (44100, 3761, 4001),
+            (48000, 4093, 4353),
+            (96000, 8185, 8707),
+            (192000, 16371, 17415),
         ):
             with self.subTest(rate):
                 self.assertEqual(dsp.fir_taps(rate, "minimum"), minimum)
                 self.assertEqual(dsp.fir_taps(rate, "linear"), linear)
+                self.assertEqual(dsp.fir_taps(rate, "mixed"), linear)
+        self.assertEqual(dsp.fir_latency(4353, "linear"), 2176)
+        self.assertEqual(dsp.fir_latency(4353, "mixed"), 826)
+        self.assertEqual(dsp.fir_latency(4093, "minimum"), 0)
 
     def test_flat_is_an_impulse(self):
-        for phase, peak in (("minimum", 0), ("linear", 2176)):
+        for phase, peak in (("minimum", 0), ("linear", 2176), ("mixed", 826)):
             with self.subTest(phase):
                 ir = dsp.design_fir([20.0, 20000.0], [0.0, 0.0], 48000, phase)
                 self.assertAlmostEqual(ir[peak], 1.0)
@@ -201,11 +214,40 @@ class DesignTests(unittest.TestCase):
         self.assertLess(dsp.fir_gain_db(ir, 48000, [0.0])[0], 5.5)
         self.assertAlmostEqual(dsp.fir_gain_db(ir, 48000, [1000.0])[0], 6.0, places=2)
 
+    def test_nyquist_notch(self):
+        flat = ([20.0, 20000.0], [0.0, 0.0])
+        # 96 kHz linear phase has an odd latency.
+        self.assertAlmostEqual(_nyquist_db(dsp.design_fir(*flat, 96000, "linear")), 0.0)
+        notch = dsp.design_fir(*flat, 96000, "linear", nyquist_notch=True)
+        self.assertLess(_nyquist_db(notch), -3.0)
+        self.assertEqual(max(range(len(notch)), key=lambda i: abs(notch[i])), 4353)
+        # An even latency has no notch.
+        self.assertEqual(
+            dsp.design_fir(*flat, 48000, "linear", nyquist_notch=True),
+            dsp.design_fir(*flat, 48000, "linear"),
+        )
+
+    def test_grid_factor(self):
+        grid, curve = [20.0, 200.0, 2000.0, 20000.0], [6.0, -3.0, 4.0, 0.0]
+        # The grid floor covers SoundID's lengths: the factor changes nothing.
+        self.assertEqual(
+            dsp.design_fir(grid, curve, 48000, grid_factor=1),
+            dsp.design_fir(grid, curve, 48000),
+        )
+        # A longer filter gets a longer grid with the default factor.
+        one = dsp.design_fir(grid, curve, 48000, taps=16385, grid_factor=1)
+        two = dsp.design_fir(grid, curve, 48000, taps=16385)
+        self.assertEqual((len(one), len(two)), (16385, 16385))
+        self.assertGreater(max(abs(a - b) for a, b in zip(one, two)), 0.0)
+        self.assertLess(max(abs(a - b) for a, b in zip(one, two)), 1e-3)
+
     def test_rejected(self):
         with self.assertRaisesRegex(ValueError, "odd"):
             dsp.design_fir([20.0, 20000.0], [0.0, 0.0], 48000, "linear", 1000)
         with self.assertRaisesRegex(ValueError, "phase"):
-            dsp.fir_taps(48000, "mixed")
+            dsp.fir_taps(48000, "zero")
+        with self.assertRaisesRegex(ValueError, "grid factor"):
+            dsp.design_fir([20.0, 20000.0], [0.0, 0.0], 48000, grid_factor=0)
 
 
 class PlaybackTests(unittest.TestCase):
@@ -262,7 +304,7 @@ class ConversionTests(unittest.TestCase):
         f = fir.read(result.data)
         self.assertEqual(
             (result.name, f.sample_rate, len(f.channels), f.taps),
-            ("Tilt Tilt Wired Average.wav", 48000.0, 2, 4096),
+            ("Tilt Tilt Wired Average.wav", 48000.0, 2, 4093),
         )
         curves = playback.headphone_curves(_tilt())
         gain = playback.safe_headroom_db(curves)
@@ -283,17 +325,42 @@ class ConversionTests(unittest.TestCase):
         self.assertEqual((f.sample_rate, f.taps), (96000.0, 8707))
         self.assertEqual(max(range(f.taps), key=lambda i: abs(f.channels[0][i])), 4353)
         self.assertIn("gain 0.00 dB", result.notes)
+        mixed = PeqbToFir(
+            "mixed", computer_id=common.COMPUTER_ID, safe_headroom=False
+        ).convert([TILT])
+        f = fir.read(mixed.data)
+        self.assertEqual(f.taps, 4353)
+        self.assertEqual(max(range(f.taps), key=lambda i: abs(f.channels[0][i])), 826)
+        self.assertIn("latency 826 samples", mixed.notes[0])
         for args, message in (
-            (("mixed",), "phase"),
+            (("zero",), "phase"),
             (("minimum", 0), "sample rate"),
             (("linear", 48000, 1000), "odd"),
         ):
             with self.subTest(message), self.assertRaisesRegex(ValueError, message):
                 PeqbToFir(*args)
 
+    def test_peqb_to_fir_design_options(self):
+        def nyquist(**design):
+            result = PeqbToFir(
+                "linear",
+                96000,
+                computer_id=common.COMPUTER_ID,
+                safe_headroom=False,
+                **design,
+            ).convert([TILT])
+            return _nyquist_db(fir.read(result.data).channels[0])
+
+        plain = nyquist()
+        self.assertGreater(plain, -1.0)
+        # SoundID's design: the notch at Nyquist with an odd latency.
+        self.assertLess(nyquist(nyquist_notch=True, grid_factor=1), plain - 2.5)
+        with self.assertRaisesRegex(ValueError, "grid-factor"):
+            PeqbToFir(computer_id=common.COMPUTER_ID, grid_factor=0)
+
     def test_autoeq_to_fir(self):
         mono = fir.read(AutoeqToFir().convert([ROOM_LEFT]).data)
-        self.assertEqual((len(mono.channels), mono.taps), (1, 4096))
+        self.assertEqual((len(mono.channels), mono.taps), (1, 4093))
         result = AutoeqToFir(phase="linear", taps=2001).convert([ROOM_LEFT, ROOM_RIGHT])
         stereo = fir.read(result.data)
         self.assertEqual(
@@ -400,7 +467,9 @@ class SpeakerTests(unittest.TestCase):
         # SoundID's safe headroom for this curve is -12.144 dB: the plateau overshoots.
         self.assertAlmostEqual(max(boost), 12.144, places=3)
         self.assertAlmostEqual(playback.safe_headroom_db(curves), -12.144, places=3)
-        self.assertTrue(all(v == -6.0 for _, v in curves[1]))
+        # The group shares one cut: Right is lowered by Left's excess.
+        for (_, left), (_, right) in zip(curves[0], curves[1]):
+            self.assertAlmostEqual(left - right, 26.0)
         reduced = playback.speaker_curves(
             [_channel(0, "Left", lambda f: 0.0, lambda f: 20.0)], 6.0
         )
@@ -410,19 +479,27 @@ class SpeakerTests(unittest.TestCase):
                 [_channel(0, "Left", lambda f: 0.0, lambda f: 0.0)], 3.0
             )
 
-    def test_group_follows_narrowest_channel(self):
-        curves = playback.speaker_curves(
-            [
-                _channel(0, "Left", lambda f: _hp(f, 70, 4), lambda f: 0.0),
-                _channel(1, "Right", lambda f: 0.0, lambda f: 0.0),
-            ]
-        )
-        right = dict(curves[1])
+    def test_group_shares_cut(self):
+        def group(name):
+            channel = _channel(1, "Right", lambda f: 0.0, lambda f: 0.0)
+            channel.group = name
+            return playback.speaker_curves(
+                [_channel(0, "Left", lambda f: _hp(f, 70, 4), lambda f: 20.0), channel]
+            )
+
+        curves = group("Front")
+        left, right = dict(curves[0]), dict(curves[1])
         for f in GRID:
-            if f < 40:
-                self.assertAlmostEqual(right[f], _hp(f, 70, 4), delta=0.2)
-        self.assertTrue(all(v == 0.0 for _, v in curves[0]))
-        self.assertEqual(right[GRID[200]], 0.0)
+            self.assertAlmostEqual(right[f], left[f] - 20.0)
+        # The narrowest channel sets the roll-off: no boost below it.
+        self.assertEqual(left[GRID[0]], 0.0)
+        alone = group("Other")
+        self.assertTrue(all(v == 0.0 for _, v in alone[1]))
+
+    def test_lfe_fade(self):
+        grid = [100.0, 400.0, 500.0, 600.0]
+        self.assertEqual(playback.lfe_fade(grid, [6.0] * 4, 500.0)[::3], [6.0, 0.0])
+        self.assertAlmostEqual(playback.lfe_fade(grid, [6.0] * 4, 500.0)[2], 3.0)
 
     def test_spot_samples(self):
         for ms, samples in (
@@ -437,7 +514,7 @@ class SpeakerTests(unittest.TestCase):
     def test_swproj_to_fir(self):
         result = SwprojToFir(safe_headroom=False).convert([ROOM_PROJECT])
         f = fir.read(result.data)
-        self.assertEqual((result.name, len(f.channels), f.taps), ("Room.wav", 2, 4096))
+        self.assertEqual((result.name, len(f.channels), f.taps), ("Room.wav", 2, 4093))
         self.assertIn(
             "channels: Left, Right; gain 0.00 dB; limits: 12 dB, low neutral, "
             "high neutral",
