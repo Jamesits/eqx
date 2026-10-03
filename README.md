@@ -86,6 +86,39 @@ uv run eqx convert -i <in-file> [-i <in-file>] -o <out-file> [--from <format>] [
 
 You can use it as a Python library too.
 
+<details>
+<summary>Measure with REW, apply with SoundID Reference</summary>
+
+Software required:
+
+- REW
+- DRC
+
+Download the microphone calibration file (`.swmicpkg`) once with SoundID Reference Measure wizard, or from [Download Center](https://www.sonarworks.com/download-center) and unzip the package.
+
+Convert the calibration file to REW format:
+
+```shell
+# with .swmicpkg
+uv run eqx convert -i <serial>.swmicpkg -o <serial>.cal --angle degrees_30
+
+# with .swmic
+uv run eqx convert -i <serial>_cal_Sonarworks_30degree.swmic -o <serial>.cal
+```
+
+In REW, apply the mic calibration to the input, then do a sweep measurement for your L and R speaker respectively. Make sure the first curve is for the L speaker, and the second curve is for the R speaker. Remove other ones. Save the measurement into a `.mdat` file.
+
+Convert the measurement file into SoundID Reference project (`.swproj`):
+
+```shell
+uv run eqx convert -i <measurement>.mdat -o <measurement>.swproj --drc-config "/usr/share/drc/config/48.0 kHz/normal-48.0.drc"
+```
+
+Notes:
+- You can run the conversion without the DRC pass by not passing in the `--drc-config` argument; it is likely to introduce excessive calibration artifacts
+
+</details>
+
 ## Development
 
 Testing:
