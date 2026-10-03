@@ -514,7 +514,8 @@ class ConvertTests(unittest.TestCase):
             )
             self.assertEqual(code, 0)
             self.assertIn(
-                "C response, position 2, dB re full scale, not compensated", text
+                "C response, position 2, dB re full scale, minus the generic ACM1HB",
+                text,
             )
             code, err = run_error(
                 "convert",
@@ -845,9 +846,16 @@ class ConvertTests(unittest.TestCase):
         _code, err = run_error("convert", "--to", "fir")
         self.assertIn("-i/--input is required", err)
 
-    def test_required_option(self):
-        _code, err = run_error("convert", "-i", MDAT, "--to", "swproj")
-        self.assertIn("mdat -> swproj needs --mic-profile", err)
+    def test_default_mic_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "x.swproj"
+            code, text = run("convert", "-i", MDAT, "-o", out)
+        self.assertEqual(code, 0)
+        self.assertIn("mic table: Flat degrees_0 (default)", text)
+        _code, err = run_error(
+            "convert", "-i", MDAT, "--to", "swproj", "--mic-angle", "degrees_30"
+        )
+        self.assertIn("--mic-profile-format and --mic-angle need --mic-profile", err)
 
 
 if __name__ == "__main__":

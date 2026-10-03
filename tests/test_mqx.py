@@ -12,15 +12,24 @@ from eqx import impulse
 from eqx.audyssey import mqx
 from eqx.autoeq import response
 from eqx.convert import to_mqx, to_swproj
-from eqx.convert.common import mic_response_db
+from eqx.convert.common import mic_response_db, profile_db
 from eqx.convert.to_autoeq import MqxToAutoeq
 from eqx.convert.to_mqx import AutoeqToMqx
+from eqx.curve import resample
+from eqx.soundid import swproj
 
 MQX_DIR = common.ROOT / audyssey.MQX_DIR
 PROJECT = MQX_DIR / "Mqx 5.1.mqx"
 MIC = common.ROOT / soundid.MIC_DIR / "FLAT01.swmicpkg"
 MIC_RESPONSE = common.ROOT / rew.CAL_DIR / "TILT01 degrees_0.txt"
+FLAT_RESPONSE = common.ROOT / rew.CAL_DIR / "FLAT01 degrees_0.txt"
 CSV = common.ROOT / common.CSV_DIR
+
+
+def mic_db(profile, frequency: float) -> float:
+    return resample(
+        [f for f, _ in profile.points], [g for _, g in profile.points], [frequency]
+    )[0]
 
 
 def _json(path=PROJECT) -> dict:
@@ -235,6 +244,36 @@ class SwprojTests(unittest.TestCase):
             target, _ = to_swproj.MqxToSwproj(mic_profile=MIC).measurements(path)
         self.assertEqual(target.name, "5.0")
 
+    def test_default_mic_profile(self):
+        acm = mqx.generic_mic()
+        self.assertEqual(
+            (acm.name, acm.angle, len(acm.points)), ("ACM1HB", "degrees_90", 1239)
+        )
+        self.assertAlmostEqual(mic_db(acm, 18114.3418), -7.366)
+        flat = to_swproj.MqxToSwproj(mic_profile=MIC).convert([PROJECT])
+        default = to_swproj.MqxToSwproj().convert([PROJECT])
+        self.assertIn("mic table: ACM1HB degrees_90 (default)", default.notes[0])
+        flat_curves = swproj.measurement_curves(swproj.SwProj(flat.data))
+        default_curves = swproj.measurement_curves(swproj.SwProj(default.data))
+        # The same reference level would leave the difference equal to the
+        # ACM1HB table; normalisation shifts it by one offset per project.
+        offsets = [
+            d[1] - f[1] + mic_db(acm, f[0])
+            for channel in flat_curves
+            for f, d in zip(flat_curves[channel], default_curves[channel])
+            if 20 <= f[0] <= 20000
+        ]
+        self.assertLess(max(offsets) - min(offsets), 0.01)
+
+    def test_default_mic_profile_other_mic(self):
+        data = _json()
+        data["_measurements"][0]["MicCorrectionName"] = "ACM1X"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.mqx"
+            path.write_bytes(json.dumps(data).encode())
+            with self.assertRaisesRegex(ValueError, "ACM1X.*give its --mic-profile"):
+                to_swproj.MqxToSwproj().convert([path])
+
 
 class WriterTests(unittest.TestCase):
     def test_round_trip(self):
@@ -279,7 +318,7 @@ class WriterTests(unittest.TestCase):
 
     def test_from_autoeq(self):
         left, right = CSV / "Bandpass Left.csv", CSV / "Bandpass Right.csv"
-        result = AutoeqToMqx().convert([left, right])
+        result = AutoeqToMqx(mic_response=FLAT_RESPONSE).convert([left, right])
         self.assertEqual(result.name, "Bandpass Left.mqx")
         m = mqx.read(result.data)
         self.assertEqual(
@@ -299,7 +338,7 @@ class WriterTests(unittest.TestCase):
             offsets.append(db[0] - points[0][1])
             for (f, v), got in zip(points, db):
                 self.assertAlmostEqual(got - v, offsets[0], delta=0.2, msg=f"{f} Hz")
-        one = mqx.read(AutoeqToMqx().convert([left]).data)
+        one = mqx.read(AutoeqToMqx(mic_response=FLAT_RESPONSE).convert([left]).data)
         self.assertEqual(one.recordings[0].ir, one.recordings[1].ir)
 
     def test_mic_response(self):
@@ -307,7 +346,9 @@ class WriterTests(unittest.TestCase):
         path = MQX_DIR / "Room Left.mqx"
         m = mqx.load(path)
         plain = mqx.read(
-            AutoeqToMqx().convert([CSV / "Room Left.csv", CSV / "Room Right.csv"]).data
+            AutoeqToMqx(mic_response=FLAT_RESPONSE)
+            .convert([CSV / "Room Left.csv", CSV / "Room Right.csv"])
+            .data
         )
         frequencies = [f for f in impulse.log_grid(mqx.SAMPLE_RATE) if 30 <= f <= 16000]
         mic = mic_response_db(MIC_RESPONSE, frequencies)
@@ -324,6 +365,44 @@ class WriterTests(unittest.TestCase):
         grid, raw, _ = mqx.response(m, 0)
         for (f, v), r, g in zip(got, raw, mic_response_db(MIC_RESPONSE, grid)):
             self.assertAlmostEqual(v, r - g, delta=0.006)
+
+    def test_default_mic_response(self):
+        # Without --mic-response the generic ACM1HB is subtracted.
+        m = mqx.load(PROJECT)
+        grid, raw, _ = mqx.response(m, 0)
+        result = MqxToAutoeq().convert([PROJECT])
+        self.assertIn("minus the generic ACM1HB", result.notes[1])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "x.csv"
+            out.write_bytes(result.data)
+            got = response.load(out).curve()
+        for (f, v), r, g in zip(got, raw, profile_db(mqx.generic_mic(), grid)):
+            self.assertAlmostEqual(v, r - g, delta=0.006)
+        # Without --mic-response the generic ACM1HB is added.
+        csv = CSV / "Bandpass Left.csv"
+        frequencies = [f for f in impulse.log_grid(mqx.SAMPLE_RATE) if 30 <= f <= 16000]
+        _, flat, _ = mqx.response(
+            mqx.read(AutoeqToMqx(mic_response=FLAT_RESPONSE).convert([csv]).data),
+            0,
+            frequencies=frequencies,
+        )
+        _, default, _ = mqx.response(
+            mqx.read(AutoeqToMqx().convert([csv]).data), 0, frequencies=frequencies
+        )
+        mic = profile_db(mqx.generic_mic(), frequencies)
+        offset = default[0] - flat[0] - mic[0]
+        # Up to 5 kHz: above it the response's band averaging smooths the
+        # jagged table.
+        for f, d, w, g in zip(frequencies, default, flat, mic):
+            if f <= 5000:
+                self.assertAlmostEqual(d - w - g, offset, delta=0.2, msg=f"{f} Hz")
+        data = _json()
+        data["_measurements"][0]["MicCorrectionName"] = "ACM1X"
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.mqx"
+            path.write_bytes(json.dumps(data).encode())
+            with self.assertRaisesRegex(ValueError, "ACM1X.*give its --mic-response"):
+                MqxToAutoeq().convert([path])
 
 
 if __name__ == "__main__":

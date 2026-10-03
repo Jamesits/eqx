@@ -358,6 +358,28 @@ class ProjectTests(unittest.TestCase):
             with self.subTest(items), self.assertRaisesRegex(ValueError, message):
                 MdatToSwproj(mic_profile=mic, spot_delay_ms=items)
 
+    def test_default_mic_profile(self):
+        path = TESTDATA / "rew/mdat/Room.mdat"
+        given = MdatToSwproj(
+            mic_profile=TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg"
+        ).convert([path])
+        default = MdatToSwproj().convert([path])
+        self.assertIn("mic table: Flat degrees_0 (default)", default.notes[0])
+        self.assertEqual(
+            swproj.measurement_curves(swproj.SwProj(default.data)),
+            swproj.measurement_curves(swproj.SwProj(given.data)),
+        )
+        (mic,) = swproj.mic_profiles(swproj.SwProj(default.data))
+        self.assertEqual((mic.name, mic.angle), ("Flat", "degrees_0"))
+        self.assertEqual(len(mic.points), swmicpkg.GRID_POINTS)
+        self.assertEqual({g for _, g in mic.points}, {0.0})
+        for options in ({"mic_angle": "degrees_30"}, {"mic_profile_format": "umik"}):
+            with (
+                self.subTest(options),
+                self.assertRaisesRegex(ValueError, "need --mic-profile"),
+            ):
+                MdatToSwproj(**options)
+
     def test_layout_checked(self):
         profile = swmicpkg.load(TESTDATA / "soundid/swmicpkg/FLAT01.swmicpkg")
         for measurements, message in (

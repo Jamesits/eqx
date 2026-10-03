@@ -11,7 +11,7 @@ from ..autoeq import response
 from ..curve import log_resample
 from ..dirac import playback, targetcurve
 from ..fileformat import frequency_range
-from ..model import Correction, Peq, standard_grid
+from ..model import Correction, MicProfile, Peq, standard_grid
 from ..options import Option
 from ..rew import cal
 from ..sennheiser import hpc
@@ -154,9 +154,18 @@ def mic_response_db(path: Path, frequencies: list[float]) -> list[float]:
     """The table of a REW calibration file at ``frequencies``: linear in log frequency,
     clamped to the end values."""
     profile, _ = cal.load(path)
+    return profile_db(profile, frequencies, Path(path).name)
+
+
+def profile_db(
+    profile: MicProfile, frequencies: list[float], name: str = ""
+) -> list[float]:
+    """The table of ``profile`` at ``frequencies``, as ``mic_response_db``."""
     points = [(f, g) for f, g in profile.points if f > 0]
     if len(points) < 2:
-        raise ValueError(f"{Path(path).name}: too few calibration points above 0 Hz")
+        raise ValueError(
+            f"{name or profile.name}: too few calibration points above 0 Hz"
+        )
     return log_resample(points, frequencies)
 
 

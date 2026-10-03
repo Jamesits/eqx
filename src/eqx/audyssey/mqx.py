@@ -27,9 +27,10 @@ from typing import Any
 
 from .. import fmath, impulse
 from ..fileformat import Format, Inspector, file_section, response_section
-from ..model import Measurement
+from ..model import Measurement, MicProfile
 from ..options import Option
 from ..report import Section, Table
+from ..rew import cal
 
 SAMPLE_RATE = 48000.0
 IR_LENGTH = 16384
@@ -40,6 +41,9 @@ SYSTEM_DELAY = 124
 ADC_LINEUP, PREAMP_GAIN = 2.115, 35.5
 SPEED_OF_SOUND = 343.0  # m/s
 MIC = "ACM1H"
+# The generic ACM1HB calibration, a REW file shared by MultEQ users: MultEQ-X's
+# own ACM1H table is not readable from its binaries.
+GENERIC_MIC = Path(__file__).with_name("acm1hb.txt")
 APP_VERSION = "1.8.873.0"
 NULL_GUID = "00000000-0000-0000-0000-000000000000"
 SUBWOOFER = "SW1"
@@ -98,7 +102,7 @@ MIC_RESPONSE_OPTION = Option(
     "--mic-response",
     type=Path,
     help="REW calibration file of the measuring microphone (MultEQ-X compensates the "
-    "measurements for its ACM1H; default: none)",
+    "measurements for its ACM1H; default: the built-in generic ACM1HB)",
 )
 POSITION_OPTION = Option(
     "--position",
@@ -341,6 +345,25 @@ def measurement(
         sample_rate=int(SAMPLE_RATE),
         name=f"{designation} {name}".strip(),
     )
+
+
+def generic_mic() -> MicProfile:
+    """The generic ACM1HB response.  The angle is the one MultEQ-X asks for:
+    the microphone aimed at the ceiling."""
+    profile, _ = cal.load(GENERIC_MIC)
+    return MicProfile("ACM1HB", "degrees_90", profile.points)
+
+
+def default_mic(project: Mqx, name: str, flag: str) -> MicProfile:
+    """The generic ACM1HB response; a project measured with another microphone
+    is rejected, as its table is not built in."""
+    mics = {r.data.get("MicCorrectionName") for r in project.recordings}
+    if mics - {MIC}:
+        raise ValueError(
+            f"{name} is measured with "
+            f"{', '.join(sorted(str(m) for m in mics))}; give its {flag}"
+        )
+    return generic_mic()
 
 
 def delay_ms(recording: Recording) -> float:

@@ -80,6 +80,11 @@ def load_mic_profile(
     return read(angle)
 
 
+def flat_mic_profile() -> MicProfile:
+    """0 dB on the SoundID table grid: for measurements free of the microphone."""
+    return MicProfile("Flat", swmicpkg.PLAIN_ANGLE, [(f, 0.0) for f in swmicpkg.grid()])
+
+
 def _channel_values(items: list[str], flag: str) -> dict[str, float]:
     """``CHANNEL=NUMBER`` items -> {channel: number}."""
     out: dict[str, float] = {}
@@ -106,9 +111,11 @@ class SpeakerProjectConverter(Converter):
         Option(
             "--mic-profile",
             type=Path,
-            help="required: SoundID microphone package (.swmicpkg) or table "
+            help="SoundID microphone package (.swmicpkg) or table "
             "(.swmic, .txt), a .swproj measured with the microphone, a UMIK "
-            "calibration file (.txt) or a Dayton Audio calibration file (.txt, .omm)",
+            "calibration file (.txt) or a Dayton Audio calibration file (.txt, .omm) "
+            "(default: the microphone the source software compensates for; "
+            "0 dB if none)",
         ),
         Option(
             "--mic-profile-format",
@@ -195,9 +202,9 @@ class SpeakerProjectConverter(Converter):
         if app not in APPS:
             raise ValueError(f"--app must be one of: {', '.join(APPS)}")
         self.app = app
-        if mic_profile is None:
-            raise ValueError(f"{self.source} -> {self.target} needs --mic-profile")
-        self.mic_profile = Path(mic_profile)
+        if mic_profile is None and (mic_profile_format or mic_angle):
+            raise ValueError("--mic-profile-format and --mic-angle need --mic-profile")
+        self.mic_profile = None if mic_profile is None else Path(mic_profile)
         self.mic_profile_format = mic_profile_format
         self.mic_angle = mic_angle
         self.settings = {
@@ -239,12 +246,23 @@ class SpeakerProjectConverter(Converter):
         """The SoundID layout and the measurements in ``paths``, in channel order."""
         raise NotImplementedError
 
+    def default_mic_profile(self, *paths: Path) -> MicProfile:
+        """The microphone table without --mic-profile: the one the source
+        software compensates for when it shows the measurements."""
+        return flat_mic_profile()
+
     def _convert(self, *paths: Path) -> Result:
         path = paths[0]
         target, measurements = self.measurements(*paths)
-        profile = load_mic_profile(
-            self.mic_profile, self.mic_angle, self.mic_profile_format
-        )
+        if self.mic_profile is None:
+            profile, mic_source = self.default_mic_profile(*paths), "default"
+        else:
+            profile, mic_source = (
+                load_mic_profile(
+                    self.mic_profile, self.mic_angle, self.mic_profile_format
+                ),
+                "given",
+            )
         spot = self.spot(measurements)
         result = speakerproject.convert(
             measurements,
@@ -265,7 +283,8 @@ class SpeakerProjectConverter(Converter):
         notes = [
             (
                 f"app: {app}; layout: {target.name}; measurements: {len(measurements)}; "
-                f"frequency points: {len(result.grid)}; mic table: {profile.name} {profile.angle}"
+                f"frequency points: {len(result.grid)}; "
+                f"mic table: {profile.name} {profile.angle} ({mic_source})"
             ),
             (
                 f"reference: {result.reference_spl:.1f} dB SPL = 0 dB ({source}); correction band: "
@@ -491,7 +510,8 @@ def mqx_layout(designations: list[str]) -> layout.Layout:
 
 
 class MqxToSwproj(SpeakerProjectConverter):
-    """Every enabled speaker, in the SoundID layout of the same speakers."""
+    """Every enabled speaker, in the SoundID layout of the same speakers.
+    The measurements include the microphone."""
 
     source = "mqx"
     description = (
@@ -522,3 +542,6 @@ class MqxToSwproj(SpeakerProjectConverter):
                 for c in channels
             ],
         )
+
+    def default_mic_profile(self, path: Path) -> MicProfile:
+        return mqx.default_mic(mqx.load(path), Path(path).name, "--mic-profile")

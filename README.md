@@ -98,7 +98,7 @@ uv run pytest
 
 - Only the measured speaker responses are converted; `inspect` lists the target curve components. MultEQ-X computes its filters when it transfers them to the AVR
 - Response levels are relative (dB re full scale), not SPL
-- Measurements include the microphone; MultEQ-X compensates them for its ACM1H. `--mic-response` takes the microphone's REW calibration file (e.g. the generic ACM1HB one) and subtracts it (`.mqx` to `.csv`) or adds it (`.csv` to `.mqx`); `.swproj` uses `--mic-profile`
+- Measurements include the microphone; MultEQ-X compensates them for its ACM1H. `--mic-response` takes the microphone's REW calibration file and subtracts it (`.mqx` to `.csv`) or adds it (`.csv` to `.mqx`); `.swproj` uses `--mic-profile`. Both default to a built-in generic ACM1HB table
 - MultEQ-X saves over a project without truncating the file; the leftover text after the project is ignored
 - Written projects hold one position of the front left and right speakers; deselect the AVR's other channels in MultEQ-X
 
@@ -129,12 +129,12 @@ uv run pytest
 ### IK Multimedia ARC X
 
 - Only the measured speaker responses are converted; ARC X computes its correction when it loads the file
-- Response levels are relative (dB re full scale), not SPL
+- Response levels are relative (dB re full scale), not SPL; the response is already compensated for the microphone, so `.swproj` needs no `--mic-profile`
 
 ### IK Multimedia ARC 4
 
 - Only the measured left and right responses are converted; the ARC 4 plug-in computes its correction when it loads the file
-- Response levels are relative (dB re the 40 Hz-10 kHz mean), not SPL; the response is already compensated for the microphone, so use a flat `--mic-profile` for `.swproj`
+- Response levels are relative (dB re the 40 Hz-10 kHz mean), not SPL; the response is already compensated for the microphone, so `.swproj` needs no `--mic-profile`
 - Analyses older than version 4.0.0 are not supported
 
 ### miniDSP UMIK
@@ -165,6 +165,7 @@ uv run pytest
 ### SoundID Reference 5.x
 
 `.swproj`
+- Conversions to `.swproj` take an optional `--mic-profile`; without it they use the microphone the source software compensates for (MultEQ-X: ACM1HB), or a 0 dB table
 - Calibrations of speakers with distance <50cm are supported via REW
 - Calibrations of hidden speakers (thus unable to pass the per-speaker initial calibration in SoundID Reference Measure) are supported via REW
 - Calibrations of complicated sound environment (with points unable to pass the grid triangulation check) are supported via REW

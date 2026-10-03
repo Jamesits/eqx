@@ -12,6 +12,7 @@ from .common import (
     impulse_response,
     median_level,
     mic_response_db,
+    profile_db,
     stereo,
 )
 
@@ -40,22 +41,23 @@ class AutoeqToMqx(Converter):
         self.column = column
         self.mic_response = mic_response
 
+    def mic_db(self, frequencies: list[float]) -> list[float]:
+        if self.mic_response is None:
+            return profile_db(mqx.generic_mic(), frequencies)
+        return mic_response_db(self.mic_response, frequencies)
+
     def _convert(self, *paths: Path) -> Result:
         curves = stereo(paths, self.column)
-        if self.mic_response is not None:
-            curves = [
-                (
-                    name,
-                    [
-                        (f, v + g)
-                        for (f, v), g in zip(
-                            points,
-                            mic_response_db(self.mic_response, [f for f, _ in points]),
-                        )
-                    ],
-                )
-                for name, points in curves
-            ]
+        curves = [
+            (
+                name,
+                [
+                    (f, v + g)
+                    for (f, v), g in zip(points, self.mic_db([f for f, _ in points]))
+                ],
+            )
+            for name, points in curves
+        ]
         level = median_level(curves)
         lead = mqx.SYSTEM_DELAY + FLIGHT
         channels = [

@@ -47,6 +47,7 @@ from .common import (
     file_name,
     mic_response_db,
     missing,
+    profile_db,
 )
 
 
@@ -113,13 +114,15 @@ class MqxToAutoeq(Converter):
         m = mqx.load(path)
         c = m.channel(self.speaker)
         frequencies, db, _ = mqx.response(m, c, self.position)
-        mic = "not compensated for the microphone"
-        if self.mic_response is not None:
-            db = [
-                v - g
-                for v, g in zip(db, mic_response_db(self.mic_response, frequencies))
-            ]
+        if self.mic_response is None:
+            mic_db = profile_db(
+                mqx.default_mic(m, path.name, "--mic-response"), frequencies
+            )
+            mic = "minus the generic ACM1HB"
+        else:
+            mic_db = mic_response_db(self.mic_response, frequencies)
             mic = f"minus {Path(self.mic_response).name}"
+        db = [v - g for v, g in zip(db, mic_db)]
         designation = m.channels[c].designation
         positions = (
             "enabled measurements"
