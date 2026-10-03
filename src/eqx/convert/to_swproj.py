@@ -13,9 +13,10 @@ from .. import formats
 from ..audyssey import mqx
 from ..autoeq import response
 from ..daytonaudio import mic
+from ..drc import pcm, run
 from ..ik import arc4, arcx
 from ..minidsp import umik
-from ..model import Measurement, MicProfile
+from ..model import Measurement, MicProfile, standard_grid
 from ..options import Option
 from ..rew import mdat
 from ..soundid import layout, speakerproject, swmic, swmicpkg, swproj
@@ -29,7 +30,7 @@ from ..soundid.speakerproject import (
     SOUNDID_MAX_BOOST_DB,
 )
 from .base import Converter, Result
-from .common import COLUMN_OPTION, curves
+from .common import COLUMN_OPTION, DEFAULT_RATE, RATE_OPTION, curves, drc_input
 
 MIC_PROFILE_FORMATS = ("swmicpkg", "swmic", "swproj", "umik", "dayton")
 
@@ -103,31 +104,50 @@ def _channel_values(items: list[str], flag: str) -> dict[str, float]:
     return out
 
 
+MIC_OPTIONS = (
+    Option(
+        "--mic-profile",
+        type=Path,
+        help="SoundID microphone package (.swmicpkg) or table "
+        "(.swmic, .txt), a .swproj measured with the microphone, a UMIK "
+        "calibration file (.txt) or a Dayton Audio calibration file (.txt, .omm) "
+        "(default: the microphone the source software compensates for; "
+        "0 dB if none)",
+    ),
+    Option(
+        "--mic-profile-format",
+        choices=MIC_PROFILE_FORMATS,
+        help="format of --mic-profile (default: by extension)",
+    ),
+    Option(
+        "--mic-angle",
+        help="table of a --mic-profile with several tables, by the angle between "
+        "mic axis and speaker: degrees_0, degrees_30 or degrees_90 "
+        f"(default: {swmicpkg.PLAIN_ANGLE}); a profile with one table uses it",
+    ),
+)
+
+
+def check_mic_options(path: Path | None, kind: str | None, angle: str | None) -> None:
+    if path is None and (kind or angle):
+        raise ValueError("--mic-profile-format and --mic-angle need --mic-profile")
+
+
+def mic_profile_of(
+    path: Path | None, kind: str | None, angle: str | None, default
+) -> tuple[MicProfile, str]:
+    """(table, ``given`` or ``default``) of the --mic-profile options;
+    ``default()`` gives the table without --mic-profile."""
+    if path is None:
+        return default(), "default"
+    return load_mic_profile(path, angle, kind), "given"
+
+
 class SpeakerProjectConverter(Converter):
     """Speaker measurements as a SoundID speaker project; subclasses read the measurements."""
 
     target = "swproj"
-    options = (
-        Option(
-            "--mic-profile",
-            type=Path,
-            help="SoundID microphone package (.swmicpkg) or table "
-            "(.swmic, .txt), a .swproj measured with the microphone, a UMIK "
-            "calibration file (.txt) or a Dayton Audio calibration file (.txt, .omm) "
-            "(default: the microphone the source software compensates for; "
-            "0 dB if none)",
-        ),
-        Option(
-            "--mic-profile-format",
-            choices=MIC_PROFILE_FORMATS,
-            help="format of --mic-profile (default: by extension)",
-        ),
-        Option(
-            "--mic-angle",
-            help="table of a --mic-profile with several tables, by the angle between "
-            "mic axis and speaker: degrees_0, degrees_30 or degrees_90 "
-            f"(default: {swmicpkg.PLAIN_ANGLE}); a profile with one table uses it",
-        ),
+    options = MIC_OPTIONS + (
         Option(
             "--reference-spl",
             type=float,
@@ -202,8 +222,7 @@ class SpeakerProjectConverter(Converter):
         if app not in APPS:
             raise ValueError(f"--app must be one of: {', '.join(APPS)}")
         self.app = app
-        if mic_profile is None and (mic_profile_format or mic_angle):
-            raise ValueError("--mic-profile-format and --mic-angle need --mic-profile")
+        check_mic_options(mic_profile, mic_profile_format, mic_angle)
         self.mic_profile = None if mic_profile is None else Path(mic_profile)
         self.mic_profile_format = mic_profile_format
         self.mic_angle = mic_angle
@@ -251,26 +270,36 @@ class SpeakerProjectConverter(Converter):
         software compensates for when it shows the measurements."""
         return flat_mic_profile()
 
+    def filters(
+        self, measurements: list[Measurement], profile: MicProfile, *paths: Path
+    ) -> tuple[dict | None, list[str]]:
+        """({channel: (dB, group delay s) on the standard grid}, notes): the
+        correction filters; None corrects with the inverse response."""
+        return None, []
+
+    def name(self, *paths: Path) -> str:
+        """The project name and default output file stem."""
+        return paths[0].stem
+
     def _convert(self, *paths: Path) -> Result:
-        path = paths[0]
         target, measurements = self.measurements(*paths)
-        if self.mic_profile is None:
-            profile, mic_source = self.default_mic_profile(*paths), "default"
-        else:
-            profile, mic_source = (
-                load_mic_profile(
-                    self.mic_profile, self.mic_angle, self.mic_profile_format
-                ),
-                "given",
-            )
+        profile, mic_source = mic_profile_of(
+            self.mic_profile,
+            self.mic_profile_format,
+            self.mic_angle,
+            lambda: self.default_mic_profile(*paths),
+        )
+        filters, filter_notes = self.filters(measurements, profile, *paths)
         spot = self.spot(measurements)
+        name = self.name(*paths)
         result = speakerproject.convert(
             measurements,
             profile,
-            path.stem,
+            name,
             layout=target,
             spot=spot,
             app=self.app,
+            filters=filters,
             **self.settings,
         )
         s = self.settings
@@ -305,17 +334,104 @@ class SpeakerProjectConverter(Converter):
             f"{channel} listening spot: delay {delay:g} ms, gain {gain:+g} dB"
             for channel, (delay, gain) in spot.items()
         ]
-        return Result(result.data, path.stem + ".swproj", notes)
+        return Result(result.data, name + ".swproj", notes + filter_notes)
 
 
 class MdatToSwproj(SpeakerProjectConverter):
+    """With --drc-config, DRC designs the correction of each measurement."""
+
     source = "mdat"
     description = (
-        "REW speaker measurements as a SoundID speaker project (no audio samples)"
+        "REW speaker measurements as a SoundID speaker project (no audio samples); "
+        "optionally corrected by DRC"
     )
+    options = SpeakerProjectConverter.options + (
+        Option(
+            "--drc-config",
+            type=Path,
+            help="DRC configuration file, e.g. normal-48.0.drc: DRC designs the "
+            "correction at its BCSampleRate (default: the inverse response)",
+        ),
+        Option(
+            "--drc",
+            help=f"DRC program (default: {run.DEFAULT_EXECUTABLE}, searched in PATH)",
+        ),
+    )
+
+    def __init__(
+        self, drc_config: Path | None = None, drc: str | None = None, **settings
+    ):
+        super().__init__(**settings)
+        if drc is not None and drc_config is None:
+            raise ValueError("--drc needs --drc-config")
+        self.drc_config = drc_config
+        self.drc = drc or run.DEFAULT_EXECUTABLE
 
     def measurements(self, path: Path) -> tuple[layout.Layout, list[Measurement]]:
         return layout.STEREO, mdat.load(path)
+
+    def filters(
+        self, measurements: list[Measurement], profile: MicProfile, path: Path
+    ) -> tuple[dict | None, list[str]]:
+        if self.drc_config is None:
+            return None, []
+        rate = run.config_rate(self.drc_config)
+        grid = standard_grid()
+        filters = {}
+        for m in measurements:
+            ir, _ = run.run(drc_input(m, profile, rate), self.drc_config, self.drc)
+            filters[m.channel] = pcm.response(ir, rate, grid)
+        return filters, [f"DRC: {Path(self.drc_config).name} at {rate} Hz"]
+
+
+class DrcToSwproj(SpeakerProjectConverter):
+    """The measurements of --mdat, corrected by DRC's filters."""
+
+    source = "drc"
+    description = (
+        "DRC correction filters (inputs: left, optional right) with the REW "
+        "measurements they correct as a SoundID speaker project"
+    )
+    options = SpeakerProjectConverter.options + (
+        Option(
+            "--mdat",
+            type=Path,
+            help="the REW measurements (.mdat) DRC corrects (required)",
+        ),
+        RATE_OPTION,
+    )
+    inputs = 2
+
+    def __init__(
+        self, mdat: Path | None = None, rate: float = DEFAULT_RATE, **settings
+    ):
+        super().__init__(**settings)
+        if mdat is None:
+            raise ValueError("--mdat is required")
+        self.mdat = Path(mdat)
+        self.rate = rate
+
+    def measurements(self, *paths: Path) -> tuple[layout.Layout, list[Measurement]]:
+        measurements = mdat.load(self.mdat)
+        if len(measurements) != len(paths):
+            raise ValueError(
+                f"{self.mdat.name} holds {len(measurements)} measurements "
+                f"({', '.join(m.channel for m in measurements)}); "
+                "give one filter for each"
+            )
+        return layout.STEREO, measurements
+
+    def filters(
+        self, measurements: list[Measurement], profile: MicProfile, *paths: Path
+    ) -> tuple[dict | None, list[str]]:
+        grid = standard_grid()
+        return {
+            m.channel: pcm.response(pcm.load(path), self.rate, grid)
+            for m, path in zip(measurements, paths)
+        }, [f"DRC filters at {self.rate:g} Hz"]
+
+    def name(self, *paths: Path) -> str:
+        return f"{self.mdat.stem} DRC"
 
 
 class AutoeqToSwproj(SpeakerProjectConverter):

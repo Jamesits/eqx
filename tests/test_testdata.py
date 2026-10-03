@@ -27,6 +27,7 @@ class GeneratedTestdataTests(unittest.TestCase):
                     "autoeq",
                     "daytonaudio",
                     "dirac",
+                    "drc",
                     "fir",
                     "ik",
                     "minidsp",

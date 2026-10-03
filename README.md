@@ -22,6 +22,7 @@ DO check the output levels on all frequencies before playing any audio.
 | [Dayton Audio](https://www.daytonaudio.com/) UMM-6, iMM-6, OmniMic, EMM-6 | Microphone calibration | `.txt`, `.omm` | `dayton` | ✓ | | |
 | [Dirac Live 3.x](https://www.dirac.com/live/) | Target curve | `.targetcurve` | `targetcurve` | ✓ | ✓ | Untested: no license |
 | [Dirac Live Processor](https://www.dirac.com/live/) | Filter slot | `.bin` | `dirac-filter` | ✓ | ✓ | Untested: no license |
+| [DRC](https://drc-fir.sourceforge.net/) | Raw impulse response (input, correction filter) | `.pcm` | `drc` | ✓ | ✓ | |
 | [FuzzMeasure 4](https://www.rodetest.com/) | Document | `.fume4` | `fuzzmeasure` | ✓ | ✓ | Tested demo features only |
 | FuzzMeasure 3 | Document | `.fume3` | `fuzzmeasure` | ✓ | | Tested demo features only |
 | FuzzMeasure 2 | Document | `.fume` | `fuzzmeasure` | ✓ | | Untested: software unavailable |

@@ -10,8 +10,9 @@ from .. import dsp
 from ..autoeq import response
 from ..curve import log_resample
 from ..dirac import playback, targetcurve
+from ..drc import run
 from ..fileformat import frequency_range
-from ..model import Correction, MicProfile, Peq, standard_grid
+from ..model import Correction, Measurement, MicProfile, Peq, standard_grid
 from ..options import Option
 from ..rew import cal
 from ..sennheiser import hpc
@@ -155,6 +156,20 @@ def mic_response_db(path: Path, frequencies: list[float]) -> list[float]:
     clamped to the end values."""
     profile, _ = cal.load(path)
     return profile_db(profile, frequencies, Path(path).name)
+
+
+def calibrated_points(m: Measurement, profile: MicProfile) -> list[tuple[float, float]]:
+    """(frequency, dB) of ``m`` above 0 Hz less the microphone table."""
+    points = [(f, v) for f, v in zip(m.frequencies, m.response) if f > 0]
+    mic = profile_db(profile, [f for f, _ in points])
+    return [(f, v - g) for (f, v), g in zip(points, mic)]
+
+
+def drc_input(m: Measurement, profile: MicProfile, rate: float) -> list[float]:
+    """The DRC input impulse response of ``m``: less the microphone table, its
+    200 Hz-10 kHz median at 0 dB."""
+    points = calibrated_points(m, profile)
+    return run.input_ir(points, rate, median_level([(m.channel, points)]))
 
 
 def profile_db(

@@ -48,6 +48,13 @@ class SpeakerCurves:
     correction_group_delay: list[float]
 
 
+def _level_band(low_cutoff_hz: float, high_cutoff_hz: float) -> tuple[float, float]:
+    """200 Hz--10 kHz limited to the correction band; the band if they do not overlap."""
+    low = max(LEVEL_LOW_HZ, low_cutoff_hz)
+    high = min(LEVEL_HIGH_HZ, high_cutoff_hz)
+    return (low, high) if low < high else (low_cutoff_hz, high_cutoff_hz)
+
+
 def estimate_reference_spl(
     responses: list[list[float]],
     grid: list[float],
@@ -65,10 +72,7 @@ def estimate_reference_spl(
     pulled around.  The second term lowers the level so that at most
     ``clip_fraction`` of those points need more boost than the cap.
     """
-    low = max(LEVEL_LOW_HZ, low_cutoff_hz)
-    high = min(LEVEL_HIGH_HZ, high_cutoff_hz)
-    if low >= high:
-        low, high = low_cutoff_hz, high_cutoff_hz
+    low, high = _level_band(low_cutoff_hz, high_cutoff_hz)
     values = [
         v for response in responses for f, v in zip(grid, response) if low <= f <= high
     ]
@@ -91,12 +95,16 @@ def prepare_speaker_curves(
     clip_fraction: float = DEFAULT_CLIP_FRACTION,
     lfe: Iterable[str] = (),
     lfe_high_cutoff_hz: float = DEFAULT_LFE_HIGH_CUTOFF_HZ,
+    filters: dict[str, tuple[list[float], list[float]]] | None = None,
 ) -> tuple[dict[str, SpeakerCurves], float]:
-    """Calibrate and normalize first, then constrain the inverse speaker EQ.
+    """Calibrate and normalize first, then constrain the speaker EQ.
 
     ``reference_spl=None`` estimates the reference from the measurements.
     ``lfe`` names the LFE channels: their band ends at ``lfe_high_cutoff_hz``
     and they are left out of the reference estimate.
+    ``filters``: {channel: (dB, group delay s) on ``grid``}, a correction
+    filter used instead of the inverse response.  Its level is moved so that
+    the corrected response has a 0 dB median in the level band.
     Returns the curves and the reference SPL used.
     """
     if reference_spl is not None and not math.isfinite(reference_spl):
@@ -160,12 +168,22 @@ def prepare_speaker_curves(
         if not all(math.isfinite(value) for value in response + gd):
             raise ValueError(f"{measurement.channel} curve contains non-finite values")
         first, last = bands[measurement.channel in lfe]
+        if filters and measurement.channel in filters:
+            gain, gain_gd = filters[measurement.channel]
+            low, high = _level_band(low_cutoff_hz, high_cutoff_hz)
+            offset = statistics.median(
+                r + g for f, r, g in zip(grid, response, gain) if low <= f <= high
+            )
+            wanted = [offset - g for g in gain]
+            wanted_gd = [-v for v in gain_gd]
+        else:
+            wanted, wanted_gd = response, gd
         correction = [
             min(-value, max_boost_db) if first < i < last else 0.0
-            for i, value in enumerate(response)
+            for i, value in enumerate(wanted)
         ]
         correction_gd = [
-            -value if first < i < last else 0.0 for i, value in enumerate(gd)
+            -value if first < i < last else 0.0 for i, value in enumerate(wanted_gd)
         ]
         curves[measurement.channel] = SpeakerCurves(
             response, gd, correction, correction_gd
@@ -646,9 +664,11 @@ def convert(
     layout: sid_layout.Layout = sid_layout.STEREO,
     spot: dict | None = None,
     app: str = "soundid",
+    filters: dict[str, tuple[list[float], list[float]]] | None = None,
 ) -> Conversion:
     """``measurements`` are channels of ``layout``: ``index`` and ``channel`` as in the layout.
 
+    ``filters``: correction filters on the standard grid, see ``prepare_speaker_curves``.
     ``spot``: {channel: (delay ms, gain dB)}, the listening spot adjustment.
     ``app``: ``soundid`` (SoundID Reference) or ``sonarworks-reference`` (Sonarworks Reference 3 / 4).
     """
@@ -671,6 +691,7 @@ def convert(
         clip_fraction=clip_fraction,
         lfe=[c.name for c in layout.channels if c.is_lfe],
         lfe_high_cutoff_hz=lfe_high_cutoff_hz,
+        filters=filters,
     )
     xml = build_project_xml(
         measurements, grid, profile, corrected, name, layout, spot, app

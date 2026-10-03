@@ -34,6 +34,7 @@ from .to_autoeq import (
     TmreqToAutoeq,
 )
 from .to_dirac_filter import AutoeqToDiracFilter, FirToDiracFilter
+from .to_drc import MdatToDrc
 from .to_fir import (
     AutoeqToFir,
     DearvrHpcToFir,
@@ -60,6 +61,7 @@ from .to_swproj import (
     Arc4ToSwproj,
     ArcxToSwproj,
     AutoeqToSwproj,
+    DrcToSwproj,
     MdatToSwproj,
     MqxToSwproj,
 )
@@ -124,6 +126,8 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         AutoeqToSmaartCurve,
         DearvrHpcToAutoeq,
         DearvrHpcToFir,
+        MdatToDrc,
+        DrcToSwproj,
     )
 }
 

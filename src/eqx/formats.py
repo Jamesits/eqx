@@ -9,6 +9,7 @@ from .audyssey import mqx
 from .autoeq import response
 from .daytonaudio import mic
 from .dirac import filterslot, targetcurve
+from .drc import pcm
 from .fileformat import Format
 from .ik import arc4, arcx
 from .minidsp import umik
@@ -67,6 +68,7 @@ FORMATS: dict[str, Format] = {
         trace,
         crv,
         hpc,
+        pcm,
     )
     for f in getattr(m, "FORMATS", None) or (m.FORMAT,)
 }

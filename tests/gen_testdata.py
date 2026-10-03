@@ -27,6 +27,7 @@ from testgen import (
     audyssey,
     daytonaudio,
     dirac,
+    drc,
     ik,
     minidsp,
     rationalacoustics,
@@ -41,6 +42,7 @@ from testgen import (
 from testgen.audyssey import MQX_DIR
 from testgen.common import ANGLES, COMPUTER_ID, CSV_DIR, FIR_DIR, ROOT, SWPROJ_PASSWORD
 from testgen.dirac import DIRAC_FILTER_DIR, TARGETCURVE_DIR
+from testgen.drc import PCM_DIR
 from testgen.ik import ARC4_DIR, ARCX_DIR
 from testgen.minidsp import UMIK_DIR
 from testgen.rationalacoustics import ASCII_DIR, CURVE_DIR, TRACE_DIR
@@ -72,6 +74,7 @@ SOURCES = (
     rme,
     rogueamoeba,
     dirac,
+    drc,
     ik,
     audyssey,
     rode,
@@ -300,8 +303,14 @@ CONVERSIONS = [
     (f"{CSV_DIR}/Bass and treble.csv", f"{CURVE_DIR}/Bass and treble.crv", {}),
     (f"{HPC_DIR}/hpc.dat", f"{CSV_DIR}/Tilt Studio.csv", {"headphone": "tilt studio"}),
     (f"{HPC_DIR}/hpc.dat", f"{FIR_DIR}/Tilt Stereo.wav", {"headphone": "Tilt Stereo"}),
+    (f"{MDAT_DIR}/Room.mdat", f"{PCM_DIR}/Room Left.pcm", {}),
+    (
+        (f"{PCM_DIR}/Room Left filter.pcm", f"{PCM_DIR}/Room Right filter.pcm"),
+        f"{PROJ_DIR}/Room DRC.swproj",
+        {"mdat": f"{MDAT_DIR}/Room.mdat"},
+    ),
 ]
-PATH_OPTIONS = ("mic_profile", "target_curve", "mic_response")
+PATH_OPTIONS = ("mic_profile", "target_curve", "mic_response", "mdat")
 
 
 def run_conversion(

@@ -48,6 +48,7 @@ SAMPLES = {
     "smaart-ascii": TESTDATA / "rationalacoustics/smaart-ascii/Tf export.txt",
     "smaart-curve": TESTDATA / "rationalacoustics/smaart-curve/Haystack.crv",
     "dearvr-hpc": TESTDATA / "sennheiser/dearvr-hpc/hpc.dat",
+    "drc": TESTDATA / "drc/pcm/Room Left filter.pcm",
 }
 
 # A second format sharing ``.txt`` with ``rewcal``.
@@ -130,7 +131,7 @@ class FormatTests(unittest.TestCase):
             convert.find("swmicpkg"), convert.CONVERTERS["swmicpkg", "rewcal"]
         )
         with self.assertRaisesRegex(
-            ValueError, "2 converters from mdat; specify the target"
+            ValueError, "3 converters from mdat; specify the target"
         ):
             convert.find("mdat")
         with self.assertRaisesRegex(ValueError, "no converter from mdat to rewcal"):
