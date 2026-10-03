@@ -39,5 +39,11 @@ jobs:
       - name: Install
         run: uv sync --locked
 
+      - name: Install DRC
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y drc
+
       - name: Test
+        env:
+          EQX_REQUIRE_DRC: ${{ runner.os == 'Linux' && '1' || '' }}
         run: uv run pytest -v

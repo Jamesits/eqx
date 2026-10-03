@@ -1,3 +1,4 @@
+import os
 import shutil
 import statistics
 import struct
@@ -25,8 +26,25 @@ LEFT_ONLY = ROOT / rew.MDAT_DIR / "Left only.mdat"
 FILTERS = [ROOT / drc.PCM_DIR / f"Room {side} filter.pcm" for side in ("Left", "Right")]
 TILT = ROOT / soundid.MIC_DIR / "TILT01.swmicpkg"
 REAL = ROOT / "real" / "drc"
-REAL_DRC = shutil.which(str(REAL / "drc"))
-REAL_CONFIG = REAL / "cfg48" / "normal-48.0.drc"
+REAL_DRC = shutil.which(str(REAL / "drc")) or shutil.which("drc")
+# Every file in one directory; the DRC distribution layout (the Debian
+# package, extracted or installed).
+REAL_CONFIGS = [
+    c
+    for c in (
+        REAL / "cfg48" / "normal-48.0.drc",
+        *(
+            root / "config" / "48.0 kHz" / "normal-48.0.drc"
+            for root in (
+                REAL / "deb" / "data" / "usr" / "share" / "drc",
+                Path("/usr/share/drc"),
+            )
+        ),
+    )
+    if c.is_file()
+]
+# Set in CI where DRC is installed: fail instead of skipping.
+REQUIRE_DRC = os.environ.get("EQX_REQUIRE_DRC") == "1"
 
 
 def bells_db(side: str, frequencies) -> list[float]:
@@ -95,6 +113,50 @@ class RunTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             run.input_ir([(30000, 0.0)], 48000)
 
+    def test_config_value(self):
+        text = (
+            "PSPointsFile = a.txt\n"
+            'PSPointsFile = "my # file.txt" ; comment\n'
+            "  MCFilterType=L# comment\n"
+        )
+        self.assertEqual(run.config_value(text, "PSPointsFile"), "my # file.txt")
+        self.assertEqual(run.config_value(text, "MCFilterType"), "L")
+        self.assertIsNone(run.config_value(text, "MCPointsFile"))
+
+    def test_config_files(self):
+        # The base directory first, then next to the configuration, then the
+        # distribution's target and mic directories.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            config = root / "config" / "48.0 kHz" / "normal-48.0.drc"
+            target = root / "target" / "48.0 kHz" / "pa-48.0.txt"
+            mic = root / "mic" / "wm-61a.txt"
+            for path in (config, target, mic):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("")
+            self.assertEqual(run.config_file("pa-48.0.txt", config), target.resolve())
+            self.assertEqual(run.config_file("wm-61a.txt", config), mic.resolve())
+            self.assertIsNone(run.config_file("bk-48.0.txt", config))
+            near = config.parent / "pa-48.0.txt"
+            near.write_text("")
+            self.assertEqual(run.config_file("pa-48.0.txt", config), near.resolve())
+            base = f"{root}/target/48.0 kHz/"
+            self.assertEqual(
+                run.config_file("pa-48.0.txt", config, base), target.resolve()
+            )
+            self.assertEqual(run.config_file(str(mic), config), mic.resolve())
+
+            # Passed to DRC; the mic file only with the mic stage on.
+            text = "PSPointsFile = pa-48.0.txt\nMCPointsFile = ecm8000.txt\n"
+            self.assertEqual(
+                run._read_files(text + "MCFilterType = N\n", config),
+                [f"--PSPointsFile={near.resolve()}"],
+            )
+            with self.assertRaisesRegex(ValueError, "MCPointsFile 'ecm8000.txt'"):
+                run._read_files(text + "MCFilterType = M\n", config)
+            with self.assertRaisesRegex(ValueError, "PSPointsFile 'bk.txt'"):
+                run._read_files("PSPointsFile = bk.txt\n", config)
+
     def test_config_rate(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "c.drc"
@@ -116,7 +178,9 @@ class RunTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             config = Path(tmp) / "c.drc"
-            config.write_text("BCSampleRate = 48000\n")
+            config.write_text("BCSampleRate = 48000\nPSPointsFile = pa.txt\n")
+            points = Path(tmp) / "pa.txt"
+            points.write_text("")
             with (
                 mock.patch.object(run.shutil, "which", return_value="/bin/drc"),
                 mock.patch.object(run.subprocess, "run", fake),
@@ -136,6 +200,7 @@ class RunTests(unittest.TestCase):
                 "--PSOutFileType=F",
                 "--TCOutFile=",
                 "--MSOutFile=",
+                f"--PSPointsFile={points.resolve()}",
             ):
                 self.assertIn(option, args)
 
@@ -262,11 +327,22 @@ class DrcToSwprojTests(unittest.TestCase):
             )
 
 
-@unittest.skipUnless(REAL_DRC and REAL_CONFIG.is_file(), "DRC not in testdata/real/drc")
+def target_file(config: Path) -> Path:
+    text = config.read_text(encoding="latin-1")
+    return run.config_file(run.config_value(text, "PSPointsFile"), config)
+
+
 class RealDrcTests(unittest.TestCase):
+    def setUp(self):
+        if not (REAL_DRC and REAL_CONFIGS):
+            if REQUIRE_DRC:
+                self.fail("DRC or its 48 kHz configuration not found")
+            self.skipTest("DRC not in testdata/real/drc or installed")
+        self.config = REAL_CONFIGS[0]
+
     def test_mdat_to_swproj(self):
         # Running DRC from the conversion equals the manual run.
-        auto = MdatToSwproj(drc_config=REAL_CONFIG, drc=REAL_DRC).convert([ROOM])
+        auto = MdatToSwproj(drc_config=self.config, drc=REAL_DRC).convert([ROOM])
         with tempfile.TemporaryDirectory() as tmp:
             filters = []
             for channel in ("left", "right"):
@@ -279,9 +355,11 @@ class RealDrcTests(unittest.TestCase):
                         f"--BCInFile={source}",
                         f"--PSOutFile={target}",
                         "--TCOutFile=",
-                        REAL_CONFIG.name,
+                        # DRC finds the target only in its working directory.
+                        f"--PSPointsFile={target_file(self.config)}",
+                        self.config.name,
                     ],
-                    cwd=REAL_CONFIG.parent,
+                    cwd=self.config.parent,
                     check=True,
                     capture_output=True,
                 )
@@ -297,8 +375,8 @@ class RealDrcTests(unittest.TestCase):
         grid = standard_grid()
         measurements = mdat.load(ROOM)
         profile = load_mic_profile(TILT)
-        rate = run.config_rate(REAL_CONFIG)
-        c = MdatToSwproj(drc_config=REAL_CONFIG, drc=REAL_DRC)
+        rate = run.config_rate(self.config)
+        c = MdatToSwproj(drc_config=self.config, drc=REAL_DRC)
         filters, notes = c.filters(measurements, profile, ROOM)
         self.assertIn(f"at {rate} Hz", notes[0])
         curves, _ = speakerproject.prepare_speaker_curves(
@@ -309,3 +387,14 @@ class RealDrcTests(unittest.TestCase):
             raw = statistics.pstdev(cv.response[i] for i in band)
             fixed = statistics.pstdev(cv.response[i] + cv.correction[i] for i in band)
             self.assertLess(fixed, raw / 2, channel)
+
+    def test_distribution_layout(self):
+        # A configuration apart from its target file gives the same filters.
+        want = MdatToSwproj(drc_config=self.config, drc=REAL_DRC).convert([ROOM])
+        for config in REAL_CONFIGS[1:]:
+            with self.subTest(config=config):
+                got = MdatToSwproj(drc_config=config, drc=REAL_DRC).convert([ROOM])
+                self.assertEqual(
+                    swproj.SwProj(got.data).part("eqb"),
+                    swproj.SwProj(want.data).part("eqb"),
+                )

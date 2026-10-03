@@ -38,13 +38,64 @@ def input_ir(points, rate: float, level_db: float = 0.0) -> list[float]:
 
 
 def config_value(text: str, name: str) -> str | None:
-    """The last ``name = value`` of a configuration; ``#`` starts a comment."""
+    """The last ``name = value`` of a configuration (minIni syntax): ``#`` and
+    ``;`` outside double quotes start a comment; quotes around the value are
+    removed."""
     value = None
     for line in text.splitlines():
-        m = re.match(rf"\s*{name}\s*=\s*([^#]*)", line)
+        m = re.match(rf"\s*{name}\s*=(.*)", line)
         if m:
-            value = m.group(1).strip()
+            value = re.match(r'(?:[^#;"]|"[^"]*")*', m.group(1)).group(0).strip()
+            if len(value) > 1 and value[0] == value[-1] == '"':
+                value = value[1:-1]
     return value
+
+
+def _read_files(text: str, config: Path) -> list[str]:
+    """``--Name=path`` overrides of the files DRC reads (target, microphone),
+    found by ``config_file``.
+
+    The microphone file is needed only with the microphone stage enabled.
+    """
+    out = []
+    mic = (config_value(text, "MCFilterType") or "N").upper() != "N"
+    for name, needed in (("PSPointsFile", True), ("MCPointsFile", mic)):
+        value = config_value(text, name)
+        if not value:
+            continue
+        path = config_file(value, config, config_value(text, "BCBaseDir") or "")
+        if path is not None:
+            out.append(f"--{name}={path}")
+        elif needed:
+            raise ValueError(
+                f"{config.name}: {name} {value!r} not found next to the "
+                "configuration, nor in the target and mic directories of a DRC "
+                "distribution"
+            )
+    return out
+
+
+def config_file(name: str, config: Path, base: str = "") -> Path | None:
+    """The file a configuration names: the base directory prefixed (DRC's
+    ``BCBaseDir``), else next to the configuration, else in a DRC
+    distribution's ``target/<rate directory>`` or ``mic`` directory.
+
+    DRC's sources and the Debian package keep ``config/48.0 kHz/``,
+    ``target/48.0 kHz/`` and ``mic/`` apart while the configurations name
+    the files without a directory; DRC itself looks only in its working
+    directory.
+    """
+    if Path(name).is_absolute():
+        candidates = [Path(name)]
+    else:
+        root = config.parent.parent.parent
+        candidates = [Path(base + name)] if base else []
+        candidates += [
+            config.parent / name,
+            root / "target" / config.parent.name / name,
+            root / "mic" / name,
+        ]
+    return next((p.resolve() for p in candidates if p.is_file()), None)
 
 
 def config_rate(path) -> int:
@@ -65,14 +116,15 @@ def run(
 ) -> tuple[list[float], str]:
     """(correction filter, DRC's output) of ``ir`` at the configuration's rate.
 
-    DRC runs in the configuration's directory, so its relative file names
-    (target, microphone) resolve as in a manual run.  The input and the
-    filter are temporary files; the test convolution and the minimum-phase
-    filter are not written.
+    The target and microphone files are passed as absolute paths
+    (``config_file``); DRC runs in the configuration's directory.  The input
+    and the filter are temporary files; the test convolution and the
+    minimum-phase filter are not written.
     """
     config = Path(config).resolve()
     if not config.is_file():
         raise ValueError(f"DRC configuration {config} not found")
+    files = _read_files(config.read_text(encoding="latin-1"), config)
     # Resolved here: DRC runs in another directory.
     program = shutil.which(executable)
     if program is None:
@@ -92,6 +144,7 @@ def run(
             "--PSOutFileType=F",
             "--TCOutFile=",
             "--MSOutFile=",
+            *files,
             str(config),
         ]
         try:
