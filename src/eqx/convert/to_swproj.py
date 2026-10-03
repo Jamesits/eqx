@@ -18,7 +18,7 @@ from ..minidsp import umik
 from ..model import Measurement, MicProfile
 from ..options import Option
 from ..rew import mdat
-from ..soundid import layout, speakerproject, swmicpkg, swproj
+from ..soundid import layout, speakerproject, swmic, swmicpkg, swproj
 from ..soundid.speakerproject import (
     APPS,
     DEFAULT_CLIP_FRACTION,
@@ -31,14 +31,14 @@ from ..soundid.speakerproject import (
 from .base import Converter, Result
 from .common import COLUMN_OPTION, curves
 
-MIC_PROFILE_FORMATS = ("swmicpkg", "swproj", "umik", "dayton")
+MIC_PROFILE_FORMATS = ("swmicpkg", "swmic", "swproj", "umik", "dayton")
 
 
 def load_mic_profile(
     path: Path, angle: str | None = None, kind: str | None = None
 ) -> MicProfile:
-    """One microphone table from a ``.swmicpkg``, a ``.swproj`` measured with it,
-    a UMIK or a Dayton Audio file.
+    """One microphone table from a ``.swmicpkg`` or one of its table files, a
+    ``.swproj`` measured with the microphone, a UMIK or a Dayton Audio file.
 
     ``angle`` selects the table of a profile with several (default
     ``degrees_0``); a profile with one table rejects it and gives that table.
@@ -53,13 +53,14 @@ def load_mic_profile(
     elif kind == "swproj":
         profiles = {p.angle: p for p in swproj.mic_profiles(swproj.SwProj.open(path))}
         available, read = list(profiles), profiles.__getitem__
-    elif kind in ("umik", "dayton"):
-        profile = (umik if kind == "umik" else mic).load(path).profile
+    elif kind in ("swmic", "umik", "dayton"):
+        reader = {"swmic": swmic, "umik": umik, "dayton": mic}[kind]
+        profile = reader.load(path).profile
         available, read = [profile.angle], lambda a: profile
     else:
         raise ValueError(
-            f"{path.name}: a microphone profile must be .swmicpkg, .swproj, "
-            "a UMIK .txt or a Dayton Audio .txt / .omm"
+            f"{path.name}: a microphone profile must be .swmicpkg, a SoundID "
+            ".swmic / .txt table, .swproj, a UMIK .txt or a Dayton Audio .txt / .omm"
         )
     if not available:
         raise ValueError(f"{path.name} holds no microphone table")
@@ -105,9 +106,9 @@ class SpeakerProjectConverter(Converter):
         Option(
             "--mic-profile",
             type=Path,
-            help="required: SoundID microphone package (.swmicpkg), a .swproj "
-            "measured with the microphone, a UMIK calibration file (.txt) or a "
-            "Dayton Audio calibration file (.txt, .omm)",
+            help="required: SoundID microphone package (.swmicpkg) or table "
+            "(.swmic, .txt), a .swproj measured with the microphone, a UMIK "
+            "calibration file (.txt) or a Dayton Audio calibration file (.txt, .omm)",
         ),
         Option(
             "--mic-profile-format",

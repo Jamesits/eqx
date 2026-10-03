@@ -1,5 +1,5 @@
-"""REW, miniDSP UMIK and Dayton Audio microphone calibration files -> SoundID
-microphone package."""
+"""REW, miniDSP UMIK, Dayton Audio and SoundID microphone calibration files ->
+SoundID microphone package."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from ..minidsp import umik
 from ..model import MicProfile
 from ..options import Option
 from ..rew import cal
-from ..soundid import swmicpkg
+from ..soundid import swmic, swmicpkg
 from .base import Converter, Result
 
 SERIAL_OPTION = Option(
     "--serial",
-    help="microphone serial, the package name (default: the "
-    "serial in a UMIK or Dayton Audio file, else the first input name)",
+    help="microphone serial, the package name (default: the serial in a UMIK, "
+    "Dayton Audio or SoundID table file, else the first input name)",
 )
 
 
@@ -74,11 +74,12 @@ class RewcalToSwmicpkg(Converter):
 
 
 class _MicFilesToSwmicpkg(Converter):
-    """The inputs are the 0 degree and the optional 90 degree file, in any order.
+    """The inputs are one file per angle, in any order; the 0 degree file is
+    required.
 
-    Each file's angle comes from its header or ``_90deg`` name.  There is no
-    30 degree table; it gets a copy of the 0 degree table.  The sensitivity
-    has no place in the package.  Subclasses read the files.
+    Each file's angle comes from its header or name.  A missing angle gets a
+    copy of the 0 degree table.  The sensitivity has no place in the package.
+    Subclasses read the files.
     """
 
     target = "swmicpkg"
@@ -95,6 +96,10 @@ class _MicFilesToSwmicpkg(Converter):
     def _note(self, mic) -> list[str]:
         raise NotImplementedError
 
+    def _plain_name(self, path: Path, mic) -> str:
+        """The name of the 0 degree file."""
+        return f"{mic.serial}{path.suffix}"
+
     def _convert(self, *paths: Path) -> Result:
         files = [(path, self._load(path)) for path in paths]
         serials = {m.serial for _, m in files}
@@ -105,6 +110,11 @@ class _MicFilesToSwmicpkg(Converter):
         tables, notes = {}, []
         for path, m in files:
             angle = m.profile.angle
+            if angle not in swmicpkg.ANGLES:
+                raise ValueError(
+                    f"{path.name}: no {angle} table in a package; "
+                    f"angles: {', '.join(swmicpkg.ANGLES)}"
+                )
             if angle in tables:
                 raise ValueError(f"two {angle} tables: {paths[0].name}, {path.name}")
             tables[angle] = m.profile
@@ -112,7 +122,7 @@ class _MicFilesToSwmicpkg(Converter):
         if swmicpkg.PLAIN_ANGLE not in tables:
             path, m = files[0]
             raise ValueError(
-                f"no {swmicpkg.PLAIN_ANGLE} table; add the {m.serial}{path.suffix} file"
+                f"no {swmicpkg.PLAIN_ANGLE} table; add the {self._plain_name(path, m)} file"
             )
         m = files[0][1]
         serial = self.serial or m.serial
@@ -152,3 +162,23 @@ class DaytonToSwmicpkg(_MicFilesToSwmicpkg):
         if m.phase:
             notes.append("phase not stored")
         return notes
+
+
+class SwmicToSwmicpkg(_MicFilesToSwmicpkg):
+    """The tables of a downloaded profile, before SoundID packs them."""
+
+    source = "swmic"
+    description = (
+        "SoundID microphone tables (inputs: 0, optional 30 and 90 degrees) as a "
+        "SoundID microphone package"
+    )
+    inputs = len(swmicpkg.ANGLES)
+
+    def _load(self, path: Path):
+        return swmic.load(path)
+
+    def _note(self, t) -> list[str]:
+        return []
+
+    def _plain_name(self, path: Path, t) -> str:
+        return f"{t.serial}_cal_0degree.txt"

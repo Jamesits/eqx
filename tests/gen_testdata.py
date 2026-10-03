@@ -12,7 +12,7 @@ library: encrypted PEQb, PEQb 2.x and ``PEQB``, Custom Target Presets, a REW
 ``.cal`` with a sensitivity line, the SoundID device exports, Sonarworks
 Reference 3 and Sonarworks Reference 4 Measure projects, ARC 4 files,
 FuzzMeasure 3 and 2 documents, miniDSP UMIK and Dayton Audio calibration
-files, Smaart 7
+files, SoundID microphone tables, Smaart 7
 reference files, Smaart ASCII exports, curve files other than the written
 target curves and the dearVR MIX ``hpc.dat``.  A package
 (directory) is a dict of its files.

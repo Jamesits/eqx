@@ -1,4 +1,4 @@
-"""SoundID microphone package table, AutoEq CSV -> REW microphone calibration file."""
+"""SoundID microphone package or table, AutoEq CSV -> REW microphone calibration file."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from ..autoeq import response
 from ..model import MicProfile
 from ..options import Option
 from ..rew import cal
-from ..soundid import swmicpkg
+from ..soundid import swmic, swmicpkg
 from .base import Converter, Result
 from .common import COLUMN_OPTION
 
@@ -40,6 +40,18 @@ class SwmicpkgToRewcal(Converter):
 
     def _convert(self, path: Path) -> Result:
         profile = swmicpkg.load(path, self.angle)
+        return _result(profile, "SoundID", f"{profile.name} {profile.angle}.txt")
+
+
+class SwmicToRewcal(Converter):
+    """Writes the table unchanged, decrypted."""
+
+    source = "swmic"
+    target = "rewcal"
+    description = "a SoundID microphone table as a REW calibration file"
+
+    def _convert(self, path: Path) -> Result:
+        profile = swmic.load(path).profile
         return _result(profile, "SoundID", f"{profile.name} {profile.angle}.txt")
 
 

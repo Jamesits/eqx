@@ -47,6 +47,7 @@ DO check the output levels on all frequencies before playing any audio.
 | [SoundID Reference 5.x](https://www.sonarworks.com/soundid-reference) | Headphone profile | `.swhp` | `peqb` | ✓ | ✓ | |
 | | Project | `.swproj` | `swproj` | ✓ | ✓ | |
 | | Microphone package | `.swmicpkg` | `swmicpkg` | ✓ | ✓ | |
+| | Microphone table | `.swmic`, `.txt` | `swmic` | ✓ | | |
 | | Target preset | `.json` | `targetpreset` | ✓ | | |
 | | Export: ADAM Audio A Series | `.adam` | `soundid-export-biquad-xml` | ✓ | | Untested: no hardware |
 | | Export: Dolby Atmos Renderer | `.txt` | `soundid-export-txt` | ✓ | | Untested: no license |
@@ -173,6 +174,11 @@ uv run pytest
 
 `.swmicpkg`
 - 0/30/90 degree curves supported
+
+`.swmic`, `.txt` microphone tables
+- The files of a downloaded profile (`<serial>_cal_0degree.txt`, `<serial>_cal_Sonarworks_30degree.swmic`, `<serial>_cal_Sonarworks_90degree.swmic`); the angle comes from the file name
+- Converts to `.swmicpkg` (`-i` each file, any order) or to a REW `.txt` (`--to rewcal`, decrypted)
+- Usable as `--mic-profile` of `.swproj` conversions, without `--mic-angle`
 
 `.swhp`, `.swproj` to FIR `.wav`
 - The filter SoundID Reference plays for the profile (flat target), minimum, linear or mixed phase (SoundID's Zero Latency, Linear Phase, Mixed), with Limit Controls, Listening Spot and Safe Headroom

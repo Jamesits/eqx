@@ -25,6 +25,7 @@ from .soundid import (
     export_peq_json,
     export_txt,
     peqb,
+    swmic,
     swmicpkg,
     swproj,
     targetpreset,
@@ -34,11 +35,12 @@ from .wav import fir
 FORMATS: dict[str, Format] = {
     f.id: f
     for m in (
-        # dayton, umik and ascii before cal: their files are also REW
+        # swmic, dayton, umik and ascii before cal: their files are also REW
         # calibration files; dayton before umik: its USB files have the UMIK header.
         swproj,
         peqb,
         swmicpkg,
+        swmic,
         targetpreset,
         mdat,
         mic,

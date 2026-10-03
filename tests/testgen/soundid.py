@@ -1,4 +1,4 @@
-"""SoundID microphone packages, headphone profiles (PEQb), Custom Target Presets and
+"""SoundID microphone packages and tables, headphone profiles (PEQb), Custom Target Presets and
 device exports."""
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ PEQ_JSON_DIR = "soundid/soundid-export-peq-json"
 BIQUAD_XML_DIR = "soundid/soundid-export-biquad-xml"
 LVND_DIR = "soundid/soundid-export-lvnd"
 EXPORT_TXT_DIR = "soundid/soundid-export-txt"
+SWMIC_DIR = "soundid/swmic"
 
 
 # ---------------------------------------------------------------------------
@@ -50,15 +51,31 @@ MICS = {
 }
 
 
+def _mic_profile(serial: str, angle: str, sections) -> MicProfile:
+    return MicProfile(
+        serial, angle, [(f, response(sections, f)[0]) for f in swmicpkg.grid()]
+    )
+
+
 def write_swmicpkg(serial: str, tables: dict) -> bytes:
     return swmicpkg.write(
-        [
-            MicProfile(
-                serial, angle, [(f, response(sections, f)[0]) for f in swmicpkg.grid()]
-            )
-            for angle, sections in tables.items()
-        ]
+        [_mic_profile(serial, angle, sections) for angle, sections in tables.items()]
     )
+
+
+def swmic_files(serial: str, tables: dict) -> dict[str, bytes]:
+    """The table files of a downloaded profile: degrees_0 plain, the others
+    encrypted with a zero IV."""
+    out = {}
+    for angle, sections in tables.items():
+        degrees = angle.removeprefix("degrees_")
+        text = swmicpkg.table(_mic_profile(serial, angle, sections)).encode()
+        if angle == swmicpkg.PLAIN_ANGLE:
+            out[f"{SWMIC_DIR}/{serial}_cal_{degrees}degree.txt"] = text
+        else:
+            name = f"{SWMIC_DIR}/{serial}_cal_Sonarworks_{degrees}degree.swmic"
+            out[name] = crypto.encrypt(swmicpkg.PACKAGE_KEY, text, ZERO_IV)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -422,6 +439,7 @@ def files() -> dict[str, bytes]:
         f"{MIC_DIR}/{serial}.swmicpkg": write_swmicpkg(serial, tables)
         for serial, tables in MICS.items()
     }
+    out.update(swmic_files("TILT01", MICS["TILT01"]))
     for name, (sections, make, model, average, band, version, cid) in SWHP.items():
         out[f"{PEQB_DIR}/{name}.swhp"] = write_peqb_v1(
             headphone_curves(sections, band),

@@ -45,12 +45,17 @@ from .to_fuzzmeasure import AutoeqToFuzzmeasure
 from .to_mdat import AutoeqToMdat
 from .to_mqx import AutoeqToMqx
 from .to_peqb import AutoeqToPeqb
-from .to_rewcal import AutoeqToRewcal, SwmicpkgToRewcal
+from .to_rewcal import AutoeqToRewcal, SwmicpkgToRewcal, SwmicToRewcal
 from .to_smaart_ascii import AutoeqToSmaartAscii
 from .to_smaart_curve import AutoeqToSmaartCurve
 from .to_smaart_trace import AutoeqToSmaartSrf, AutoeqToSmaartTrf
 from .to_soundsource import AutoeqToSoundsource
-from .to_swmicpkg import DaytonToSwmicpkg, RewcalToSwmicpkg, UmikToSwmicpkg
+from .to_swmicpkg import (
+    DaytonToSwmicpkg,
+    RewcalToSwmicpkg,
+    SwmicToSwmicpkg,
+    UmikToSwmicpkg,
+)
 from .to_swproj import (
     Arc4ToSwproj,
     ArcxToSwproj,
@@ -66,6 +71,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
     for c in (
         MdatToSwproj,
         SwmicpkgToRewcal,
+        SwmicToRewcal,
         MdatToAutoeq,
         SwprojToAutoeq,
         PeqbToAutoeq,
@@ -80,6 +86,7 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         RewcalToSwmicpkg,
         UmikToSwmicpkg,
         DaytonToSwmicpkg,
+        SwmicToSwmicpkg,
         SoundidExportBiquadJsonToAutoeq,
         SoundidExportPeqJsonToAutoeq,
         SoundidExportBiquadXmlToAutoeq,

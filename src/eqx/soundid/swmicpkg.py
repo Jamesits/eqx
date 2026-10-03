@@ -64,6 +64,11 @@ def read(data: str, angle: str = PLAIN_ANGLE, name: str = "") -> MicProfile:
         text = blob.decode("utf-8")
     except ValueError as exc:  # also UnicodeDecodeError
         raise ValueError(f"{name}:{angle} is not a valid table: {exc}") from exc
+    return parse_table(text, name, angle)
+
+
+def parse_table(text: str, name: str, angle: str) -> MicProfile:
+    """``frequency gain`` rows; other lines are skipped."""
     points: list[tuple[float, float]] = []
     for line in text.splitlines():
         columns = line.strip().split()
