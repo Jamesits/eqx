@@ -8,10 +8,12 @@ Inspect and convert equalizer, mic and room correction files. Calibrate in any s
 
 ## WARNINGS
 
-**!!! Use at your OWN RISK !!!**
+**!!! USE AT YOUR OWN RISK !!!**
 
-Loading audio correction / calibration curves might fry your soundcards, speakers / headphones and ears.
-DO check the output levels on all frequencies before playing any audio.
+Loading audio correction / calibration curves might result in loud output that would fry your soundcards, amplifiers, speakers / headphones and ears, even if inaudible.
+DO check the output levels **on all frequencies** before playing any audio.
+
+eqx is able to generate profiles out of the supported ranges of the destination software, in both amplitude and frequency range. Please carefully verify the result in these cases.
 
 ## Supported File Formats
 
