@@ -91,6 +91,14 @@ You can use it as a Python library too.
 <details>
 <summary>Measure with REW, apply with SoundID Reference</summary>
 
+SoundID Reference Measure does not work when:
+
+- The speakers are not at least 50cm apart
+- The speakers are hidden and unable to pass the per-speaker calibration check
+- The room is too complex and some positions are unable to pass the grid triangulation check
+
+In these cases, we can measure with REW instead.
+
 Software required:
 
 - REW
@@ -108,15 +116,16 @@ uv run eqx convert -i <serial>.swmicpkg -o <serial>.cal --curve degrees_30
 uv run eqx convert -i <serial>_cal_Sonarworks_30degree.swmic -o <serial>.cal
 ```
 
-In REW, apply the mic calibration to the input, then do a sweep measurement for your L and R speaker respectively. Make sure the first curve is for the L speaker, and the second curve is for the R speaker. Remove other ones. Save the measurement into a `.mdat` file.
+In REW, apply the mic calibration to the input, then do a sweep measurement for your L and R speaker respectively. Make sure the first curve is for the L speaker, and the second curve is for the R speaker. Remove other ones. (For more consistent results, average between multiple point measurements, or run a [moving mic measurement](https://www.ohl.to/audio/downloads/MMM-moving-mic-measurement.pdf), both of which are out of the scope of this tutorial.)
 
-Convert the measurement file into SoundID Reference project (`.swproj`):
+Save the measurement into a `.mdat` file, then convert the measurement file into SoundID Reference project (`.swproj`):
 
 ```shell
 uv run eqx convert -i <measurement>.mdat -o <measurement>.swproj --drc-config "/usr/share/drc/config/48.0 kHz/normal-48.0.drc"
 ```
 
 Notes:
+
 - You can run the conversion without the DRC pass by not passing in the `--drc-config` argument; it is likely to introduce excessive calibration artifacts
 </details>
 
@@ -222,9 +231,6 @@ uv run pytest
 
 `.swproj`
 - Conversions to `.swproj` take an optional `--mic-profile`; without it they use the microphone the source software compensates for (MultEQ-X: ACM1HB), or a 0 dB table
-- Calibrations of speakers with distance <50cm are supported via REW
-- Calibrations of hidden speakers (thus unable to pass the per-speaker initial calibration in SoundID Reference Measure) are supported via REW
-- Calibrations of complicated sound environment (with points unable to pass the grid triangulation check) are supported via REW
 
 `.swhp`
 - An active license is required, and the file must be read on the computer with the license
