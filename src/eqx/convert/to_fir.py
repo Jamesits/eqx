@@ -1,5 +1,5 @@
 """SoundID profiles, AutoEq CSV, Dirac Live Processor filter slot, dearVR MIX headphone
-compensation -> FIR filter WAV."""
+compensation, measurements corrected by DRC, DRC filters -> FIR filter WAV."""
 
 from __future__ import annotations
 
@@ -25,6 +25,15 @@ from .common import (
     dirac_notes,
     dirac_rate,
     file_name,
+)
+from .to_autoeq import MEASUREMENTS, AutoeqToAutoeq, SwprojToAutoeq
+from .with_drc import (
+    RUN_OPTIONS,
+    DrcFilterOutput,
+    DrcRun,
+    MeasurementDrc,
+    check_unused,
+    measurement_converters,
 )
 
 TAPS_OPTION = Option(
@@ -104,6 +113,53 @@ def _notes(
     ]
 
 
+def _drc_result(stem: str, filters: list, notes: list[str], encoding: str) -> Result:
+    """DRC's filters at the correction level, zero-padded to one length."""
+    irs = [f.fir() for _, f in filters]
+    taps = max(len(ir) for ir in irs)
+    irs = [ir + [0.0] * (taps - len(ir)) for ir in irs]
+    rate = filters[0][1].rate
+    return _result(
+        irs,
+        rate,
+        encoding,
+        stem + ".wav",
+        [f"{len(irs)} channel(s), {taps} taps at {rate:g} Hz, DRC's phase"]
+        + notes
+        + [f"{channel} level {f.level_db:+.2f} dB" for channel, f in filters],
+    )
+
+
+class MeasurementDrcToFir(MeasurementDrc):
+    target = "fir"
+    stereo = True
+    output_options = (ENCODING_OPTION,)
+
+    def setup(self, encoding: str = fir.FLOAT32) -> None:
+        if encoding not in fir.ENCODINGS:
+            raise ValueError(f"--encoding must be one of: {', '.join(fir.ENCODINGS)}")
+        self.encoding = encoding
+
+    def write(self, stem: str, filters: list, notes: list[str]) -> Result:
+        return _drc_result(stem, filters, notes, self.encoding)
+
+
+class AutoeqDrcToFir(MeasurementDrcToFir):
+    """``AutoeqToFir`` with --drc-config."""
+
+    source = "autoeq"
+    reader = AutoeqToAutoeq
+    description = ""
+
+
+class SwprojDrcToFir(MeasurementDrcToFir):
+    """``SwprojToFir`` with --drc-config."""
+
+    source = "swproj"
+    reader = SwprojToAutoeq
+    description = ""
+
+
 class PeqbToFir(Converter):
     source = "peqb"
     target = "fir"
@@ -162,11 +218,15 @@ class PeqbToFir(Converter):
 
 
 class SwprojToFir(Converter):
-    """One channel per project channel, in channel order."""
+    """One channel per project channel, in channel order.  With --drc-config,
+    DRC's filters of the left and right measurements instead."""
 
     source = "swproj"
     target = "fir"
-    description = "the filter SoundID Reference plays for a speaker project"
+    description = (
+        "the filter SoundID Reference plays for a speaker project; or DRC's "
+        "filters of its measurements"
+    )
     options = (
         PHASE_OPTION,
         RATE_OPTION,
@@ -198,7 +258,7 @@ class SwprojToFir(Converter):
             help="SoundID's Limit Controls Max high frequencies (default: neutral)",
         ),
         ENCODING_OPTION,
-    )
+    ) + RUN_OPTIONS
 
     def __init__(
         self,
@@ -214,8 +274,27 @@ class SwprojToFir(Converter):
         encoding: str = fir.FLOAT32,
         nyquist_notch: bool = dsp.NYQUIST_NOTCH,
         grid_factor: int = dsp.GRID_FACTOR,
+        **drc,
     ):
         _check(phase, rate, taps, encoding, grid_factor)
+        self.drc = None
+        if DrcRun.of(**drc):
+            check_unused(
+                locals(),
+                {
+                    "phase": "minimum",
+                    "rate": DEFAULT_RATE,
+                    "taps": None,
+                    "safe_headroom": True,
+                    "listening_spot": True,
+                    "limit_correction": 12.0,
+                    "limit_low": "neutral",
+                    "limit_high": "neutral",
+                    "nyquist_notch": dsp.NYQUIST_NOTCH,
+                    "grid_factor": dsp.GRID_FACTOR,
+                },
+            )
+            self.drc = SwprojDrcToFir(password=password, encoding=encoding, **drc)
         self.encoding = encoding
         self.nyquist_notch, self.grid_factor = nyquist_notch, grid_factor
         if limit_correction not in playback.LIMIT_CORRECTION_DB:
@@ -231,6 +310,8 @@ class SwprojToFir(Converter):
         self.limits = (limit_correction, limit_low, limit_high)
 
     def _convert(self, path: Path) -> Result:
+        if self.drc is not None:
+            return self.drc.convert([path])
         channels, irs, gain = playback.speaker_fir(
             swproj.SwProj.open(path, self.password),
             self.rate,
@@ -262,11 +343,15 @@ class SwprojToFir(Converter):
 
 
 class AutoeqToFir(Converter):
-    """The curve is the filter's gain; DC and Nyquist keep the end values."""
+    """The curve is the filter's gain; DC and Nyquist keep the end values.
+    With --drc-config the curve is a measurement; the FIR is DRC's filter."""
 
     source = "autoeq"
     target = "fir"
-    description = "a curve (inputs: left, optional right) as a FIR filter"
+    description = (
+        "a curve (inputs: left, optional right) as a FIR filter; or DRC's "
+        "filters of measurements"
+    )
     options = (
         COLUMN_OPTION,
         PHASE_OPTION,
@@ -275,7 +360,7 @@ class AutoeqToFir(Converter):
         NYQUIST_NOTCH_OPTION,
         GRID_FACTOR_OPTION,
         ENCODING_OPTION,
-    )
+    ) + RUN_OPTIONS
     inputs = 2
 
     def __init__(
@@ -287,14 +372,30 @@ class AutoeqToFir(Converter):
         encoding: str = fir.FLOAT32,
         nyquist_notch: bool = dsp.NYQUIST_NOTCH,
         grid_factor: int = dsp.GRID_FACTOR,
+        **drc,
     ):
         _check(phase, rate, taps, encoding, grid_factor)
+        self.drc = None
+        if DrcRun.of(**drc):
+            check_unused(
+                locals(),
+                {
+                    "phase": "minimum",
+                    "rate": DEFAULT_RATE,
+                    "taps": None,
+                    "nyquist_notch": dsp.NYQUIST_NOTCH,
+                    "grid_factor": dsp.GRID_FACTOR,
+                },
+            )
+            self.drc = AutoeqDrcToFir(column=column, encoding=encoding, **drc)
         self.encoding = encoding
         self.column = column
         self.phase, self.rate, self.taps = phase, rate, taps
         self.nyquist_notch, self.grid_factor = nyquist_notch, grid_factor
 
     def _convert(self, *paths: Path) -> Result:
+        if self.drc is not None:
+            return self.drc.convert(paths)
         channels = [
             dsp.design_fir_points(
                 points,
@@ -392,3 +493,27 @@ class DearvrHpcToFir(Converter):
                 *notes,
             ],
         )
+
+
+MEASUREMENTS_TO_FIR = measurement_converters(
+    MeasurementDrcToFir,
+    [r for r in MEASUREMENTS if r.source not in ("autoeq", "swproj")],
+    "Fir",
+    "measurements corrected by DRC (--drc-config required): DRC's filters as "
+    "a FIR filter",
+)
+
+
+class DrcToFir(DrcFilterOutput):
+    target = "fir"
+    description = "DRC filters (inputs: left, optional right) as a FIR filter"
+    stereo = True
+    output_options = (ENCODING_OPTION,)
+
+    def setup(self, encoding: str = fir.FLOAT32) -> None:
+        if encoding not in fir.ENCODINGS:
+            raise ValueError(f"--encoding must be one of: {', '.join(fir.ENCODINGS)}")
+        self.encoding = encoding
+
+    def write(self, stem: str, filters: list, notes: list[str]) -> Result:
+        return _drc_result(stem, filters, notes, self.encoding)

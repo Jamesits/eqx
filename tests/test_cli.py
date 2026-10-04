@@ -321,7 +321,7 @@ class ConvertTests(unittest.TestCase):
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
         code, err = run_error("convert", "-i", csv)
-        self.assertIn("16 converters from autoeq", err)
+        self.assertIn("17 converters from autoeq", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run(
                 "convert", "-i", csv, "-o", Path(tmp) / "x.swhp", "--make", "M"
@@ -413,7 +413,7 @@ class ConvertTests(unittest.TestCase):
 
     def test_arcx(self):
         code, err = run_error("convert", "-i", SAMPLES["arcx"])
-        self.assertIn("2 converters from arcx", err)
+        self.assertIn("5 converters from arcx", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run(
                 "convert",
@@ -500,7 +500,7 @@ class ConvertTests(unittest.TestCase):
 
     def test_mqx(self):
         code, err = run_error("convert", "-i", SAMPLES["mqx"])
-        self.assertIn("2 converters from mqx", err)
+        self.assertIn("5 converters from mqx", err)
         with tempfile.TemporaryDirectory() as tmp:
             code, text = run(
                 "convert",
@@ -806,8 +806,8 @@ class ConvertTests(unittest.TestCase):
         self.assertIn("--mic-profile", text)
         self.assertNotIn("--column", text)
         self.assertNotIn("conversions:", text)
-        _code, text = run("convert", "--from", "autoeq", "--to", "fir", "-h")
-        self.assertIn("autoeq -> fir options:", text)
+        _code, text = run("convert", "--from", "autoeq", "--to", "peqb", "-h")
+        self.assertIn("autoeq -> peqb options:", text)
         self.assertNotIn("--mic-profile", text)
 
         # The output format not determined: the targets of the input.
@@ -828,7 +828,7 @@ class ConvertTests(unittest.TestCase):
         from_values = text[text.index("--from values for 'x':") :]
         self.assertIn("  autoeq ", from_values)
         self.assertIn("  peqb ", from_values)
-        self.assertNotIn("  mdat ", from_values)
+        self.assertNotIn("  rewcal ", from_values)
         self.assertNotIn("--to values", text)
         _code, text = run("convert", "-i", MDAT, "-o", "x", "-h")
         self.assertIn("--to values for 'x':", text)

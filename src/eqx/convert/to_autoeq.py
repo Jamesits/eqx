@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import ClassVar
 
 from .. import correction
 from ..audyssey import mqx
+from ..autoeq import response
 from ..dirac import filterslot, playback, targetcurve
 from ..ik import arc4, arcx
 from ..model import Correction, standard_grid
@@ -34,6 +36,7 @@ from ..wav import fir
 from .base import Converter, Result
 from .common import (
     CHANNEL_OPTION,
+    COLUMN_OPTION,
     DEFAULT_RATE,
     PHASE_OPTION,
     RATE_OPTION,
@@ -49,68 +52,119 @@ from .common import (
     missing,
     profile_db,
 )
+from .with_drc import RUN_OPTIONS, DrcFilterOutput, DrcRun, filter_name
 
 
-class MdatToAutoeq(Converter):
-    source = "mdat"
+class MeasurementToAutoeq(Converter):
+    """One measured curve (``curve``, read with ``curve_options``); with
+    --drc-config, DRC's correction of it."""
+
     target = "autoeq"
-    description = "one channel of a REW measurement, unresampled"
-    options = (CHANNEL_OPTION,)
+    curve_options: ClassVar[tuple[Option, ...]] = ()
+    # The left and right selections, for outputs of both channels from one
+    # file; None: one curve per file.
+    stereo: ClassVar[tuple[dict, dict] | None] = None
+    # The options the selections replace.
+    stereo_dests: ClassVar[tuple[str, ...]] = ()
 
-    def __init__(self, channel: str = "left"):
-        self.channel = channel_name(channel)
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        cls.options = cls.curve_options + RUN_OPTIONS
+
+    def __init__(self, **drc):
+        self.drc = DrcRun.of(**drc)
+
+    def curve(self, path: Path) -> tuple[str, list, str]:
+        """(label of the output name, points, note)."""
+        raise NotImplementedError
 
     def _convert(self, path: Path) -> Result:
+        label, points, note = self.curve(path)
+        if self.drc is None:
+            name = f"{path.stem} {label}" if label else path.stem
+            return csv_result(points, name + ".csv", note)
+        (f,), notes = self.drc.filters([points])
+        return csv_result(
+            f.correction,
+            filter_name(path.stem, label) + ".csv",
+            f"DRC correction of the {note}; corrected 200 Hz-10 kHz median at 0 dB",
+            *notes,
+        )
+
+
+class MdatToAutoeq(MeasurementToAutoeq):
+    source = "mdat"
+    description = "one channel of a REW measurement, unresampled; or its DRC correction"
+    curve_options = (CHANNEL_OPTION,)
+    stereo = ({"channel": "left"}, {"channel": "right"})
+    stereo_dests = ("channel",)
+
+    def __init__(self, channel: str = "left", **drc):
+        super().__init__(**drc)
+        self.channel = channel_name(channel)
+
+    def curve(self, path: Path) -> tuple[str, list, str]:
         measurements = {m.channel: m for m in mdat.load(path)}
         if self.channel not in measurements:
             raise missing(self.channel, measurements)
         m = measurements[self.channel]
-        return csv_result(
+        return (
+            self.channel,
             list(zip(m.frequencies, m.response)),
-            f"{path.stem} {self.channel}.csv",
             f"{self.channel} measurement {m.name!r}, dB SPL",
         )
 
 
-class ArcxToAutoeq(Converter):
+class ArcxToAutoeq(MeasurementToAutoeq):
     source = "arcx"
-    target = "autoeq"
-    description = "the measured response of one speaker of an ARC X session or analysis"
-    options = (SPEAKER_OPTION, arcx.POINT_OPTION)
+    description = (
+        "the measured response of one speaker of an ARC X session or analysis; "
+        "or its DRC correction"
+    )
+    curve_options = (SPEAKER_OPTION, arcx.POINT_OPTION)
+    stereo = ({"speaker": "Left"}, {"speaker": "Right"})
+    stereo_dests = ("speaker",)
 
-    def __init__(self, speaker: str = "Left", point: int | None = None):
+    def __init__(self, speaker: str = "Left", point: int | None = None, **drc):
+        super().__init__(**drc)
         self.speaker = speaker
         self.point = point
 
-    def _convert(self, path: Path) -> Result:
+    def curve(self, path: Path) -> tuple[str, list, str]:
         a = arcx.load(path)
         c = a.channel(self.speaker)
         frequencies, db, _ = arcx.response(a, c, self.point)
         points = "all points" if self.point is None else f"point {self.point}"
-        return csv_result(
+        return (
+            a.speakers[c],
             list(zip(frequencies, db)),
-            f"{path.stem} {a.speakers[c]}.csv",
             f"{a.speakers[c]} response, {points}, dB re full scale",
         )
 
 
-class MqxToAutoeq(Converter):
+class MqxToAutoeq(MeasurementToAutoeq):
     source = "mqx"
-    target = "autoeq"
-    description = "the measured response of one speaker of a MultEQ-X project"
-    options = (SPEAKER_OPTION, mqx.POSITION_OPTION, mqx.MIC_RESPONSE_OPTION)
+    description = (
+        "the measured response of one speaker of a MultEQ-X project; or its DRC "
+        "correction"
+    )
+    curve_options = (SPEAKER_OPTION, mqx.POSITION_OPTION, mqx.MIC_RESPONSE_OPTION)
+    stereo = ({"speaker": "Left"}, {"speaker": "Right"})
+    stereo_dests = ("speaker",)
 
     def __init__(
         self,
         speaker: str = "Left",
         position: int | None = None,
         mic_response: Path | None = None,
+        **drc,
     ):
+        super().__init__(**drc)
         self.speaker = speaker
         self.position = position
         self.mic_response = mic_response
 
-    def _convert(self, path: Path) -> Result:
+    def curve(self, path: Path) -> tuple[str, list, str]:
         m = mqx.load(path)
         c = m.channel(self.speaker)
         frequencies, db, _ = mqx.response(m, c, self.position)
@@ -129,18 +183,20 @@ class MqxToAutoeq(Converter):
             if self.position is None
             else f"position {self.position}"
         )
-        return csv_result(
+        return (
+            designation,
             list(zip(frequencies, db)),
-            f"{path.stem} {designation}.csv",
             f"{designation} response, {positions}, dB re full scale, {mic}",
         )
 
 
-class FuzzmeasureToAutoeq(Converter):
+class FuzzmeasureToAutoeq(MeasurementToAutoeq):
     source = "fuzzmeasure"
-    target = "autoeq"
-    description = "the frequency response of one measurement of a FuzzMeasure document"
-    options = (
+    description = (
+        "the frequency response of one measurement of a FuzzMeasure document; "
+        "or its DRC correction"
+    )
+    curve_options = (
         fuzzmeasure.MEASUREMENT_OPTION,
         fuzzmeasure.MIC_CALIBRATION_OPTION,
         fuzzmeasure.SPL_OPTION,
@@ -151,12 +207,14 @@ class FuzzmeasureToAutoeq(Converter):
         measurement: str | None = None,
         mic_calibration: bool = True,
         spl: bool = False,
+        **drc,
     ):
+        super().__init__(**drc)
         self.measurement = measurement
         self.mic_calibration = mic_calibration
         self.spl = spl
 
-    def _convert(self, path: Path) -> Result:
+    def curve(self, path: Path) -> tuple[str, list, str]:
         d = fuzzmeasure.load(path)
         i = d.record(self.measurement)
         r = d.records[i]
@@ -173,24 +231,23 @@ class FuzzmeasureToAutoeq(Converter):
             )
         # Titles are free text; keep the file name valid.
         name = file_name(r.title) or f"measurement {i}"
-        return csv_result(
+        return (
+            name,
             list(zip(frequencies, db)),
-            f"{path.stem} {name}.csv",
             f"measurement {r.title!r}, {level}, {mic}",
         )
 
 
-class SmaartTraceToAutoeq(Converter):
+class SmaartTraceToAutoeq(MeasurementToAutoeq):
     """The magnitude of a Smaart trace, unresampled.  Bin 0 and transfer
     function bins without data are left out."""
 
-    target = "autoeq"
-
-    def __init__(self, mtw: bool = False, calibrated: bool = False):
+    def __init__(self, mtw: bool = False, calibrated: bool = False, **drc):
+        super().__init__(**drc)
         self.mtw = mtw
         self.calibrated = calibrated
 
-    def _convert(self, path: Path) -> Result:
+    def curve(self, path: Path) -> tuple[str, list, str]:
         t = trace.load(path)
         points = trace.curve(t, self.mtw, self.calibrated)
         if t.transfer_function:
@@ -201,48 +258,60 @@ class SmaartTraceToAutoeq(Converter):
                 if self.calibrated
                 else "dB as stored"
             )
-        return csv_result(
+        return (
+            "",
             points,
-            f"{path.stem}.csv",
-            f"{trace.KINDS[t.kind]} {t.name!r}, "
-            f"{'MTW' if self.mtw else trace.fft_text(t)} data, {level}",
+            (
+                f"{trace.KINDS[t.kind]} {t.name!r}, "
+                f"{'MTW' if self.mtw else trace.fft_text(t)} data, {level}"
+            ),
         )
 
 
 class SmaartTrfToAutoeq(SmaartTraceToAutoeq):
     source = "smaart-trf"
-    description = "the magnitude of a Smaart transfer function trace, unresampled"
-    options = (trace.MTW_OPTION,)
+    description = (
+        "the magnitude of a Smaart transfer function trace, unresampled; or its "
+        "DRC correction"
+    )
+    curve_options = (trace.MTW_OPTION,)
 
 
 class SmaartSrfToAutoeq(SmaartTraceToAutoeq):
     source = "smaart-srf"
-    description = "the level of a Smaart spectrum trace, unresampled"
-    options = (trace.CALIBRATED_OPTION,)
+    description = (
+        "the level of a Smaart spectrum trace, unresampled; or its DRC correction"
+    )
+    curve_options = (trace.CALIBRATED_OPTION,)
 
 
 class SmaartRefToAutoeq(SmaartTraceToAutoeq):
     source = "smaart-ref"
-    description = "the magnitude of a Smaart 7 or older reference file, unresampled"
+    description = (
+        "the magnitude of a Smaart 7 or older reference file, unresampled; or its "
+        "DRC correction"
+    )
 
 
-class SmaartAsciiToAutoeq(Converter):
+class SmaartAsciiToAutoeq(MeasurementToAutoeq):
     source = "smaart-ascii"
-    target = "autoeq"
-    description = "the magnitude or level of one trace of a Smaart ASCII table"
-    options = (ascii.TRACE_OPTION,)
+    description = (
+        "the magnitude or level of one trace of a Smaart ASCII table; or its DRC "
+        "correction"
+    )
+    curve_options = (ascii.TRACE_OPTION,)
 
-    def __init__(self, trace: str | None = None):
+    def __init__(self, trace: str | None = None, **drc):
+        super().__init__(**drc)
         self.trace = trace
 
-    def _convert(self, path: Path) -> Result:
+    def curve(self, path: Path) -> tuple[str, list, str]:
         table = ascii.load(path)
         i = table.trace(self.trace)
         t = table.traces[i]
-        name = file_name(t.name)
-        return csv_result(
+        return (
+            file_name(t.name),
             table.curve(i),
-            f"{path.stem} {name}.csv" if name else f"{path.stem}.csv",
             f"trace {t.name or i!r}, column {t.columns[0]}",
         )
 
@@ -265,43 +334,54 @@ class SmaartCurveToAutoeq(Converter):
         )
 
 
-class Arc4ToAutoeq(Converter):
+class Arc4ToAutoeq(MeasurementToAutoeq):
     source = "arc4"
-    target = "autoeq"
-    description = "the measured response of one channel of an ARC 4 analysis"
-    options = (CHANNEL_OPTION,)
+    description = (
+        "the measured response of one channel of an ARC 4 analysis; or its DRC "
+        "correction"
+    )
+    curve_options = (CHANNEL_OPTION,)
+    stereo = ({"channel": "left"}, {"channel": "right"})
+    stereo_dests = ("channel",)
 
-    def __init__(self, channel: str = "left"):
+    def __init__(self, channel: str = "left", **drc):
+        super().__init__(**drc)
         self.channel = channel_name(channel)
 
-    def _convert(self, path: Path) -> Result:
+    def curve(self, path: Path) -> tuple[str, list, str]:
         a = arc4.load(path)
         frequencies, db = arc4.response(a, a.channel(self.channel))
-        return csv_result(
+        return (
+            self.channel,
             list(zip(frequencies, db)),
-            f"{path.stem} {self.channel}.csv",
             f"{self.channel} response, dB re the 40 Hz-10 kHz mean",
         )
 
 
-class SwprojToAutoeq(Converter):
+class SwprojToAutoeq(MeasurementToAutoeq):
     """``--speaker`` selects any channel by its SoundID name; ``--channel`` left or right."""
 
     source = "swproj"
-    target = "autoeq"
-    description = "the measurement curve of one channel of a SoundID project"
-    options = (
+    description = (
+        "the measurement curve of one channel of a SoundID project; or its DRC "
+        "correction"
+    )
+    curve_options = (
         CHANNEL_OPTION,
         SPEAKER_OPTION,
         swproj.PASSWORD_OPTION,
     )
+    stereo = ({"channel": "left"}, {"channel": "right"})
+    stereo_dests = ("channel", "speaker")
 
     def __init__(
         self,
         channel: str | None = None,
         speaker: str | None = None,
         password: str | None = None,
+        **drc,
     ):
+        super().__init__(**drc)
         if channel is not None and speaker is not None:
             raise ValueError("give --channel or --speaker, not both")
         self.speaker = (
@@ -309,18 +389,65 @@ class SwprojToAutoeq(Converter):
         )
         self.password = swproj.password_bytes(password)
 
-    def _convert(self, path: Path) -> Result:
+    def curve(self, path: Path) -> tuple[str, list, str]:
         curves = swproj.measurement_curves(swproj.SwProj.open(path, self.password))
         names = {name.lower(): name for name in curves}
         if self.speaker.lower() not in names:
             raise missing(self.speaker, curves)
         name = names[self.speaker.lower()]
-        points = [(f, r) for f, r, _ in curves[name]]
-        return csv_result(
-            points,
-            f"{path.stem} {name}.csv",
+        return (
+            name,
+            [(f, r) for f, r, _ in curves[name]],
             f"{name} measurement, dB relative to the project reference",
         )
+
+
+class AutoeqToAutoeq(MeasurementToAutoeq):
+    """Only with --drc-config: the column is a measurement."""
+
+    source = "autoeq"
+    description = "a measurement's DRC correction (--drc-config required)"
+    explicit = True
+    curve_options = (COLUMN_OPTION,)
+
+    def __init__(self, column: str = response.RAW, **drc):
+        super().__init__(**drc)
+        self.column = column
+
+    def curve(self, path: Path) -> tuple[str, list, str]:
+        return "", response.load(path).curve(self.column), f"{self.column} column"
+
+    def _convert(self, path: Path) -> Result:
+        # Constructed without --drc-config as the reader of other DRC outputs.
+        if self.drc is None:
+            raise ValueError("--drc-config is required")
+        return super()._convert(path)
+
+
+# The measurement sources of DRC corrections.
+MEASUREMENTS = (
+    AutoeqToAutoeq,
+    MdatToAutoeq,
+    ArcxToAutoeq,
+    Arc4ToAutoeq,
+    MqxToAutoeq,
+    SwprojToAutoeq,
+    FuzzmeasureToAutoeq,
+    SmaartTrfToAutoeq,
+    SmaartSrfToAutoeq,
+    SmaartRefToAutoeq,
+    SmaartAsciiToAutoeq,
+)
+
+
+class DrcToAutoeq(DrcFilterOutput):
+    target = "autoeq"
+    description = "the correction of a DRC filter, on the standard grid"
+    stereo = False
+
+    def write(self, stem: str, filters: list, notes: list[str]) -> Result:
+        ((_, f),) = filters
+        return csv_result(f.correction, stem + ".csv", *notes)
 
 
 class PeqbToAutoeq(Converter):

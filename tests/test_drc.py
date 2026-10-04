@@ -8,12 +8,22 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from testgen import common, drc, rew, soundid
+from testgen import common, drc, ik, rew, soundid
 
 from eqx import cli, dsp, formats
 from eqx.convert import CONVERTERS
+from eqx.convert.common import drc_input
 from eqx.convert.to_drc import MdatToDrc
-from eqx.convert.to_swproj import DrcToSwproj, MdatToSwproj, load_mic_profile
+from eqx.convert.to_swproj import (
+    DRC_OPTIONS,
+    Arc4ToSwproj,
+    ArcxToSwproj,
+    AutoeqToSwproj,
+    DrcToSwproj,
+    MdatToSwproj,
+    MqxToSwproj,
+    load_mic_profile,
+)
 from eqx.curve import log_resample
 from eqx.drc import pcm, run
 from eqx.model import standard_grid
@@ -25,6 +35,17 @@ ROOM = ROOT / rew.MDAT_DIR / "Room.mdat"
 LEFT_ONLY = ROOT / rew.MDAT_DIR / "Left only.mdat"
 FILTERS = [ROOT / drc.PCM_DIR / f"Room {side} filter.pcm" for side in ("Left", "Right")]
 TILT = ROOT / soundid.MIC_DIR / "TILT01.swmicpkg"
+# Every speaker project conversion that designs a correction, with its inputs.
+SPEAKER_PROJECTS = [
+    (MdatToSwproj, [ROOM]),
+    (
+        AutoeqToSwproj,
+        [ROOT / common.CSV_DIR / f"Room {side}.csv" for side in ("Left", "Right")],
+    ),
+    (Arc4ToSwproj, [ROOT / ik.ARC4_DIR / "Arc4.arc4a"]),
+    (ArcxToSwproj, [ROOT / ik.ARCX_DIR / "Arc 5.1.arcXs"]),
+    (MqxToSwproj, [ROOT / "audyssey" / "mqx" / "Mqx 5.1.mqx"]),
+]
 REAL = ROOT / "real" / "drc"
 REAL_DRC = shutil.which(str(REAL / "drc")) or shutil.which("drc")
 # Every file in one directory; the DRC distribution layout (the Debian
@@ -45,6 +66,16 @@ REAL_CONFIGS = [
 ]
 # Set in CI where DRC is installed: fail instead of skipping.
 REQUIRE_DRC = os.environ.get("EQX_REQUIRE_DRC") == "1"
+
+
+def fake_run(calls: list, ir: list[float]):
+    """A ``run.run`` that records its calls and gives ``ir``."""
+
+    def fake(samples, config, program):
+        calls.append((samples, config, program))
+        return ir, ""
+
+    return fake
 
 
 def bells_db(side: str, frequencies) -> list[float]:
@@ -327,6 +358,62 @@ class DrcToSwprojTests(unittest.TestCase):
             )
 
 
+class SpeakerProjectDrcTests(unittest.TestCase):
+    def test_options(self):
+        for cls, _ in SPEAKER_PROJECTS:
+            for option in DRC_OPTIONS:
+                self.assertIn(option, cls.options, cls.__name__)
+        for option in DRC_OPTIONS:
+            self.assertNotIn(option, DrcToSwproj.options)
+
+    def test_convert(self):
+        # DRC runs once per measurement on its input (the conversion's
+        # microphone table) at the configuration's rate; its filter replaces
+        # the inverse response.
+        filter_ir = pcm.load(FILTERS[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "c.drc"
+            config.write_text("BCSampleRate = 48000\n")
+            for cls, paths in SPEAKER_PROJECTS:
+                with self.subTest(cls.__name__):
+                    calls = []
+                    c = cls(drc_config=config, drc="my-drc")
+                    with mock.patch.object(run, "run", fake_run(calls, filter_ir)):
+                        result = c.convert(paths)
+                    _, measurements = c.measurements(*paths)
+                    profile = c.default_mic_profile(*paths)
+                    self.assertEqual(len(calls), len(measurements))
+                    for (ir, cfg, executable), m in zip(calls, measurements):
+                        self.assertEqual(ir, drc_input(m, profile, 48000))
+                        self.assertEqual(cfg, config)
+                        self.assertEqual(executable, "my-drc")
+                    self.assertIn("DRC: c.drc at 48000 Hz", result.notes)
+                    self.assertNotEqual(
+                        swproj.SwProj(result.data).part("eqb"),
+                        swproj.SwProj(cls().convert(paths).data).part("eqb"),
+                    )
+
+    def test_errors(self):
+        for cls, _ in SPEAKER_PROJECTS:
+            with self.assertRaisesRegex(ValueError, "--drc-config"):
+                cls(drc="drc")
+
+    def test_cli(self):
+        cls, paths = SPEAKER_PROJECTS[1]
+        filter_ir = pcm.load(FILTERS[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            config = Path(tmp) / "c.drc"
+            config.write_text("BCSampleRate = 48000\n")
+            out = Path(tmp) / "out.swproj"
+            args = ["convert", "--to", "swproj", "-o", str(out)]
+            args += [a for p in paths for a in ("-i", str(p))]
+            args += ["--drc-config", str(config), "--drc", "my-drc"]
+            with mock.patch.object(run, "run", return_value=(filter_ir, "")):
+                self.assertEqual(cli.main(args), 0)
+                want = cls(drc_config=config, drc="my-drc").convert(paths).data
+            self.assertEqual(out.read_bytes(), want)
+
+
 def target_file(config: Path) -> Path:
     text = config.read_text(encoding="latin-1")
     return run.config_file(run.config_value(text, "PSPointsFile"), config)
@@ -387,6 +474,34 @@ class RealDrcTests(unittest.TestCase):
             raw = statistics.pstdev(cv.response[i] for i in band)
             fixed = statistics.pstdev(cv.response[i] + cv.correction[i] for i in band)
             self.assertLess(fixed, raw / 2, channel)
+
+    def test_speaker_projects(self):
+        # Every speaker project conversion runs DRC.
+        for cls, paths in SPEAKER_PROJECTS:
+            with self.subTest(cls.__name__):
+                result = cls(drc_config=self.config, drc=REAL_DRC).convert(paths)
+                self.assertTrue(any(n.startswith("DRC: ") for n in result.notes))
+
+    def test_outputs(self):
+        # Every output converts; the corrected curve deviates less from flat
+        # than the measurement.
+        for target in ("autoeq", "fir", "tmreq", "soundsource"):
+            with self.subTest(target):
+                c = CONVERTERS["mdat", target](drc_config=self.config, drc=REAL_DRC)
+                result = c.convert([ROOM])
+                if target != "autoeq":
+                    continue
+                grid = standard_grid()
+                correction = [
+                    float(line.split(",")[1])
+                    for line in result.data.decode().splitlines()[1:]
+                ]
+                m = mdat.load(ROOM)[0]
+                measured = log_resample(list(zip(m.frequencies, m.response)), grid)
+                band = [i for i, f in enumerate(grid) if 100 <= f <= 10000]
+                raw = statistics.pstdev(measured[i] for i in band)
+                fixed = statistics.pstdev(measured[i] + correction[i] for i in band)
+                self.assertLess(fixed, raw / 2)
 
     def test_distribution_layout(self):
         # A configuration apart from its target file gives the same filters.

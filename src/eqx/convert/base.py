@@ -31,6 +31,9 @@ class Converter:
     description: ClassVar[str]
     options: ClassVar[tuple[Option, ...]] = ()
     inputs: ClassVar[int] = 1  # maximum number of input files
+    # Selected only by an explicit target, so a source with one other
+    # converter keeps it as the default.
+    explicit: ClassVar[bool] = False
 
     def convert(self, paths: Sequence[Path]) -> Result:
         """Convert 1 to ``inputs`` input files, in order."""

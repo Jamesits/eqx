@@ -10,8 +10,10 @@ from .to_arcx import AutoeqToArcx
 from .to_autoeq import (
     Arc4ToAutoeq,
     ArcxToAutoeq,
+    AutoeqToAutoeq,
     DearvrHpcToAutoeq,
     DiracFilterToAutoeq,
+    DrcToAutoeq,
     FirToAutoeq,
     FuzzmeasureToAutoeq,
     MdatToAutoeq,
@@ -36,9 +38,11 @@ from .to_autoeq import (
 from .to_dirac_filter import AutoeqToDiracFilter, FirToDiracFilter
 from .to_drc import MdatToDrc
 from .to_fir import (
+    MEASUREMENTS_TO_FIR,
     AutoeqToFir,
     DearvrHpcToFir,
     DiracFilterToFir,
+    DrcToFir,
     PeqbToFir,
     SwprojToFir,
 )
@@ -50,7 +54,11 @@ from .to_rewcal import AutoeqToRewcal, SwmicpkgToRewcal, SwmicToRewcal
 from .to_smaart_ascii import AutoeqToSmaartAscii
 from .to_smaart_curve import AutoeqToSmaartCurve
 from .to_smaart_trace import AutoeqToSmaartSrf, AutoeqToSmaartTrf
-from .to_soundsource import AutoeqToSoundsource
+from .to_soundsource import (
+    MEASUREMENTS_TO_SOUNDSOURCE,
+    AutoeqToSoundsource,
+    DrcToSoundsource,
+)
 from .to_swmicpkg import (
     DaytonToSwmicpkg,
     RewcalToSwmicpkg,
@@ -66,7 +74,7 @@ from .to_swproj import (
     MqxToSwproj,
 )
 from .to_targetcurve import AutoeqToTargetcurve
-from .to_tmreq import AutoeqToTmreq
+from .to_tmreq import MEASUREMENTS_TO_TMREQ, AutoeqToTmreq, DrcToTmreq
 
 CONVERTERS: dict[tuple[str, str], type[Converter]] = {
     (c.source, c.target): c
@@ -128,6 +136,14 @@ CONVERTERS: dict[tuple[str, str], type[Converter]] = {
         DearvrHpcToFir,
         MdatToDrc,
         DrcToSwproj,
+        AutoeqToAutoeq,
+        DrcToAutoeq,
+        DrcToFir,
+        DrcToTmreq,
+        DrcToSoundsource,
+        *MEASUREMENTS_TO_FIR,
+        *MEASUREMENTS_TO_TMREQ,
+        *MEASUREMENTS_TO_SOUNDSOURCE,
     )
 }
 
@@ -140,7 +156,7 @@ def find(source: str, target: str | None = None) -> type[Converter]:
                 f"no converter from {source} to {target}; available: {pairs()}"
             )
         return CONVERTERS[source, target]
-    matches = [c for (s, _), c in CONVERTERS.items() if s == source]
+    matches = [c for (s, _), c in CONVERTERS.items() if s == source and not c.explicit]
     if len(matches) != 1:
         raise ValueError(
             f"{len(matches) or 'no'} converters from {source}; "

@@ -143,11 +143,27 @@ def mic_profile_of(
     return load_mic_profile(path, angle, kind), "given"
 
 
+DRC_OPTIONS = (
+    Option(
+        "--drc-config",
+        type=Path,
+        help="DRC configuration file, e.g. normal-48.0.drc: DRC designs the "
+        "correction at its BCSampleRate (default: no DRC)",
+    ),
+    Option(
+        "--drc",
+        help=f"DRC program (default: {run.DEFAULT_EXECUTABLE}, searched in PATH)",
+    ),
+)
+
+
 class SpeakerProjectConverter(Converter):
-    """Speaker measurements as a SoundID speaker project; subclasses read the measurements."""
+    """Speaker measurements as a SoundID speaker project; subclasses read the measurements.
+
+    With --drc-config, DRC designs the correction of each measurement."""
 
     target = "swproj"
-    options = MIC_OPTIONS + (
+    project_options = MIC_OPTIONS + (
         Option(
             "--reference-spl",
             type=float,
@@ -203,6 +219,7 @@ class SpeakerProjectConverter(Converter):
             "3 and 4, stereo only (default: soundid)",
         ),
     )
+    options = project_options + DRC_OPTIONS
 
     def __init__(
         self,
@@ -218,6 +235,8 @@ class SpeakerProjectConverter(Converter):
         spot_delay_ms: list[str] | None = None,
         spot_gain_db: list[str] | None = None,
         app: str = "soundid",
+        drc_config: Path | None = None,
+        drc: str | None = None,
     ):
         if app not in APPS:
             raise ValueError(f"--app must be one of: {', '.join(APPS)}")
@@ -246,6 +265,10 @@ class SpeakerProjectConverter(Converter):
                 "--spot-gain-db",
             ),
         )
+        if drc is not None and drc_config is None:
+            raise ValueError("--drc needs --drc-config")
+        self.drc_config = None if drc_config is None else Path(drc_config)
+        self.drc = drc or run.DEFAULT_EXECUTABLE
 
     def spot(self, measurements: list[Measurement]) -> dict[str, tuple[float, float]]:
         """{channel: (delay ms, gain dB)}; option channel names are case-insensitive."""
@@ -275,7 +298,15 @@ class SpeakerProjectConverter(Converter):
     ) -> tuple[dict | None, list[str]]:
         """({channel: (dB, group delay s) on the standard grid}, notes): the
         correction filters; None corrects with the inverse response."""
-        return None, []
+        if self.drc_config is None:
+            return None, []
+        rate = run.config_rate(self.drc_config)
+        grid = standard_grid()
+        filters = {}
+        for m in measurements:
+            ir, _ = run.run(drc_input(m, profile, rate), self.drc_config, self.drc)
+            filters[m.channel] = pcm.response(ir, rate, grid)
+        return filters, [f"DRC: {self.drc_config.name} at {rate} Hz"]
 
     def name(self, *paths: Path) -> str:
         """The project name and default output file stem."""
@@ -338,50 +369,14 @@ class SpeakerProjectConverter(Converter):
 
 
 class MdatToSwproj(SpeakerProjectConverter):
-    """With --drc-config, DRC designs the correction of each measurement."""
-
     source = "mdat"
     description = (
         "REW speaker measurements as a SoundID speaker project (no audio samples); "
         "optionally corrected by DRC"
     )
-    options = SpeakerProjectConverter.options + (
-        Option(
-            "--drc-config",
-            type=Path,
-            help="DRC configuration file, e.g. normal-48.0.drc: DRC designs the "
-            "correction at its BCSampleRate (default: the inverse response)",
-        ),
-        Option(
-            "--drc",
-            help=f"DRC program (default: {run.DEFAULT_EXECUTABLE}, searched in PATH)",
-        ),
-    )
-
-    def __init__(
-        self, drc_config: Path | None = None, drc: str | None = None, **settings
-    ):
-        super().__init__(**settings)
-        if drc is not None and drc_config is None:
-            raise ValueError("--drc needs --drc-config")
-        self.drc_config = drc_config
-        self.drc = drc or run.DEFAULT_EXECUTABLE
 
     def measurements(self, path: Path) -> tuple[layout.Layout, list[Measurement]]:
         return layout.STEREO, mdat.load(path)
-
-    def filters(
-        self, measurements: list[Measurement], profile: MicProfile, path: Path
-    ) -> tuple[dict | None, list[str]]:
-        if self.drc_config is None:
-            return None, []
-        rate = run.config_rate(self.drc_config)
-        grid = standard_grid()
-        filters = {}
-        for m in measurements:
-            ir, _ = run.run(drc_input(m, profile, rate), self.drc_config, self.drc)
-            filters[m.channel] = pcm.response(ir, rate, grid)
-        return filters, [f"DRC: {Path(self.drc_config).name} at {rate} Hz"]
 
 
 class DrcToSwproj(SpeakerProjectConverter):
@@ -392,7 +387,7 @@ class DrcToSwproj(SpeakerProjectConverter):
         "DRC correction filters (inputs: left, optional right) with the REW "
         "measurements they correct as a SoundID speaker project"
     )
-    options = SpeakerProjectConverter.options + (
+    options = SpeakerProjectConverter.project_options + (
         Option(
             "--mdat",
             type=Path,
@@ -440,7 +435,7 @@ class AutoeqToSwproj(SpeakerProjectConverter):
     source = "autoeq"
     description = (
         "speaker measurements (inputs: left, optional right) as a SoundID "
-        "speaker project"
+        "speaker project; optionally corrected by DRC"
     )
     options = SpeakerProjectConverter.options + (COLUMN_OPTION,)
     inputs = 2
@@ -482,7 +477,8 @@ class Arc4ToSwproj(SpeakerProjectConverter):
 
     source = "arc4"
     description = (
-        "ARC 4 speaker responses as a SoundID speaker project (no audio samples)"
+        "ARC 4 speaker responses as a SoundID speaker project (no audio samples); "
+        "optionally corrected by DRC"
     )
 
     def measurements(self, path: Path) -> tuple[layout.Layout, list[Measurement]]:
@@ -553,7 +549,8 @@ class ArcxToSwproj(SpeakerProjectConverter):
 
     source = "arcx"
     description = (
-        "ARC X speaker responses as a SoundID speaker project (no audio samples)"
+        "ARC X speaker responses as a SoundID speaker project (no audio samples); "
+        "optionally corrected by DRC"
     )
     options = SpeakerProjectConverter.options + (arcx.POINT_OPTION,)
 
@@ -631,7 +628,8 @@ class MqxToSwproj(SpeakerProjectConverter):
 
     source = "mqx"
     description = (
-        "MultEQ-X speaker responses as a SoundID speaker project (no audio samples)"
+        "MultEQ-X speaker responses as a SoundID speaker project (no audio samples); "
+        "optionally corrected by DRC"
     )
     options = SpeakerProjectConverter.options + (mqx.POSITION_OPTION,)
 
