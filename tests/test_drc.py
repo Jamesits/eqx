@@ -291,7 +291,7 @@ class MdatToDrcTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             MdatToDrc(channel="right").convert([LEFT_ONLY])
         with self.assertRaises(ValueError):
-            MdatToDrc(mic_angle="degrees_30")
+            MdatToDrc(mic_curve="degrees_30")
         with self.assertRaises(ValueError):
             MdatToDrc(rate=0)
 

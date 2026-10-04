@@ -243,7 +243,7 @@ class ConvertTests(unittest.TestCase):
             src = Path(tmp) / PACKAGE.name
             src.write_bytes(PACKAGE.read_bytes())
             code, _ = run(
-                "convert", "-i", src, "--to", "rewcal", "--angle", "degrees_90"
+                "convert", "-i", src, "--to", "rewcal", "--curve", "degrees_90"
             )
             self.assertEqual(code, 0)
             profile, other = cal.load(Path(tmp) / "TILT01 degrees_90.txt")
@@ -314,9 +314,9 @@ class ConvertTests(unittest.TestCase):
 
     def test_option_of_other_pair_is_rejected(self):
         _code, err = run_error(
-            "convert", "-i", PACKAGE, "--to", "rewcal", "--mic-angle", "degrees_0"
+            "convert", "-i", PACKAGE, "--to", "rewcal", "--mic-curve", "degrees_0"
         )
-        self.assertIn("--mic-angle does not apply to swmicpkg -> rewcal", err)
+        self.assertIn("--mic-curve does not apply to swmicpkg -> rewcal", err)
 
     def test_autoeq(self):
         csv = SAMPLES["autoeq"]
@@ -854,9 +854,9 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("mic table: Flat degrees_0 (default)", text)
         _code, err = run_error(
-            "convert", "-i", MDAT, "--to", "swproj", "--mic-angle", "degrees_30"
+            "convert", "-i", MDAT, "--to", "swproj", "--mic-curve", "degrees_30"
         )
-        self.assertIn("--mic-profile-format and --mic-angle need --mic-profile", err)
+        self.assertIn("--mic-profile-format and --mic-curve need --mic-profile", err)
 
 
 if __name__ == "__main__":

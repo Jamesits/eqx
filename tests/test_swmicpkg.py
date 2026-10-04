@@ -77,7 +77,7 @@ class ProjectTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError,
             r"one microphone table \(degrees_30\); "
-            "--mic-angle applies only",
+            "--mic-curve applies only",
         ):
             load_mic_profile(PROJECT, "degrees_30")
 

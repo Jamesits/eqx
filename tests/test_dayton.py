@@ -164,7 +164,7 @@ class MicProfileTests(unittest.TestCase):
             )
         self.assertEqual(load_mic_profile(USB_90).angle, "degrees_90")
         with self.assertRaisesRegex(
-            ValueError, "--mic-angle applies only to profiles with several tables"
+            ValueError, "--mic-curve applies only to profiles with several tables"
         ):
             load_mic_profile(USB_90, "degrees_90")
 

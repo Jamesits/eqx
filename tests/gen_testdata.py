@@ -92,7 +92,7 @@ CONVERSIONS = [
         (
             f"{MIC_DIR}/{serial}.swmicpkg",
             f"{CAL_DIR}/{serial} {angle}.txt",
-            {"angle": angle},
+            {"curve": angle},
         )
         for serial in MICS
         for angle in ANGLES
@@ -105,7 +105,7 @@ CONVERSIONS = [
     (
         f"{MDAT_DIR}/Bandpass.mdat",
         f"{PROJ_DIR}/Bandpass.swproj",
-        {"mic_profile": f"{MIC_DIR}/TILT01.swmicpkg", "mic_angle": "degrees_30"},
+        {"mic_profile": f"{MIC_DIR}/TILT01.swmicpkg", "mic_curve": "degrees_30"},
     ),
     (
         f"{MDAT_DIR}/Room.mdat",
@@ -201,7 +201,7 @@ CONVERSIONS = [
         f"{SONARWORKS_PROJ_DIR}/Bandpass.swproj",
         {
             "mic_profile": f"{MIC_DIR}/TILT01.swmicpkg",
-            "mic_angle": "degrees_30",
+            "mic_curve": "degrees_30",
             "app": "sonarworks-reference",
             "spot_delay_ms": ["Right=0.15"],
             "spot_gain_db": ["Left=-0.5"],

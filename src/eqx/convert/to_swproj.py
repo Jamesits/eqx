@@ -69,7 +69,7 @@ def load_mic_profile(
         if angle is not None:
             raise ValueError(
                 f"{path.name} holds one microphone table ({available[0]}); "
-                "--mic-angle applies only to profiles with several tables"
+                "--mic-curve applies only to profiles with several tables"
             )
         return read(available[0])
     angle = angle or swmicpkg.PLAIN_ANGLE
@@ -120,7 +120,7 @@ MIC_OPTIONS = (
         help="format of --mic-profile (default: by extension)",
     ),
     Option(
-        "--mic-angle",
+        "--mic-curve",
         help="table of a --mic-profile with several tables, by the angle between "
         "mic axis and speaker: degrees_0, degrees_30 or degrees_90 "
         f"(default: {swmicpkg.PLAIN_ANGLE}); a profile with one table uses it",
@@ -130,7 +130,7 @@ MIC_OPTIONS = (
 
 def check_mic_options(path: Path | None, kind: str | None, angle: str | None) -> None:
     if path is None and (kind or angle):
-        raise ValueError("--mic-profile-format and --mic-angle need --mic-profile")
+        raise ValueError("--mic-profile-format and --mic-curve need --mic-profile")
 
 
 def mic_profile_of(
@@ -225,7 +225,7 @@ class SpeakerProjectConverter(Converter):
         self,
         mic_profile: Path | None = None,
         mic_profile_format: str | None = None,
-        mic_angle: str | None = None,
+        mic_curve: str | None = None,
         reference_spl: float | None = None,
         low_cutoff_hz: float = DEFAULT_LOW_CUTOFF_HZ,
         high_cutoff_hz: float = DEFAULT_HIGH_CUTOFF_HZ,
@@ -241,10 +241,10 @@ class SpeakerProjectConverter(Converter):
         if app not in APPS:
             raise ValueError(f"--app must be one of: {', '.join(APPS)}")
         self.app = app
-        check_mic_options(mic_profile, mic_profile_format, mic_angle)
+        check_mic_options(mic_profile, mic_profile_format, mic_curve)
         self.mic_profile = None if mic_profile is None else Path(mic_profile)
         self.mic_profile_format = mic_profile_format
-        self.mic_angle = mic_angle
+        self.mic_curve = mic_curve
         self.settings = {
             "reference_spl": reference_spl,
             "low_cutoff_hz": low_cutoff_hz,
@@ -317,7 +317,7 @@ class SpeakerProjectConverter(Converter):
         profile, mic_source = mic_profile_of(
             self.mic_profile,
             self.mic_profile_format,
-            self.mic_angle,
+            self.mic_curve,
             lambda: self.default_mic_profile(*paths),
         )
         filters, filter_notes = self.filters(measurements, profile, *paths)

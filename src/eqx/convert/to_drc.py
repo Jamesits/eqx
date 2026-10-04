@@ -31,12 +31,12 @@ class MdatToDrc(Converter):
         self,
         mic_profile: Path | None = None,
         mic_profile_format: str | None = None,
-        mic_angle: str | None = None,
+        mic_curve: str | None = None,
         channel: str = "left",
         rate: float = DEFAULT_RATE,
     ):
-        check_mic_options(mic_profile, mic_profile_format, mic_angle)
-        self.mic = (mic_profile, mic_profile_format, mic_angle)
+        check_mic_options(mic_profile, mic_profile_format, mic_curve)
+        self.mic = (mic_profile, mic_profile_format, mic_curve)
         self.channel = channel_name(channel)
         if rate <= 0:
             raise ValueError("--rate must be positive")

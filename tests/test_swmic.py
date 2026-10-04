@@ -120,7 +120,7 @@ class ConversionTests(unittest.TestCase):
     def test_mic_profile(self):
         profile = load_mic_profile(SIDE_30)
         self.assertEqual((profile.name, profile.angle), ("TILT01", "degrees_30"))
-        with self.assertRaisesRegex(ValueError, "--mic-angle applies only"):
+        with self.assertRaisesRegex(ValueError, "--mic-curve applies only"):
             load_mic_profile(SIDE_30, "degrees_30")
 
 

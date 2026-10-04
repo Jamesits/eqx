@@ -32,14 +32,14 @@ class SwmicpkgToRewcal(Converter):
     target = "rewcal"
     description = "one microphone table as a REW calibration file"
     options = (
-        Option("--angle", help=f"table to convert (default: {swmicpkg.PLAIN_ANGLE})"),
+        Option("--curve", help=f"table to convert (default: {swmicpkg.PLAIN_ANGLE})"),
     )
 
-    def __init__(self, angle: str = swmicpkg.PLAIN_ANGLE):
-        self.angle = angle
+    def __init__(self, curve: str = swmicpkg.PLAIN_ANGLE):
+        self.curve = curve
 
     def _convert(self, path: Path) -> Result:
-        profile = swmicpkg.load(path, self.angle)
+        profile = swmicpkg.load(path, self.curve)
         return _result(profile, "SoundID", f"{profile.name} {profile.angle}.txt")
 
 

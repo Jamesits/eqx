@@ -202,7 +202,7 @@ class MicProfileTests(unittest.TestCase):
             load_mic_profile(UMIK1_90).points, umik.load(UMIK1_90).profile.points
         )
         with self.assertRaisesRegex(
-            ValueError, "--mic-angle applies only to profiles with several tables"
+            ValueError, "--mic-curve applies only to profiles with several tables"
         ):
             load_mic_profile(UMIK1_90, "degrees_90")
 

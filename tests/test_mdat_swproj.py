@@ -373,7 +373,7 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual((mic.name, mic.angle), ("Flat", "degrees_0"))
         self.assertEqual(len(mic.points), swmicpkg.GRID_POINTS)
         self.assertEqual({g for _, g in mic.points}, {0.0})
-        for options in ({"mic_angle": "degrees_30"}, {"mic_profile_format": "umik"}):
+        for options in ({"mic_curve": "degrees_30"}, {"mic_profile_format": "umik"}):
             with (
                 self.subTest(options),
                 self.assertRaisesRegex(ValueError, "need --mic-profile"),

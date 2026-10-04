@@ -102,7 +102,7 @@ Convert the calibration file to REW format:
 
 ```shell
 # with .swmicpkg
-uv run eqx convert -i <serial>.swmicpkg -o <serial>.cal --angle degrees_30
+uv run eqx convert -i <serial>.swmicpkg -o <serial>.cal --curve degrees_30
 
 # with .swmic
 uv run eqx convert -i <serial>_cal_Sonarworks_30degree.swmic -o <serial>.cal
@@ -143,7 +143,7 @@ uv run pytest
 <summary>Dayton Audio</summary>
 
 - Converts to `.swmicpkg` (`-i <serial>.txt`, `-i <serial>.omm`); the 30 and 90 degree tables are copies of the 0 degree table. A 90 degree file named `<serial>_90deg.txt` gives the 90 degree table
-- Usable as `--mic-profile` of `.swproj` conversions, without `--mic-angle`
+- Usable as `--mic-profile` of `.swproj` conversions, without `--mic-curve`
 - The sensitivity (`Sens Factor`, EMM-6 `*1000Hz`) and the phase are shown by `inspect`, not converted
 </details>
 
@@ -190,7 +190,7 @@ uv run pytest
 <summary>miniDSP UMIK</summary>
 
 - Converts to `.swmicpkg` (`-i <serial>.txt [-i <serial>_90deg.txt]`); the 30 degree table is a copy of the 0 degree table
-- Usable as `--mic-profile` of `.swproj` conversions; pass the `_90deg` file for the 90 degree table, without `--mic-angle`
+- Usable as `--mic-profile` of `.swproj` conversions; pass the `_90deg` file for the 90 degree table, without `--mic-curve`
 - The sensitivity (`Sens Factor`) is shown by `inspect`, not converted
 - Reads every layout miniDSP has used (80, 133 or 615 points; quoted or unquoted header; with or without `AGain`); a downloaded error page (`Unable to locate calibration data`) is reported as such
 </details>
@@ -235,7 +235,7 @@ uv run pytest
 `.swmic`, `.txt` microphone tables
 - The files of a downloaded profile (`<serial>_cal_0degree.txt`, `<serial>_cal_Sonarworks_30degree.swmic`, `<serial>_cal_Sonarworks_90degree.swmic`); the angle comes from the file name
 - Converts to `.swmicpkg` (`-i` each file, any order) or to a REW `.txt` (`--to rewcal`, decrypted)
-- Usable as `--mic-profile` of `.swproj` conversions, without `--mic-angle`
+- Usable as `--mic-profile` of `.swproj` conversions, without `--mic-curve`
 
 `.swhp`, `.swproj` to FIR `.wav`
 - The filter SoundID Reference plays for the profile (flat target), minimum, linear or mixed phase (SoundID's Zero Latency, Linear Phase, Mixed), with Limit Controls, Listening Spot and Safe Headroom

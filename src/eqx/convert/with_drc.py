@@ -66,12 +66,12 @@ class DrcRun:
         drc: str | None = None,
         mic_profile: Path | None = None,
         mic_profile_format: str | None = None,
-        mic_angle: str | None = None,
+        mic_curve: str | None = None,
     ):
-        check_mic_options(mic_profile, mic_profile_format, mic_angle)
+        check_mic_options(mic_profile, mic_profile_format, mic_curve)
         self.config = Path(drc_config)
         self.program = drc or run.DEFAULT_EXECUTABLE
-        self.mic = (mic_profile, mic_profile_format, mic_angle)
+        self.mic = (mic_profile, mic_profile_format, mic_curve)
 
     @classmethod
     def of(cls, drc_config: Path | None = None, **options) -> DrcRun | None:
